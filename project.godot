@@ -12,7 +12,7 @@ config_version=5
 
 config/name="PELAGIC — Fish Controller"
 run/main_scene="res://Scenes/Reef.tscn"
-config/features=PackedStringArray("4.7", "C#", "GL Compatibility")
+config/features=PackedStringArray("4.7", "GL Compatibility")
 
 [display]
 
@@ -21,10 +21,6 @@ window/size/viewport_height=800
 window/size/window_width_override=1280
 window/size/window_height_override=800
 window/stretch/mode="canvas_items"
-
-[dotnet]
-
-project/assembly_name="FishGame"
 
 [rendering]
 

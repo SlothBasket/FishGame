@@ -1,61 +1,56 @@
-# Pelagic — feeding grounds milestone
+# Pelagic — GDScript fish prototype
 
-Double-click **Play.cmd** to build and play. **Open Editor.cmd** opens the project in the supplied Godot .NET editor. In Godot, F6 runs the current scene and F5 runs the game.
+This project is entirely **GDScript**, for **Godot 4.7.2**. No C#, .NET SDK, NuGet packages, or external art assets are required. Both standard Godot and the .NET edition can run GDScript, but the included launcher selects the installed standard editor.
+
+Open `project.godot` in Godot and press **F5**. On this computer, **Play.cmd** starts the game and **Open Editor.cmd** opens the editor. On another computer, import the project directly or set `GODOT_EXE` to that computer's Godot executable before using the launchers. `Launch.ps1` keeps editor data in the enclosing workspace's `work/` folder.
 
 ## Controls
 
-| Input | Action |
+| Input | What it does |
 |---|---|
-| Mouse | Orbit camera; forward swimming follows the view, including depth |
-| W / S | Swim forward / reverse along the camera direction |
-| A / D | Swim sideways relative to the camera |
-| Space / Ctrl | Rise / dive in world space |
-| Shift | Hold for faster swimming |
-| Hold left mouse | Charge a bite (movement slows while charging) |
-| Release left mouse | Lunge toward the crosshair and eat bait along the dash |
-| R | Return to spawn and cancel the attack; keep food earned |
-| Esc | Release / capture cursor |
-| Left click, when cursor is free | Capture cursor; this first click does not bite |
+| Mouse | Look/aim independently of fish heading |
+| W | Forward throttle; gradually steer toward where you look |
+| S | Slow reverse along the fish's current axis, without turning it around |
+| A / D | Assist left/right yaw; pivot slowly without W; never strafe |
+| Space / Ctrl | Rise/dive along world up/down |
+| Shift + W | Boost forward swimming; no reverse boost |
+| Hold LMB | Slow propulsion and charge; tail/body anticipation becomes stronger |
+| Release LMB | Curved feeding lunge; eat bait touched during the dash |
+| R | Reset position, heading and attack; retain earned food |
+| Esc | Release/capture cursor and cancel attack |
+| Click with cursor free | Capture cursor; that click does not attack |
 
-Release movement to coast to a stop. The fish turns toward its velocity with pitch and yaw, keeping roll at zero. The camera moves independently and uses a spring arm to retract at obstacles. The sandy seabed, rocks, hoops, surface ceiling, and outer walls collide. Plants and small coral are decorative. The hoops are practice targets, with no scoring yet.
+Forward motion has acceleration and coasting. Pointing the camera behind the fish does not reverse its velocity instantly: hold W to curve around. A/D can tighten that curve. S leaves facing unchanged unless you also steer manually. Looking up/down while holding W changes pitch, while Space/Ctrl adds vertical propulsion. Gameplay roll remains zero.
 
-## Eating
+A tap lunges about 3 metres; 1.4 seconds of charge reaches 15 metres of travelled path. On release, the requested target is limited to 65° from actual fish heading, then the fish turns toward that target at 220°/second during the dash. A curved dash's endpoint is closer than its travelled distance. Aim is fixed on release. The fish carries momentum along the final direction afterward, but only eats during the dash. Recovery is 0.45 seconds; begin a fresh press after recovery.
 
-Thirty bait live in six groups around the hoops. Minnows swim in groups (+1 food), shrimp twitch and kick (+2), and squid pulse through the water with animated tentacles (+3). All use original procedural art. Their movement collides with terrain.
+## Start changing the game
 
-Tap left mouse for about a 3 m bite. Hold for up to 1.4 seconds for a 15 m lunge, then release. A ring around the crosshair shows charge and recovery. Aim is locked when released, using the object under the camera crosshair. During the dash, every bait touched by the swept bite volume is eaten; ordinary swimming and post-dash coasting do not eat. Solid terrain stops the dash and blocks bites. There is a 0.45-second recovery; start a fresh press after recovery to charge again. Escape, losing focus, and reset cancel charging without firing.
+Open **Scenes/FishPlayer.tscn**, select **FishPlayer**, and edit the grouped Inspector properties. Start with `forward_turn_rate`, `manual_steering_strength`, `reverse_speed_multiplier`, and `maximum_lunge_turn_angle`. Select its **Visual** child to tune charge wiggle without changing physics. Open **Scenes/Reef.tscn** and select **Reef** to change arena size/depth.
 
-Eaten bait shrink into the mouth, with a jaw animation, bubble burst, and food notice. The fish grows 1% per food, capped at 1.6× for this prototype; its body collision radius grows too. This is provisional growth tuning. Bait respawn at their group's home after eight seconds. Restart the game for a fresh food total.
+[CODE_GUIDE.md](CODE_GUIDE.md) explains the tick-by-tick flow, each script's responsibility, tuning defaults, and how to alter bait, visuals, feeding and zones. All gameplay scripts are in `Scripts/`; there are no hidden C# implementations.
 
-## Editing
+## Current playground
 
-Godot **4.7.2 .NET**, C#, .NET **10 SDK**. The standard Godot edition cannot run this C# project. A portable .NET editor lives in `../../work/godot-dotnet/`; the launchers use it without changing the installed editor. Local NuGet packages are provided by that runtime. Keep the enclosing workspace together when moving the project, or install Godot .NET and update `NuGet.Config` to its `GodotSharp/Tools/nupkgs` directory (or nuget.org), then import `project.godot`.
+- 180×180 metre arena, 32 metre water column, procedural rocks and swim-through hoops.
+- 24 bait across six separated zones; the nearest group is near spawn. Distant hoops help locate other zones.
+- Minnows cruise/coast/burst (+1 food); shrimp hover/kick (+2); squid glide/pulse (+3). Decisions vary per individual instead of following perfect loops.
+- Bait respawn after eight seconds. Each food increases size by 1%, capped at 1.6×; the body collision radius grows too.
+- Fish and bait collide with terrain. Decorative grass/coral do not collide. Solid objects stop lunges and occlude bites.
 
-Select FishPlayer in `Scenes/FishPlayer.tscn` to tune movement plus FullChargeTime, MinimumLungeDistance, MaximumLungeDistance, LungeSpeed, and BiteCooldown in the Inspector.
+The intended game is fish players competing to eat and grow, with human fishermen imitating live prey. This pass preserves that direction but does not implement multiplayer, rods, or fights. Live bait and future controlled bait use identical commands, movement limits and visuals. A fisherman bait's `bitten` signal provides the future fight entry point, without food rewards.
 
-- `FishInput.cs`: input command and movement calculation, independent of keyboard and camera.
-- `FishPlayer.cs`: local input, collisions, model orientation, and camera controls.
-- `FishVisual.cs`: procedural fish and fin/tail animation; replace with a model facing local -Z.
-- `FishFeeding.cs`: charge/dash/recovery, swept bite with terrain occlusion, rewards, and growth.
-- `BaitMotion.cs`: shared motion commands and interchangeable live/controlled drivers.
-- `BaitActor.cs` / `BaitVisual.cs`: shared bait body, animation, and single-consumer bite callback.
-- `BaitSchool.cs`: populations and respawns; `FeedingHud.cs` / `FeedingBurst.cs`: feedback.
-- `Reef.cs`: deterministic practice environment, HUD, and engine integration checks.
+## Check your changes
 
-## Fishermen and multiplayer foundation
+From this project folder:
 
-The intended game is fish players competing to eat and grow, alongside human fishermen imitating live prey with bait and skillful rod control. Hook fights are a later milestone.
+```powershell
+.\Launch.ps1 -Check   # Godot imports/registers GDScript classes and checks parsing
+.\Launch.ps1 -Test    # Headless physics tests; nonzero exit on failure
+```
 
-`IBaitDriver` produces `BaitCommand(Direction, Effort, Twitch)`. `LiveBaitDriver` generates natural motion; `ControlledBaitDriver.Command` can later be fed by rod inputs or server commands. Both use the same movement motor, species limits, visual mesh, animation, and bite detection. Bait visuals never inspect whether their source is live or a fisherman, so there is no automatic color/label/animation giveaway.
+The migration passed the standard Godot import/parser check and all **37 self-test checks**. Coverage includes heading steering, reverse, no strafe, turn-rate consistency, collisions, curved lunges, sweep/occlusion, single-consumer rewards, controlled-bait parity and respawning. Godot emits a nonfatal certificate-store diagnostic in the restricted tool environment; no game network requests are involved.
 
-Set `BaitActor.Source = BaitSource.Fisherman` and assign a `ControlledBaitDriver` before adding the actor. Subscribe to `Bitten` to begin a future hook/fight session. Fisherman bait triggers the same consume interaction but awards no nutrition. The bait visual is removed after swallowing, so a future fight session should retain its own player/rod state. The current playground spawns live bait only; rod control, fake bait spawning UI, fight mechanics, and networking are not implemented yet.
+For this revision, no repeated visual capture workflow was run. Manually play-test two things: whether W+A/D and the 65° strike cone feel right, and whether the more separated bait zones give the right amount of searching versus feeding.
 
-`TryBite` gates duplicate rewards in this local prototype. In multiplayer, the server must own movement validation, bite claims, nutrition, growth, respawns, and hook events; clients should send intent and display replicated results. The existing separation is a starting point, not implemented network authority.
-
-## Validation
-
-Run `powershell -ExecutionPolicy Bypass -File .\Launch.ps1 -Test` for the original controller checks plus short/full-charge lunges, cancellation, multiple meals, single-consumer rewards, growth, high-speed sweeps, terrain occlusion, identical live/controlled motion, fisherman bite callbacks, and respawning. `FeedingChecks.cs` runs actual physics in a clear fixture area.
-
-Run the engine with `-- --capture`, `-- --charge-preview`, or `-- --feeding-preview` to save rendered previews beside the project. The latter two temporarily drive the fish and add stationary bait for reproducible visual checks; normal play does not use that setup.
-
-Godot C# setup reference: https://docs.godotengine.org/en/stable/tutorials/scripting/c_sharp/c_sharp_basics.html
+Optional existing capture flags remain available: `-- --capture`, `-- --charge-preview`, and `-- --feeding-preview`. The latter two drive a demonstration attack and add stationary test bait; normal play does neither.

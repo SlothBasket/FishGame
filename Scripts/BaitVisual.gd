@@ -1,0 +1,74 @@
+class_name BaitVisual
+extends Node3D
+## Only species, speed and twitch affect presentation; bait source is never inspected.
+
+var kind: BaitMotion.Kind = BaitMotion.Kind.MINNOW
+var speed: float = 0.0
+var twitch: float = 0.0
+var _appendages: Array[Node3D] = []
+var _body: Node3D
+var _phase: float = 0.0
+
+func _ready() -> void:
+	_body = Node3D.new()
+	add_child(_body)
+	var dark = Geometry.material("112e3b")
+	if kind == BaitMotion.Kind.MINNOW:
+		var silver = Geometry.material("ccdfd3", 0.45)
+		var blue = Geometry.material("537f9a", 0.3)
+		Geometry.sphere(_body, "SilverBody", Vector3.ZERO, Vector3(0.16, 0.22, 0.55), silver)
+		Geometry.sphere(_body, "BlueBack", Vector3(0, 0.1, 0.03), Vector3(0.14, 0.14, 0.45), blue)
+		var tail = Node3D.new()
+		tail.position = Vector3(0, 0, 0.42)
+		_body.add_child(tail)
+		_appendages.append(tail)
+		Geometry.triangle(tail, Vector3.ZERO, Vector3(0, 0.29, 0.43), Vector3(0, -0.29, 0.43), silver)
+		Geometry.triangle(_body, Vector3(0, 0.13, -0.1), Vector3(0, 0.4, 0.18), Vector3(0, 0.13, 0.32), blue)
+		_eyes(dark, 0.13, 0.06, -0.36, 0.055)
+	elif kind == BaitMotion.Kind.SHRIMP:
+		var shell = Geometry.material("e8a788", 0.15)
+		var light = Geometry.material("f3d4ae")
+		for i in range(5):
+			Geometry.sphere(_body, "ShellSegment", Vector3(0, sin(i * 0.65) * 0.11, (i - 2) * 0.15),
+				Vector3(0.16 - i * 0.014, 0.15 - i * 0.012, 0.14), shell)
+		for side in [-1, 1]:
+			for i in range(3):
+				var leg = Node3D.new()
+				leg.position = Vector3(side * 0.1, -0.07, i * 0.12 - 0.2)
+				_body.add_child(leg)
+				_appendages.append(leg)
+				Geometry.triangle(leg, Vector3.ZERO, Vector3(side * 0.23, -0.2, 0.1), Vector3(side * 0.08, -0.06, 0.12), light)
+			Geometry.triangle(_body, Vector3(side * 0.06, 0.03, -0.3), Vector3(side * 0.34, 0.1, -1), Vector3(side * 0.08, 0.04, -0.33), light)
+		Geometry.triangle(_body, Vector3(0, 0.04, 0.3), Vector3(-0.25, 0, 0.58), Vector3(0.25, 0, 0.58), shell)
+		_eyes(dark, 0.12, 0.1, -0.35, 0.055)
+	else:
+		var mantle = Geometry.material("d3a8d7", 0.2)
+		var fins = Geometry.material("ae81bd")
+		Geometry.sphere(_body, "Mantle", Vector3(0, 0, -0.2), Vector3(0.29, 0.3, 0.6), mantle)
+		for side in [-1, 1]:
+			Geometry.triangle(_body, Vector3(0, 0, -0.7), Vector3(side * 0.56, 0, -0.15), Vector3(0, 0, 0.2), fins)
+		_eyes(dark, 0.26, 0.04, 0.14, 0.08)
+		for i in range(6):
+			var angle = i * TAU / 6.0
+			var arm = Node3D.new()
+			arm.position = Vector3(cos(angle) * 0.17, sin(angle) * 0.17, 0.25)
+			_body.add_child(arm)
+			_appendages.append(arm)
+			Geometry.sphere(arm, "Tentacle", Vector3(0, 0, 0.33), Vector3(0.045, 0.045, 0.5 if i % 2 == 0 else 0.36), mantle)
+
+func _eyes(mat: Material, x: float, y: float, z: float, radius: float) -> void:
+	for side in [-1, 1]:
+		Geometry.sphere(_body, "Eye", Vector3(side * x, y, z), Vector3.ONE * radius, mat)
+
+func _process(delta: float) -> void:
+	_phase += delta * (4.0 + speed * 6.0)
+	for i in range(_appendages.size()):
+		var wave = sin(_phase + i * 0.8)
+		match kind:
+			BaitMotion.Kind.MINNOW:
+				_appendages[i].rotation = Vector3(0, wave * 0.4, 0)
+			BaitMotion.Kind.SHRIMP:
+				_appendages[i].rotation = Vector3(wave * 0.4, 0, wave * 0.2)
+			_:
+				_appendages[i].rotation = Vector3(wave * 0.25, cos(_phase + i) * 0.25, 0)
+	_body.scale = Vector3(1 - twitch * 0.16, 1 - twitch * 0.16, 1 + twitch * 0.12) if kind == BaitMotion.Kind.SQUID else Vector3.ONE

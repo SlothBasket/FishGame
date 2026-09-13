@@ -1,6 +1,6 @@
 [gd_scene load_steps=3 format=3]
 
-[ext_resource type="Script" path="res://Scripts/Reef.cs" id="1"]
+[ext_resource type="Script" path="res://Scripts/Reef.gd" id="1"]
 [ext_resource type="PackedScene" path="res://Scenes/FishPlayer.tscn" id="2"]
 
 [node name="Reef" type="Node3D"]
