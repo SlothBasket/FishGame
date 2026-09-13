@@ -19,6 +19,7 @@ Open `project.godot` in Godot and press **F5**. On this computer, **Play.cmd** s
 | R | Reset position, heading and attack; retain earned food |
 | Esc | Release/capture cursor and cancel attack |
 | Click with cursor free | Capture cursor; that click does not attack |
+| Tab | Toggle fisherman-lure test mode |
 
 Forward motion has acceleration and coasting. Pointing the camera behind the fish does not reverse its velocity instantly: hold W to curve around. A/D can tighten that curve. S leaves facing unchanged unless you also steer manually. Looking up/down while holding W changes pitch, while Space/Ctrl adds vertical propulsion. Gameplay roll remains zero.
 
@@ -33,12 +34,30 @@ Open **Scenes/FishPlayer.tscn**, select **FishPlayer**, and edit the grouped Ins
 ## Current playground
 
 - 180×180 metre arena, 32 metre water column, procedural rocks and swim-through hoops.
-- 24 bait across six separated zones; the nearest group is near spawn. Distant hoops help locate other zones.
-- Minnows cruise/coast/burst (+1 food); shrimp hover/kick (+2); squid glide/pulse (+3). Decisions vary per individual instead of following perfect loops.
+- 32 prey across eight sparse zones: open-water minnows, lower shrimp, midwater squid and bottom crabs.
+- Minnows cruise/glide/burst/dart (+1); shrimp hover/settle/kick (+2); squid glide/hover/pulse (+3); crabs rest/crawl/scuttle (+2).
 - Bait respawn after eight seconds. Each food increases size by 1%, capped at 1.6×; the body collision radius grows too.
 - Fish and bait collide with terrain. Decorative grass/coral do not collide. Solid objects stop lunges and occlude bites.
 
 The intended game is fish players competing to eat and grow, with human fishermen imitating live prey. This pass preserves that direction but does not implement multiplayer, rods, or fights. Live bait and future controlled bait use identical commands, movement limits and visuals. A fisherman bait's `bitten` signal provides the future fight entry point, without food rewards.
+
+## Fisherman-lure test mode
+
+Press **Tab** to freeze fish input and control the yellow test jerkbait near spawn. The anchor is fixed above the spawn side of the arena. This is a development tool for judging whether human input can reproduce convincing bait behavior.
+
+| Input in lure mode | Action |
+|---|---|
+| W | Retrieve toward anchor; release to sink |
+| A / D | Bias the next jerk vertically |
+| Q | Short jerk; consecutive jerks alternate left/right |
+| E | Jig sharply upward and toward the anchor |
+| F | Reset lure near the fish |
+| X | Switch between jerkbait and sinking jig |
+| 1 / 2 / 3 / 4 | Look / quiver / fan / rest idle animation |
+| 0 | Clear idle animation |
+| Tab | Return to fish control |
+
+The test lure is line-constrained by a configurable maximum distance and moves through `BaitActor`; it cannot teleport. `FishingBaitDriver` supports floating, sinking or suspending on pause, retrieve-driven rise/dive, alternating jerk angle, jig strength and maximum line length. `ControlledBaitDriver` remains separate for possible direct control of live bait later.
 
 ## Check your changes
 
@@ -49,7 +68,7 @@ From this project folder:
 .\Launch.ps1 -Test    # Headless physics tests; nonzero exit on failure
 ```
 
-The migration passed the standard Godot import/parser check and all **37 self-test checks**. Coverage includes heading steering, reverse, no strafe, turn-rate consistency, collisions, curved lunges, sweep/occlusion, single-consumer rewards, controlled-bait parity and respawning. Godot emits a nonfatal certificate-store diagnostic in the restricted tool environment; no game network requests are involved.
+The standard Godot parser check and all **42 self-tests** pass. Tests cover heading steering, reverse, collisions, curved lunges, sweep/occlusion, rewards, controlled-bait parity, respawning, retrieve direction, alternating jerk, jig, buoyancy/idle commands and crab bottom crawling. Godot emits a nonfatal certificate-store diagnostic in the restricted tool environment; no game network requests are involved.
 
 For this revision, no repeated visual capture workflow was run. Manually play-test two things: whether W+A/D and the 65° strike cone feel right, and whether the more separated bait zones give the right amount of searching versus feeding.
 

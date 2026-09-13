@@ -13,6 +13,7 @@ var _capture: bool = false
 var _captured: bool = false
 var _feeding_preview: bool = false
 var _charge_preview: bool = false
+var _lure_test: LureTestController
 
 func _ready() -> void:
 	_fish = $FishPlayer
@@ -34,6 +35,9 @@ func _ready() -> void:
 		school.arena_half_width = arena_width * 0.5
 		school.water_depth = water_depth
 		add_child(school)
+		_lure_test = LureTestController.new()
+		add_child(_lure_test)
+		_lure_test.setup(_fish, self, Vector3(0, water_depth - 1, 12))
 	if _capture:
 		_fish.pivot.rotation = Vector3(-0.13, -0.45, 0)
 	if _feeding_preview or _charge_preview:
@@ -177,7 +181,7 @@ func build_hud() -> void:
 	var muted = Color("a4c8c8")
 	hud_text(root, "P E L A G I C", 30, cream, Vector2(38, 30))
 	hud_text(root, "03  /  THE HUNTING GROUNDS", 13, Color("e7c184"), Vector2(40, 75))
-	hud_text(root, "MINNOW +1   /   SHRIMP +2   /   SQUID +3", 13, muted, Vector2(40, 102))
+	hud_text(root, "MINNOW +1 / SHRIMP +2 / SQUID +3 / CRAB +4", 13, muted, Vector2(40, 102))
 	_score = hud_text(root, "", 20, cream, Vector2.ZERO)
 	anchor(_score, Control.PRESET_TOP_RIGHT, Rect2(-300, 92, 262, 63))
 	_score.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT

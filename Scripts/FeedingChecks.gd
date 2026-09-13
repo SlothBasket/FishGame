@@ -199,6 +199,34 @@ func _ready() -> void:
 	var population = get_tree().get_nodes_in_group("bait").size()
 	get_tree().get_nodes_in_group("bait")[0].try_bite(fish)
 	await frames(30)
-	check(population == 24 and get_tree().get_nodes_in_group("bait").size() == population, "Sparse population replenishes")
+	check(population == 32 and get_tree().get_nodes_in_group("bait").size() == population, "Sparse four-species population replenishes")
+	# Fishing driver intent: retrieve is anchor-dominant; jerk alternates laterally;
+	# jig rises; pause respects configured buoyancy; idle poses share the command.
+	var lure_driver = BaitMotion.FishingBaitDriver.new(Vector3(10, 10, 0))
+	lure_driver.retrieve_input = 0.8
+	var mock_lure = bait(BaitMotion.Kind.JERKBAIT, Vector3.ZERO, BaitMotion.Source.FISHERMAN)
+	var retrieve = lure_driver.sample(mock_lure, 1.0 / 60)
+	check(retrieve.action == BaitMotion.Action.CRUISE and retrieve.direction.x > 0.6 and retrieve.direction.y > 0.6, "Retrieve pulls toward world-space anchor")
+	lure_driver.retrieve_input = 0
+	lure_driver.jerk_pressed = true
+	var jerk_a = lure_driver.sample(mock_lure, 1.0 / 60)
+	await frames(25)
+	lure_driver.jerk_pressed = true
+	var jerk_b = lure_driver.sample(mock_lure, 1.0 / 60)
+	check(jerk_a.action == BaitMotion.Action.JERK and signf(jerk_a.direction.z) != signf(jerk_b.direction.z), "Repeated jerks alternate lateral sides")
+	lure_driver.jig_pressed = true
+	var jig = lure_driver.sample(mock_lure, 1.0 / 60)
+	check(jig.action == BaitMotion.Action.JIG_UP and jig.direction.y > 0.5, "Jig command pulls sharply upward")
+	lure_driver._impulse_time = 0
+	lure_driver.pause_vertical_rate = -0.4
+	lure_driver.idle_action = BaitMotion.IdleAction.QUIVER
+	var paused = lure_driver.sample(mock_lure, 1.0 / 60)
+	check(paused.action == BaitMotion.Action.FALL and paused.idle_action == BaitMotion.IdleAction.QUIVER, "Pause buoyancy and player idle action use shared command")
+	mock_lure.queue_free()
+	var crab = bait(BaitMotion.Kind.CRAB, Vector3(0, 3, 0))
+	crab.driver.command = BaitMotion.BaitCommand.new(Vector3.RIGHT, 0.8, 0, BaitMotion.Action.CRAWL)
+	await frames(300)
+	check(crab.global_position.y < 0.6 and absf(crab.velocity.y) < 0.01 and crab.global_position.x > 0.5,
+		"Crab settles on bottom and crawls laterally (position=%s velocity=%s)" % [crab.global_position, crab.velocity])
 	print("SELF-TEST COMPLETE: %d checks, %d failures" % [checks, failures])
 	get_tree().quit(0 if failures == 0 else 1)

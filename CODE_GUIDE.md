@@ -12,6 +12,7 @@ Start with `FishInput.gd`, then `FishPlayer.gd`, then `FishFeeding.gd`. These ex
 | `FishFeeding.gd` | Charge/dash/recovery, swept hits, rewards | Change strike behavior, eating or cooldown |
 | `FishVisual.gd` | Player mesh and cosmetic animation | Change silhouette, colors, jaw or charge tell |
 | `BaitMotion.gd` | Command vocabulary and live/controlled drivers | Change behavior durations, choices or driver input |
+| `LureTestController.gd` | Tab debug mode and fisherman-style input bridge | Change test keys, lure presets or anchor placement |
 | `BaitActor.gd` | Shared bait motor, claim gate and swallow | Change bait speed/turn limits, nutrition or bite response |
 | `BaitVisual.gd` | Bait meshes and speed/twitch animation | Change a bait's appearance for both live and controlled versions |
 | `BaitSchool.gd` | Zone placement, population and respawn timers | Change where prey live and how spread out they are |
@@ -72,6 +73,8 @@ Dash movement uses at most 1/120-second substeps so curved sweeps remain close t
 
 `BaitActor.try_bite()` marks the bait claimed before emitting signals or awarding nutrition. A second claim returns false. Live bait calls `fish.feeding.award_food()`. All sources emit `bitten(bait, eater)`; fisherman bait does not give food. Its visual shrinks into `fish.mouth_position()` and is freed after 0.22 seconds.
 
+`FishingBaitDriver` tuning fields are `retrieve_speed`, `pause_vertical_rate` (positive floats, negative sinks, zero suspends), `retrieve_vertical_influence`, `jerk_strength`, `jerk_side_angle`, `jig_strength`, and `maximum_line_distance`. They are plain configuration values now; move them into lure Resources when inventory exists. The Tab debug controller uses a sinking jerkbait and jig and respawns the test lure one second after it is bitten.
+
 Collision layers: **1 = world**, **2 = player**, **4 = bait**. Player and bait movement collide with world geometry. Eating uses the explicit sweep instead of body-contact collision. The camera arm ignores the player and bait. Keep these masks consistent when adding obstacles.
 
 ## Visual changes
@@ -84,12 +87,13 @@ To change the tell, select Visual and edit `charge_wiggle_degrees`, `charge_tail
 
 `BaitMotion.gd` contains nested classes to keep the small abstraction together:
 
-- `BaitCommand(direction, effort, twitch)` is the legal vocabulary: desired direction, normalized propulsion and animation pulse.
+- `BaitCommand(direction, effort, twitch, action, idle_action)` is the legal vocabulary. Actions include cruise, burst, glide, hover, sink/rise, dart/jerk, jig/fall, crawl and pause. Idle tells include look, quiver, fan and rest.
 - `IBaitDriver` is the base contract with `sample(bait, delta)`; GDScript inheritance replaces the C# interface.
 - `LiveBaitDriver` chooses finite behaviors with timers and its own RNG.
 - `ControlledBaitDriver` returns its externally supplied `command`.
+- `FishingBaitDriver` turns retrieve/jerk/jig inputs and a world-space anchor into the same commands, with configurable buoyancy and line distance.
 
-`choose_behavior()` is the easiest place to change how prey act. Minnows choose cruise/coast/burst; shrimp choose hover/kick; squid choose glide/pulse. Duration, effort, heading and pulse strength vary. Outside `roam_radius`, the next decision biases back home. This is a soft range, not a hard invisible boundary. Vertical bias keeps prey near their preferred layer. The actor still owns acceleration, turning and obstacle collision, so AI cannot bypass controlled-bait limits.
+`choose_behavior()` is the easiest place to change prey. Minnows cruise/glide/burst/dart across broad regions; shrimp hover, settle and kick; squid hover/glide/pulse; crabs rest, crawl and scuttle on the floor. Outside `roam_radius`, the next decision biases inward. Preferred depth and `depth_band` produce different layers. The actor still owns acceleration, turning, sinking and collision, so AI cannot bypass controlled-bait limits.
 
 Example of a future lure, using the existing actor and visual:
 
@@ -114,7 +118,7 @@ Pass an explicit seed to `LiveBaitDriver.new(home, seed, radius)` for reproducib
 
 `Reef` exports `arena_width`, `water_depth`, and `rock_count`. Width/depth drive the water plane, floor, walls, terrain distribution, HUD depth and bait-school dimensions. The terrain seed stays fixed so layout is stable while live bait behavior varies.
 
-`BaitSchool.ZONES` stores six centers as fractions: x/z multiply arena half-width; y multiplies water depth. Move a zone by changing its vector. `zone_population` defaults to four and `individual_spacing` to four metres. Species cycle minnow/shrimp/squid across the zones, with shrimp lower and squid higher. `roam_radius` varies slightly between individuals. `respawn_delay` controls replenishment. Zone population/timing are script exports on the generated school; set them in Reef before `add_child(school)` to persist custom values.
+`BaitSchool.ZONES` stores eight centers as fractions: x/z multiply arena half-width; y multiplies water depth. `ZONE_KINDS` maps those zones to minnow, shrimp, squid or crab. Move a zone by changing its vector. `zone_population` defaults to four and `individual_spacing` to four metres. Shrimp occupy lower structure, squid and minnows use open midwater, and crabs start near the floor. `roam_radius` varies between individuals. `respawn_delay` controls replenishment. Set generated-school exports in Reef before `add_child(school)`.
 
 Do not increase population just because the map grows. Try changing centers, spacing and roam radius first. New zones can use additional hoop landmarks in `Reef.build_reef()`; landmarks are visual navigation aids, not spawning logic.
 

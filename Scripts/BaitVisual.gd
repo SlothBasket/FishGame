@@ -5,6 +5,8 @@ extends Node3D
 var kind: BaitMotion.Kind = BaitMotion.Kind.MINNOW
 var speed: float = 0.0
 var twitch: float = 0.0
+var action: BaitMotion.Action = BaitMotion.Action.PAUSE
+var idle_action: BaitMotion.IdleAction = BaitMotion.IdleAction.NONE
 var _appendages: Array[Node3D] = []
 var _body: Node3D
 var _phase: float = 0.0
@@ -41,7 +43,7 @@ func _ready() -> void:
 			Geometry.triangle(_body, Vector3(side * 0.06, 0.03, -0.3), Vector3(side * 0.34, 0.1, -1), Vector3(side * 0.08, 0.04, -0.33), light)
 		Geometry.triangle(_body, Vector3(0, 0.04, 0.3), Vector3(-0.25, 0, 0.58), Vector3(0.25, 0, 0.58), shell)
 		_eyes(dark, 0.12, 0.1, -0.35, 0.055)
-	else:
+	elif kind == BaitMotion.Kind.SQUID:
 		var mantle = Geometry.material("d3a8d7", 0.2)
 		var fins = Geometry.material("ae81bd")
 		Geometry.sphere(_body, "Mantle", Vector3(0, 0, -0.2), Vector3(0.29, 0.3, 0.6), mantle)
@@ -55,6 +57,32 @@ func _ready() -> void:
 			_body.add_child(arm)
 			_appendages.append(arm)
 			Geometry.sphere(arm, "Tentacle", Vector3(0, 0, 0.33), Vector3(0.045, 0.045, 0.5 if i % 2 == 0 else 0.36), mantle)
+	elif kind == BaitMotion.Kind.CRAB:
+		var shell = Geometry.material("b65f45", 0.2)
+		Geometry.sphere(_body, "Shell", Vector3.ZERO, Vector3(0.46, 0.18, 0.36), shell)
+		_eyes(dark, 0.20, 0.16, -0.16, 0.055)
+		for side in [-1, 1]:
+			var claw = Node3D.new()
+			claw.position = Vector3(side * 0.38, 0, -0.24)
+			_body.add_child(claw)
+			_appendages.append(claw)
+			Geometry.sphere(claw, "Claw", Vector3(side * 0.16, 0, -0.08), Vector3(0.18, 0.09, 0.14), shell)
+			for i in range(3):
+				var leg = Node3D.new()
+				leg.position = Vector3(side * 0.32, -0.06, (i - 1) * 0.18)
+				_body.add_child(leg)
+				_appendages.append(leg)
+				Geometry.triangle(leg, Vector3.ZERO, Vector3(side * 0.35, -0.12, 0.04), Vector3(side * 0.1, -0.04, 0.09), shell)
+	else:
+		var lure_color = Geometry.material("d9e166" if kind == BaitMotion.Kind.JERKBAIT else "cc7b45", 0.5)
+		Geometry.sphere(_body, "Lure", Vector3.ZERO,
+			Vector3(0.18, 0.20, 0.68) if kind == BaitMotion.Kind.JERKBAIT else Vector3(0.22, 0.34, 0.24), lure_color)
+		_eyes(dark, 0.14, 0.06, -0.38 if kind == BaitMotion.Kind.JERKBAIT else -0.15, 0.05)
+		var tail = Node3D.new()
+		tail.position = Vector3(0, 0, 0.48 if kind == BaitMotion.Kind.JERKBAIT else 0.2)
+		_body.add_child(tail)
+		_appendages.append(tail)
+		Geometry.triangle(tail, Vector3.ZERO, Vector3(-0.2, 0.18, 0.38), Vector3(0.2, -0.18, 0.38), lure_color)
 
 func _eyes(mat: Material, x: float, y: float, z: float, radius: float) -> void:
 	for side in [-1, 1]:
@@ -69,6 +97,17 @@ func _process(delta: float) -> void:
 				_appendages[i].rotation = Vector3(0, wave * 0.4, 0)
 			BaitMotion.Kind.SHRIMP:
 				_appendages[i].rotation = Vector3(wave * 0.4, 0, wave * 0.2)
-			_:
+			BaitMotion.Kind.SQUID:
 				_appendages[i].rotation = Vector3(wave * 0.25, cos(_phase + i) * 0.25, 0)
+			BaitMotion.Kind.CRAB:
+				_appendages[i].rotation.z = wave * (0.35 if action == BaitMotion.Action.CRAWL else 0.08)
+			_:
+				_appendages[i].rotation.y = wave * (0.5 if action in [BaitMotion.Action.JERK, BaitMotion.Action.JIG_UP] else 0.12)
 	_body.scale = Vector3(1 - twitch * 0.16, 1 - twitch * 0.16, 1 + twitch * 0.12) if kind == BaitMotion.Kind.SQUID else Vector3.ONE
+	# These are legal command-driven tells a future bait player can trigger while idle.
+	match idle_action:
+		BaitMotion.IdleAction.LOOK: _body.rotation.y = sin(_phase * 0.28) * 0.24
+		BaitMotion.IdleAction.QUIVER: _body.rotation.z = sin(_phase * 2.4) * 0.06
+		BaitMotion.IdleAction.FAN: _body.scale.y = 1.0 + sin(_phase * 0.5) * 0.06
+		BaitMotion.IdleAction.REST: _body.rotation.x = 0.08
+		_: _body.rotation = Vector3.ZERO
