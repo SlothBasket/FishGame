@@ -18,6 +18,7 @@ var _was_held: bool = false
 var _charge_time: float = 0.0
 var _dash_remaining: float = 0.0
 var _trail_time: float = 0.0
+var grace_remaining: float = 0.0
 
 func _init(owner_fish) -> void:
 	fish = owner_fish
@@ -29,6 +30,7 @@ func is_dashing() -> bool:
 	return _dash_remaining > 0.0
 
 func update_attack(intent: FishInput, delta: float) -> void:
+	grace_remaining = maxf(0.0, grace_remaining - delta)
 	cooldown_remaining = maxf(0.0, cooldown_remaining - delta)
 	meal_notice_time = maxf(0.0, meal_notice_time - delta)
 	bite_flash = maxf(0.0, bite_flash - delta)
@@ -60,11 +62,25 @@ func advance_dash(delta: float) -> void:
 		var dt = minf(time_left, 1.0 / 120.0)
 		dt = minf(dt, _dash_remaining / maxf(1.0, fish.lunge_speed))
 		var start: Vector3 = fish.global_position
-		fish.heading = FishInput.turn_toward(fish.heading, dash_target, deg_to_rad(fish.lunge_turn_rate) * dt)
-		fish.velocity = fish.heading * maxf(1.0, fish.lunge_speed)
+		if fish.global_position.y <= fish.water_height:
+			fish.heading = FishInput.turn_toward(fish.heading, dash_target, deg_to_rad(fish.lunge_turn_rate) * dt)
+			fish.velocity = fish.heading * maxf(1.0, fish.lunge_speed)
+		else:
+			fish.velocity.y -= fish.air_gravity * dt
+			fish.heading = fish.velocity.normalized()
 		var step = fish.lunge_speed * dt
-		var collision = fish.move_and_collide(fish.heading * step)
+		var collision = fish.move_and_collide(fish.velocity * dt)
 		sweep_bite(start, fish.global_position)
+		# Skim along floor slopes; a frontal wall still ends the attack.
+		if collision != null and collision.get_normal().y > 0.55:
+			var tangent: Vector3 = fish.velocity.slide(collision.get_normal())
+			if tangent.length() > fish.lunge_speed * 0.15:
+				var skim_start: Vector3 = fish.global_position
+				fish.heading = tangent.normalized()
+				dash_target = FishInput.turn_toward(dash_target, fish.heading, PI)
+				fish.velocity = tangent
+				collision = fish.move_and_collide(collision.get_remainder().slide(collision.get_normal()))
+				sweep_bite(skim_start, fish.global_position)
 		_dash_remaining -= step
 		time_left -= dt
 		_trail_time -= dt
@@ -74,11 +90,15 @@ func advance_dash(delta: float) -> void:
 		if collision != null or _dash_remaining <= 0.001:
 			_dash_remaining = 0.0
 			cooldown_remaining = fish.bite_cooldown
-			fish.velocity = Vector3.ZERO if collision != null else fish.heading * fish.swim_speed
+			grace_remaining = fish.bite_grace_duration
+			if collision != null:
+				fish.velocity = fish.velocity.slide(collision.get_normal()).limit_length(fish.swim_speed)
+			elif fish.global_position.y <= fish.water_height:
+				fish.velocity = fish.heading * fish.swim_speed
 			bite_flash = 0.16
 
 func sweep_bite(from: Vector3, to: Vector3) -> int:
-	if not is_dashing():
+	if not is_dashing() and grace_remaining <= 0:
 		return 0
 	var count = 0
 	for bait in fish.get_tree().get_nodes_in_group("bait"):
@@ -120,6 +140,7 @@ func spawn_burst(where: Vector3, color: Color, count: int) -> void:
 	fish.get_parent().add_child(burst)
 
 func cancel_attack() -> void:
+	grace_remaining = 0.0
 	is_charging = false
 	_charge_time = 0.0
 	if is_dashing():

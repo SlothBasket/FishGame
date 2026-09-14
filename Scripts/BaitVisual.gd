@@ -15,9 +15,9 @@ func _ready() -> void:
 	_body = Node3D.new()
 	add_child(_body)
 	var dark = Geometry.material("112e3b")
-	if kind == BaitMotion.Kind.MINNOW:
+	if kind in [BaitMotion.Kind.MINNOW, BaitMotion.Kind.MULLET]:
 		var silver = Geometry.material("ccdfd3", 0.45)
-		var blue = Geometry.material("537f9a", 0.3)
+		var blue = Geometry.material("537f9a" if kind == BaitMotion.Kind.MINNOW else "728967", 0.3)
 		Geometry.sphere(_body, "SilverBody", Vector3.ZERO, Vector3(0.16, 0.22, 0.55), silver)
 		Geometry.sphere(_body, "BlueBack", Vector3(0, 0.1, 0.03), Vector3(0.14, 0.14, 0.45), blue)
 		var tail = Node3D.new()
@@ -93,7 +93,7 @@ func _process(delta: float) -> void:
 	for i in range(_appendages.size()):
 		var wave = sin(_phase + i * 0.8)
 		match kind:
-			BaitMotion.Kind.MINNOW:
+			BaitMotion.Kind.MINNOW, BaitMotion.Kind.MULLET:
 				_appendages[i].rotation = Vector3(0, wave * 0.4, 0)
 			BaitMotion.Kind.SHRIMP:
 				_appendages[i].rotation = Vector3(wave * 0.4, 0, wave * 0.2)

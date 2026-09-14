@@ -89,8 +89,11 @@ func _ready() -> void:
 	check(fish.position.y >= 0.64 and fish.position.y < 0.8, "Fish collides with seabed")
 	check(absf(fish.visual.rotation.z) < 0.001, "No gameplay roll")
 	fish.command = FishInput.new(0, 0, 1)
-	await frames(400)
-	check(fish.position.y <= get_parent().water_depth - 0.64 and fish.position.y > get_parent().water_depth - 0.8, "Fish stays under enlarged surface")
+	var fish_breached = false
+	for i in range(450):
+		await frames(1)
+		fish_breached = fish_breached or fish.position.y > fish.water_height
+	check(fish_breached, "Fish can swim through the surface into a gravity-driven breach")
 	fish.reset_fish()
 	check(fish.position.distance_to(Vector3(0, 6, 12)) < 0.001 and fish.velocity == Vector3.ZERO, "Reset restores spawn and clears momentum")
 	fish.command = FishInput.new()
@@ -199,7 +202,7 @@ func _ready() -> void:
 	var population = get_tree().get_nodes_in_group("bait").size()
 	get_tree().get_nodes_in_group("bait")[0].try_bite(fish)
 	await frames(30)
-	check(population == 32 and get_tree().get_nodes_in_group("bait").size() == population, "Sparse four-species population replenishes")
+	check(population == 36 and get_tree().get_nodes_in_group("bait").size() == population, "Sparse four-species population replenishes")
 	# Fishing driver intent: retrieve is anchor-dominant; jerk alternates laterally;
 	# jig rises; pause respects configured buoyancy; idle poses share the command.
 	var lure_driver = BaitMotion.FishingBaitDriver.new(Vector3(10, 10, 0))
@@ -289,7 +292,7 @@ func _ready() -> void:
 	var reset_consistent = true
 	for index in range(6):
 		tester.switch_lure()
-		reset_consistent = reset_consistent and tester.lure.heading == Vector3.FORWARD and tester.driver._impulse_time == 0.0
+		reset_consistent = reset_consistent and tester.lure.heading.is_equal_approx(BaitMotion.horizontal(tester.anchor_position - tester.spawn_position)) and tester.driver._impulse_time == 0.0
 	check(reset_consistent, "All species switches start with the same cast bearing and cleared impulses")
 	tester.toggle_camera()
 	check(fish.camera.current and fish.external_input, "Fish camera can observe bait while bait controls remain active")
@@ -336,5 +339,126 @@ func _ready() -> void:
 		limited = limited and intent.direction.dot(Vector3.FORWARD) >= cos(deg_to_rad(40.1))
 	check(limited, "Held glide steering stays inside the cast cone without accumulating a U-turn")
 	profile.queue_free()
+	# Shared escape strength, recovery and presentation regressions.
+	var escape_actor = bait(BaitMotion.Kind.SHRIMP, Vector3(0, 6, 0))
+	var heights: Array[float] = []
+	for strength in [0.0, 0.5, 1.0]:
+		escape_actor.clear_actions()
+		escape_actor.position = Vector3(0, 6, 0)
+		escape_actor.start_flee(strength, Vector3.UP)
+		heights.append(escape_actor.flee_velocity.y)
+	check(heights[0] < heights[1] and heights[1] < heights[2] and heights[2] < 5.5, "Shrimp weak/medium/full kicks vary and full kick is reduced")
+	check(not escape_actor.start_flee(1.0, Vector3.UP), "Escape cooldown rejects repeated triggers")
+	var player_driver = BaitMotion.PlayerLiveDriver.new()
+	escape_actor.clear_actions()
+	player_driver.escape_held = true
+	var charging = player_driver.sample(escape_actor, 0.5)
+	player_driver.escape_held = false
+	var released = player_driver.sample(escape_actor, 0.016)
+	check(charging.flee_fraction < 0 and is_equal_approx(released.flee_fraction, 0.5), "Hold charges without firing; release submits fractional escape")
+	escape_actor.queue_free()
+	escape_actor = bait(BaitMotion.Kind.CRAB, Vector3(0, 0.4, 0))
+	var crab_heading = escape_actor.heading
+	escape_actor.start_flee(1.0, Vector3.RIGHT)
+	var crab_start = escape_actor.position
+	await frames(20)
+	check(escape_actor.position.x > crab_start.x + 1 and escape_actor.heading.is_equal_approx(crab_heading), "Crab escape translates laterally without rotating body")
+	escape_actor.queue_free()
+	escape_actor = bait(BaitMotion.Kind.SQUID, Vector3(0, 12, 0))
+	escape_actor.driver.command = BaitMotion.swimming(Vector3.FORWARD, 1.0)
+	await frames(45)
+	check(escape_actor.visual.rotation.x > 0.7 and escape_actor.visual.rotation.z == 0, "Squid pitches up from actual velocity without roll")
+	escape_actor.driver.command = BaitMotion.gliding(Vector3.FORWARD)
+	escape_actor.driver.command.descend = true
+	await frames(60)
+	check(escape_actor.visual.rotation.x < -0.7 and escape_actor.velocity.y < -2.0, "Squid powered descent pitches downward")
+	escape_actor.queue_free()
+	escape_actor = bait(BaitMotion.Kind.MULLET, Vector3(0, 31.6, 0))
+	escape_actor.start_flee(1.0, Vector3.FORWARD)
+	var highest = escape_actor.position.y
+	var saw_air = false
+	for i in range(180):
+		await frames(1)
+		highest = maxf(highest, escape_actor.position.y)
+		saw_air = saw_air or escape_actor.airborne
+	check(saw_air and highest > 33 and not escape_actor.airborne and escape_actor.position.y < 32, "Mullet breaches through surface, arcs under gravity and re-enters")
+	escape_actor.queue_free()
+	reset()
+	fish.external_input = true
+	await dash(1)
+	var late = bait(BaitMotion.Kind.MINNOW, fish.global_position)
+	var before_late = fish.feeding.food
+	await frames(2)
+	check(late.claimed and fish.feeding.food == before_late + 1, "Brief post-lunge grace catches contacted bait")
+	await frames(25)
+	var ordinary = bait(BaitMotion.Kind.MINNOW, fish.global_position)
+	await frames(1)
+	check(not ordinary.claimed, "Grace expires without enabling ordinary swimming bites")
+	ordinary.queue_free()
+	var cast_test = LureTestController.new()
+	get_parent().add_child(cast_test)
+	cast_test.setup(fish, get_parent(), Vector3(0, 31, 12))
+	cast_test.set_active(true)
+	cast_test.move_origin(Vector3.RIGHT, 0.5)
+	check(cast_test.boat.position.is_equal_approx(cast_test.anchor_position) and cast_test.driver.anchor_position.is_equal_approx(cast_test.anchor_position) and cast_test.anchor_position.y == 32,
+		"Boat and lure anchor track horizontal origin movement at surface")
+	cast_test.cast_bait()
+	check(absf(cast_test.lure.position.y - 31.55) < 0.01 and absf(Vector2(cast_test.lure.position.x - cast_test.anchor_position.x, cast_test.lure.position.z - cast_test.anchor_position.z).length() - cast_test.cast_distance) < 0.01,
+		"Cast redeploys selected bait at surface and configured distance")
+	cast_test.set_active(false)
+	cast_test.lure.queue_free()
+	cast_test.boat.queue_free()
+	cast_test.bait_camera.queue_free()
+	cast_test.queue_free()
+	var threat_bait = bait(BaitMotion.Kind.MINNOW, fish.position + Vector3.RIGHT * 2)
+	fish.add_to_group("fish_predators")
+	var threat_driver = BaitMotion.LiveBaitDriver.new(threat_bait.position, 913)
+	var observed_strengths = {}
+	for i in range(20):
+		threat_driver.choose_behavior(threat_bait)
+		var ai_escape = threat_driver.sample(threat_bait, 0.016)
+		if ai_escape.flee_fraction >= 0:
+			observed_strengths[snappedf(ai_escape.flee_fraction, 0.02)] = true
+	check(observed_strengths.size() > 3, "Nearby threat selects continuously varied AI escape strengths")
+	threat_bait.queue_free()
+	# Ambient escape timer must fire for every live species without any predator.
+	fish.remove_from_group("fish_predators")
+	var ambient_ok = true
+	for species in [BaitMotion.Kind.MINNOW, BaitMotion.Kind.SHRIMP, BaitMotion.Kind.SQUID, BaitMotion.Kind.CRAB, BaitMotion.Kind.MULLET]:
+		var ambient = bait(species, Vector3(0, 10, 0))
+		ambient.set_physics_process(false)
+		var ai = BaitMotion.LiveBaitDriver.new(ambient.position, 200 + species)
+		var count = 0
+		var fractions = {}
+		for tick in range(2400):
+			var cmd = ai.sample(ambient, 1.0 / 60)
+			if cmd.flee_fraction >= 0:
+				count += 1
+				fractions[snappedf(cmd.flee_fraction, 0.01)] = true
+		ambient_ok = ambient_ok and count >= 3 and fractions.size() >= 2
+		ambient.queue_free()
+	check(ambient_ok, "All five live species escape at random intervals and strengths without threats")
+	var docked = bait(BaitMotion.Kind.JERKBAIT, Vector3(0, 27, 3))
+	var dock_driver = BaitMotion.FishingBaitDriver.new(Vector3(0, 32, 0))
+	dock_driver.retrieve_input = 1
+	docked.driver = dock_driver
+	await frames(360)
+	check(Vector2(docked.position.x, docked.position.z).length() < 0.2 and docked.position.y > 30.8, "Retrieve arrives beneath boat without passing its origin")
+	docked.queue_free()
+	reset()
+	fish.external_input = true
+	fish.position = Vector3(0, 1.5, 10)
+	fish.heading = Vector3(0, -0.3, -1).normalized()
+	var floor_start = fish.position
+	await dash(60, fish.heading)
+	check(fish.position.z < floor_start.z - 6.0 and fish.velocity.length() > 4.0, "Floor strike skims forward and keeps exit momentum")
+	reset()
+	fish.position = Vector3(0, 31, 0)
+	fish.heading = Vector3(0, 0.8, -0.6)
+	var air_food = bait(BaitMotion.Kind.MULLET, Vector3(0, 34.2, -2.4))
+	air_food.set_physics_process(false)
+	var food_before_air = fish.feeding.food
+	await dash(60, fish.heading)
+	check(fish.feeding.food == food_before_air + 3 and fish.position.y > 32, "Breaching fish strike eats airborne mullet")
 	print("SELF-TEST COMPLETE: %d checks, %d failures" % [checks, failures])
 	get_tree().quit(0 if failures == 0 else 1)

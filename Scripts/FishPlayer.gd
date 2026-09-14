@@ -23,10 +23,15 @@ extends CharacterBody3D
 @export var maximum_lunge_distance: float = 15.0
 @export var lunge_speed: float = 26.0
 @export var bite_cooldown: float = 0.45
+@export var bite_grace_duration: float = 0.2
 @export_range(0.0, 179.0) var maximum_lunge_turn_angle: float = 65.0
 @export var lunge_turn_rate: float = 220.0
 @export var charge_swim_multiplier: float = 0.25
 @export var bite_radius: float = 0.9
+@export_group("Air and surface")
+@export var water_height: float = 32.0
+@export var air_gravity: float = 9.8
+var airborne: bool = false
 @export_group("Growth")
 @export var growth_per_food: float = 0.01
 @export var maximum_size: float = 1.6
@@ -47,6 +52,8 @@ var _body_radius: float
 
 func _ready() -> void:
 	_spawn = position
+	collision_mask &= ~8
+	wall_min_slide_angle = 0.0
 	$CollisionShape3D.shape = $CollisionShape3D.shape.duplicate()
 	_body_radius = $CollisionShape3D.shape.radius
 	feeding = FishFeeding.new(self)
@@ -108,10 +115,16 @@ func aim_through_crosshair() -> Vector3:
 
 func _physics_process(delta: float) -> void:
 	var intent = command if external_input else read_local_input()
+	var bite_start = global_position
 	feeding.update_attack(intent, delta)
 	boosting = intent.boost and intent.throttle > 0.0 and not feeding.is_charging and not feeding.is_dashing()
 	if feeding.is_dashing():
 		feeding.advance_dash(delta)
+	elif airborne:
+		velocity.y -= air_gravity * delta
+		move_and_slide()
+		if velocity.length() > 0.1:
+			heading = FishInput.turn_toward(heading, velocity.normalized(), deg_to_rad(pitch_turn_rate) * delta)
 	else:
 		heading = FishInput.steer_heading(heading, intent, forward_turn_rate, pitch_turn_rate,
 			manual_steering_strength, idle_pivot_multiplier, delta)
@@ -120,6 +133,9 @@ func _physics_process(delta: float) -> void:
 		velocity = FishInput.next_velocity(velocity, heading, swim, speed, boost_multiplier,
 			reverse_speed_multiplier, acceleration, reverse_acceleration, water_drag, vertical_speed_multiplier, delta)
 		move_and_slide()
+	airborne = global_position.y > water_height
+	if feeding.grace_remaining > 0.0 and not feeding.is_dashing():
+		feeding.sweep_bite(bite_start, global_position)
 	# Heading, not velocity, owns facing. Backpedaling cannot flip the model.
 	var facing = FishInput.angles(heading)
 	visual.rotation = Vector3(facing.x, facing.y, 0.0)
@@ -147,6 +163,7 @@ func cancel_attack() -> void:
 func reset_fish() -> void:
 	cancel_attack()
 	feeding.cooldown_remaining = 0.0
+	airborne = false
 	position = _spawn
 	velocity = Vector3.ZERO
 	heading = Vector3.FORWARD

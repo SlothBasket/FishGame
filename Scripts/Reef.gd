@@ -17,6 +17,7 @@ var _lure_test: LureTestController
 
 func _ready() -> void:
 	_fish = $FishPlayer
+	_fish.water_height = water_depth
 	var args = OS.get_cmdline_user_args()
 	_capture = "--capture" in args
 	_feeding_preview = "--feeding-preview" in args
@@ -72,8 +73,10 @@ func build_water() -> void:
 	sun.shadow_enabled = true
 	add_child(sun)
 	var water = Geometry.material("428c97")
+	water.cull_mode = BaseMaterial3D.CULL_DISABLED
+	water.roughness = 0.22
 	water.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	water.albedo_color = Color(0.26, 0.56, 0.6, 0.25)
+	water.albedo_color = Color(0.38, 0.72, 0.76, 0.58)
 	var surface = MeshInstance3D.new()
 	var plane = PlaneMesh.new()
 	plane.size = Vector2.ONE * arena_width
@@ -87,9 +90,10 @@ func build_reef() -> void:
 	var sand = Geometry.material("617f78")
 	Geometry.box(self, "Seabed", Vector3(0, -1, 0), Vector3(arena_width, 2, arena_width), sand)
 	Geometry.box(self, "SurfaceBoundary", Vector3(0, water_depth + 1, 0), Vector3(arena_width, 2, arena_width), sand, false)
+	get_node("SurfaceBoundary").collision_layer = 8
 	for side in [-1, 1]:
-		Geometry.box(self, "ZBoundary", Vector3(0, water_depth / 2, side * half), Vector3(arena_width, water_depth + 4, 2), sand, false)
-		Geometry.box(self, "XBoundary", Vector3(side * half, water_depth / 2, 0), Vector3(2, water_depth + 4, arena_width), sand, false)
+		Geometry.box(self, "ZBoundary", Vector3(0, water_depth, side * half), Vector3(arena_width, water_depth * 3, 2), sand, false)
+		Geometry.box(self, "XBoundary", Vector3(side * half, water_depth, 0), Vector3(2, water_depth * 3, arena_width), sand, false)
 	var rng = RandomNumberGenerator.new()
 	rng.seed = 426 # Stable terrain; live behavior uses independent varied seeds.
 	var stone = Geometry.material("42686b")

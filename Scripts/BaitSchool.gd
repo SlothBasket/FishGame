@@ -24,6 +24,8 @@ func _ready() -> void:
 		_rng.randomize()
 	else:
 		_rng.seed = seed_value
+	for i in range(4):
+		_spawn(BaitMotion.Kind.MULLET, Vector3(-15 + i * 9, water_depth - 0.45, -18), _rng.randi(), 50.0)
 	for zone in range(ZONES.size()):
 		var fraction: Vector3 = ZONES[zone]
 		var center = Vector3(fraction.x * arena_half_width, fraction.y * water_depth, fraction.z * arena_half_width)
@@ -35,6 +37,7 @@ func _ready() -> void:
 func _spawn(kind: int, home: Vector3, behavior_seed: int, radius: float) -> void:
 	var bait = BaitActor.new()
 	bait.kind = kind
+	bait.water_height = water_depth
 	# Start above terrain so small floor prey cannot be embedded in rock/floor colliders.
 	var query = PhysicsRayQueryParameters3D.create(Vector3(home.x, water_depth - 0.5, home.z), Vector3(home.x, -2, home.z), 1)
 	var ground = get_world_3d().direct_space_state.intersect_ray(query)
