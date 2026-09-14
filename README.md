@@ -43,7 +43,7 @@ The intended game is fish players competing to eat and grow, with human fisherme
 
 ## Fisherman-lure test mode
 
-Press **Tab** to freeze fish input and control the yellow test jerkbait near spawn. The anchor is fixed above the spawn side of the arena. This is a development tool for judging whether human input can reproduce convincing bait behavior.
+Press **Tab** to control a minnow from a dedicated diagonal tracking camera. Each reset and species switch starts on the same forward cast bearing. Rod height does not affect the retrieve slope. This is a development tool for judging whether human input can reproduce convincing bait behavior.
 
 | Input in lure mode | Action |
 |---|---|
@@ -53,8 +53,6 @@ Press **Tab** to freeze fish input and control the yellow test jerkbait near spa
 | E | Jig sharply upward and toward the anchor |
 | F | Reset lure near the fish |
 | X | Switch between jerkbait and sinking jig |
-| 1 / 2 / 3 / 4 | Look / quiver / fan / rest idle animation |
-| 0 | Clear idle animation |
 | Tab | Return to fish control |
 
 The test lure is line-constrained by a configurable maximum distance and moves through `BaitActor`; it cannot teleport. `FishingBaitDriver` supports floating, sinking or suspending on pause, retrieve-driven rise/dive, alternating jerk angle, jig strength and maximum line length. `ControlledBaitDriver` remains separate for possible direct control of live bait later.
@@ -68,8 +66,20 @@ From this project folder:
 .\Launch.ps1 -Test    # Headless physics tests; nonzero exit on failure
 ```
 
-The standard Godot parser check and all **42 self-tests** pass. Tests cover heading steering, reverse, collisions, curved lunges, sweep/occlusion, rewards, controlled-bait parity, respawning, retrieve direction, alternating jerk, jig, buoyancy/idle commands and crab bottom crawling. Godot emits a nonfatal certificate-store diagnostic in the restricted tool environment; no game network requests are involved.
+The standard Godot parser check and all **52 self-tests** pass. Tests cover heading steering, reverse, collisions, curved lunges, sweep/occlusion, rewards, controlled-bait parity, respawning, retrieve direction, alternating jerk, jig, rise/glide trajectories and camera switching and crab bottom crawling. Godot emits a nonfatal certificate-store diagnostic in the restricted tool environment; no game network requests are involved.
 
 For this revision, no repeated visual capture workflow was run. Manually play-test two things: whether W+A/D and the 65° strike cone feel right, and whether the more separated bait zones give the right amount of searching versus feeding.
 
 Optional existing capture flags remain available: `-- --capture`, `-- --charge-preview`, and `-- --feeding-preview`. The latter two drive a demonstration attack and add stationary test bait; normal play does neither.
+
+### Revised bait controls
+Tab enters bait control. W retrieves toward a distant surface anchor; A/D steers continuously. Q darts sideways, E kicks upward, and releasing W coasts before settling without pitching nose-down. X cycles all six species and F resets. Animation hotkeys have been removed. Shrimp and crabs also spawn near the start. Prey now react to nearby fish and probe ahead for terrain. Validation: 52 checks pass.
+
+Reeling and live swimming now use the same shallow rising stroke. Both coast forward and descend on a glide. Q is a lateral dart; E is a short upward hop. A/D steers during reeling and gliding. The camera maintains a fixed world angle so motion remains readable.
+
+
+## Species and camera update
+Mouse movement orbits the bait camera. C switches between bait orbit and fish third-person camera while retaining bait controls; C also selects the preferred camera before entering with Tab. A/D deflects the rod heading up to 40 degrees either side of the original cast direction, including while gliding, without accumulating a turn.
+Minnows alternate gentle rising swims and falling glides; some start near the surface and descend toward the bottom. Shrimp scoot near the floor and E triggers a fast upward escape. Squid W rises predominantly vertically, release drops, and E gives a stronger upward pulse. Crabs sink fast, crawl along terrain, and E performs a sideways escape with no upward hop. Live AI uses the same species motor as player bait. X cycles species; F resets. 60 regression checks pass.
+
+Brief lure references: Rapala's X-Rap guidance uses jerk/pause/reel-slack sequences (https://blog.rapala.com/news/go-all-day-crappie-fishing-with-the-x-rap-4/); Berkley's shrimp guidance includes bottom pauses, drops and darting retrieves (https://berkley-fishing.com.au/product/shrimp/). These inform the interaction rhythm; the squid/crab profiles are gameplay choices.

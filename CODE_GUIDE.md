@@ -73,7 +73,7 @@ Dash movement uses at most 1/120-second substeps so curved sweeps remain close t
 
 `BaitActor.try_bite()` marks the bait claimed before emitting signals or awarding nutrition. A second claim returns false. Live bait calls `fish.feeding.award_food()`. All sources emit `bitten(bait, eater)`; fisherman bait does not give food. Its visual shrinks into `fish.mouth_position()` and is freed after 0.22 seconds.
 
-`FishingBaitDriver` tuning fields are `retrieve_speed`, `pause_vertical_rate` (positive floats, negative sinks, zero suspends), `retrieve_vertical_influence`, `jerk_strength`, `jerk_side_angle`, `jig_strength`, and `maximum_line_distance`. They are plain configuration values now; move them into lure Resources when inventory exists. The Tab debug controller uses a sinking jerkbait and jig and respawns the test lure one second after it is bitten.
+FishingBaitDriver uses the horizontal anchor bearing only. retrieve_speed controls effort; steer_input bends the course. Vertical speeds are owned by the shared BaitActor motor, so AI and human bait always use the same profile.
 
 Collision layers: **1 = world**, **2 = player**, **4 = bait**. Player and bait movement collide with world geometry. Eating uses the explicit sweep instead of body-contact collision. The camera arm ignores the player and bait. Keep these masks consistent when adding obstacles.
 
@@ -87,11 +87,11 @@ To change the tell, select Visual and edit `charge_wiggle_degrees`, `charge_tail
 
 `BaitMotion.gd` contains nested classes to keep the small abstraction together:
 
-- `BaitCommand(direction, effort, twitch, action, idle_action)` is the legal vocabulary. Actions include cruise, burst, glide, hover, sink/rise, dart/jerk, jig/fall, crawl and pause. Idle tells include look, quiver, fan and rest.
+- `BaitCommand(direction, effort, twitch, action, idle_action)` is the legal vocabulary. Actions include cruise, burst, glide, hover, sink/rise, dart/jerk, jig/fall, crawl and pause. Idle enums remain for compatibility, but pose rendering and hotkeys are disabled.
 - `IBaitDriver` is the base contract with `sample(bait, delta)`; GDScript inheritance replaces the C# interface.
 - `LiveBaitDriver` chooses finite behaviors with timers and its own RNG.
 - `ControlledBaitDriver` returns its externally supplied `command`.
-- `FishingBaitDriver` turns retrieve/jerk/jig inputs and a world-space anchor into the same commands, with configurable buoyancy and line distance.
+- `FishingBaitDriver` turns retrieve/jerk/jig inputs and a world-space anchor into the same commands, using the shared swimming() and gliding() helpers.
 
 `choose_behavior()` is the easiest place to change prey. Minnows cruise/glide/burst/dart across broad regions; shrimp hover, settle and kick; squid hover/glide/pulse; crabs rest, crawl and scuttle on the floor. Outside `roam_radius`, the next decision biases inward. Preferred depth and `depth_band` produce different layers. The actor still owns acceleration, turning, sinking and collision, so AI cannot bypass controlled-bait limits.
 
@@ -125,3 +125,19 @@ Do not increase population just because the map grows. Try changing centers, spa
 ## Future authority boundary
 
 Local input creates intent; the camera remains local. A future server can run `FishPlayer` with `external_input = true`, own heading/velocity, call the same feeding/claim logic, and own bait drivers and respawns. Replicate results rather than trusting clients to set food or claim hits. No RPCs, prediction, synchronization, rod controls or fights are implemented in this pass.
+
+## Revised bait motor and tuning
+BaitActor separates passive buoyancy from facing: FALL/SINK/RISE use effort as a fraction of sink_speed in m/s, without changing heading. Passive movement and GLIDE have slower velocity response for coasting. Commands are never mutated by the motor.
+FishingBaitDriver.anchor_position sets horizontal pull bearing only. LureTestController resets heading and impulses for every species and owns the diagonal tracking camera.
+LiveBaitDriver senses fish_predators and forward terrain every quarter-second. Edit choose_behavior for probabilities, durations and heading changes. BaitSchool randomizes spacing/headings and probes terrain before spawning. Floor clearance must be at least collider radius.
+
+## Shared rising stroke and sinking glide
+BaitMotion.swimming() and gliding() are used by both live and fishing drivers. BaitActor interprets CRUISE/BURST as forward speed plus 18% upward speed; GLIDE retains 24% forward speed and sinks at 0.65 times sink_speed. Vertical velocity approaches its target independently, so forward deceleration cannot hide sinking. Crab remains bottom-bound.
+JERK/DART uses a short lateral target at 1.5 times swim_speed; JIG_UP uses little forward motion and 2.8 m/s upward motion. These are movement impulses, not animation presets. Live AI selects stroke/glide phases and uses depth bands to bias the next phase.
+LureTestController creates a Camera3D with a fixed (8,4,6) offset and smoothed position tracking. Tab activates it; leaving restores fish.camera. No rod line or physical casting constraints are simulated yet.
+
+## Species profiles, rod limits and camera controls
+The species block in BaitActor._physics_process owns the final velocity profile for both drivers. Squid travel upward at 2 m/s times effort and fall at 1.5 m/s with very little horizontal motion; E rises at 4.5 m/s. Shrimp settle at 1.4 m/s and E kicks upward at 5.5 m/s. Crabs sink at 4.5 m/s and remap vertical jig intent to lateral escape. Edit these values here, not separately in each driver.
+LiveBaitDriver.choose_behavior chooses species-specific phase durations. Minnows alternate cruise/coast, shrimp mostly scoot with occasional kicks, squid alternate rise/drop, and crabs crawl/rest/scuttle. Surface-spawn minnows descend until near the bottom. BaitSchool chooses surface starts and places shrimp above sampled terrain.
+FishingBaitDriver.cast_direction records the original horizontal bearing; steering_limit_degrees defaults to 40. Each input computes a fresh absolute deflection, including on release. Repeated frames cannot accumulate a U-turn. Reset and species switching clear cast heading and impulses.
+LureTestController.orbit_mouse handles yaw/pitch with pitch limits. C toggles use_fish_camera without releasing bait control; the preference persists across Tab. Mouse input is consumed for bait orbit, while fish-view mode keeps the normal fish camera mouse handler. orbit_distance sets zoom distance. Camera switch and orbit math are covered by checks.

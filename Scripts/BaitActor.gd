@@ -53,23 +53,54 @@ func _physics_process(delta: float) -> void:
 	if claimed:
 		return
 	var command = driver.sample(self, delta)
-	# Action modifies intent within the same actor motor; drivers never bypass limits.
-	if command.action in [BaitMotion.Action.SINK, BaitMotion.Action.FALL]:
-		command.direction = (command.direction + Vector3.DOWN * sink_speed).normalized()
-	elif command.action == BaitMotion.Action.RISE:
-		command.direction = (command.direction + Vector3.UP * sink_speed).normalized()
-	elif command.action == BaitMotion.Action.CRAWL:
-		command.direction.y = 0.0
-	if kind == BaitMotion.Kind.CRAB:
-		# Bottom prey descend through the same limited motor until terrain is found.
-		command.direction = (command.direction + Vector3.DOWN * sink_speed / maxf(0.1, swim_speed)).normalized()
-	var bottom_kind = kind in [BaitMotion.Kind.CRAB, BaitMotion.Kind.JIG]
-	if command.direction.length_squared() > 0.0001:
-		heading = FishInput.turn_toward(heading, command.direction.normalized(), deg_to_rad(turn_rate) * delta)
-	var target = heading * swim_speed * clampf(command.effort, 0.0, 1.0)
-	velocity = velocity.move_toward(target, acceleration * delta)
+	# Horizontal steering and vertical travel are independent. This same motor runs
+	# AI and player bait, so neither can invent a different retrieve silhouette.
+	var direction = BaitMotion.horizontal(command.direction)
+	var bottom_kind = kind in [BaitMotion.Kind.CRAB, BaitMotion.Kind.JIG, BaitMotion.Kind.SHRIMP]
+	var passive = command.action in [BaitMotion.Action.GLIDE, BaitMotion.Action.FALL, BaitMotion.Action.SINK, BaitMotion.Action.RISE]
+	if command.direction.length_squared() > 0.001 and not command.action in [BaitMotion.Action.FALL, BaitMotion.Action.SINK, BaitMotion.Action.RISE]:
+		heading = FishInput.turn_toward(BaitMotion.horizontal(heading), direction, deg_to_rad(turn_rate) * delta)
+	var target = BaitMotion.horizontal(heading) * swim_speed * command.effort
+	var response = acceleration
+	match command.action:
+		BaitMotion.Action.CRUISE, BaitMotion.Action.BURST:
+			target.y = swim_speed * 0.18 * command.effort
+		BaitMotion.Action.GLIDE, BaitMotion.Action.FALL, BaitMotion.Action.SINK:
+			target = BaitMotion.horizontal(heading) * swim_speed * 0.24
+			target.y = -sink_speed * 0.65
+			response = 1.8
+		BaitMotion.Action.RISE:
+			target.y = sink_speed * command.effort
+		BaitMotion.Action.JERK, BaitMotion.Action.DART:
+			# A short sideways kick, not a turn-limited copy of reeling.
+			target = direction * swim_speed * 1.5
+			target.y = 0.05
+			response = 28.0
+		BaitMotion.Action.JIG_UP:
+			target = BaitMotion.horizontal(heading) * swim_speed * 0.18
+			target.y = 2.8
+			response = 24.0
+	# Species profiles apply equally to human commands and AI commands.
+	if kind == BaitMotion.Kind.SQUID:
+		target = BaitMotion.horizontal(heading) * 0.18
+		target.y = -1.5 if passive else 2.0 * command.effort
+		if command.action == BaitMotion.Action.JIG_UP: target.y = 4.5
+	elif kind == BaitMotion.Kind.SHRIMP:
+		target.y = -1.4
+		target *= Vector3(0.55, 1, 0.55)
+		if command.action == BaitMotion.Action.JIG_UP:
+			target = BaitMotion.horizontal(heading) * 0.15 + Vector3.UP * 5.5
+	elif kind == BaitMotion.Kind.CRAB:
+		target.y = -4.5
+		if passive: target.x = 0.0; target.z = 0.0
+		if command.action == BaitMotion.Action.JIG_UP:
+			target = BaitMotion.horizontal(heading).cross(Vector3.UP) * 4.0 + Vector3.DOWN * 4.5
+	velocity.x = move_toward(velocity.x, target.x, response * delta)
+	velocity.z = move_toward(velocity.z, target.z, response * delta)
+	# Vertical response remains visible even while forward momentum is decaying.
+	velocity.y = move_toward(velocity.y, target.y, (6.0 if kind == BaitMotion.Kind.SQUID else 2.5 if passive else response) * delta)
 	move_and_slide()
-	if bottom_kind or command.action in [BaitMotion.Action.FALL, BaitMotion.Action.SINK]:
+	if bottom_kind or passive:
 		_apply_bottom_constraint(command.action == BaitMotion.Action.CRAWL or kind == BaitMotion.Kind.CRAB)
 	var facing = FishInput.angles(heading)
 	if kind == BaitMotion.Kind.CRAB:
@@ -84,7 +115,7 @@ func _apply_bottom_constraint(stick_to_bottom: bool) -> void:
 	var query = PhysicsRayQueryParameters3D.create(global_position + Vector3.UP, global_position + Vector3.DOWN * 4.0, 1)
 	var hit = get_world_3d().direct_space_state.intersect_ray(query)
 	if hit.is_empty(): return
-	var floor_y: float = hit.position.y + bottom_clearance
+	var floor_y: float = hit.position.y + maxf(bottom_clearance, hit_radius() + 0.02)
 	if global_position.y <= floor_y + (0.3 if stick_to_bottom else 0.0):
 		global_position.y = floor_y
 		velocity.y = 0.0

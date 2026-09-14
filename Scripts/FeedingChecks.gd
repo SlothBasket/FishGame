@@ -130,7 +130,7 @@ func _ready() -> void:
 		and fish.position.x < ORIGIN.x - 1, "Lunge follows physical curve inside release cone")
 	reset()
 	for i in range(3):
-		bait(i, ORIGIN + Vector3.FORWARD * (3 + i * 3))
+		bait(i, ORIGIN + Vector3.FORWARD * (3 + i * 3)).set_physics_process(false)
 	var food_before = fish.feeding.food
 	await dash(90)
 	check(fish.feeding.bait_eaten == 3 and fish.feeding.food - food_before == 6, "One dash eats all three types with correct nutrition")
@@ -206,7 +206,7 @@ func _ready() -> void:
 	lure_driver.retrieve_input = 0.8
 	var mock_lure = bait(BaitMotion.Kind.JERKBAIT, Vector3.ZERO, BaitMotion.Source.FISHERMAN)
 	var retrieve = lure_driver.sample(mock_lure, 1.0 / 60)
-	check(retrieve.action == BaitMotion.Action.CRUISE and retrieve.direction.x > 0.6 and retrieve.direction.y > 0.6, "Retrieve pulls toward world-space anchor")
+	check(retrieve.action == BaitMotion.Action.CRUISE and retrieve.direction.x > 0.9 and absf(retrieve.direction.y) < 0.01, "Retrieve uses horizontal anchor bearing regardless of rod height")
 	lure_driver.retrieve_input = 0
 	lure_driver.jerk_pressed = true
 	var jerk_a = lure_driver.sample(mock_lure, 1.0 / 60)
@@ -216,17 +216,125 @@ func _ready() -> void:
 	check(jerk_a.action == BaitMotion.Action.JERK and signf(jerk_a.direction.z) != signf(jerk_b.direction.z), "Repeated jerks alternate lateral sides")
 	lure_driver.jig_pressed = true
 	var jig = lure_driver.sample(mock_lure, 1.0 / 60)
-	check(jig.action == BaitMotion.Action.JIG_UP and jig.direction.y > 0.5, "Jig command pulls sharply upward")
+	check(jig.action == BaitMotion.Action.JIG_UP and jig.effort > 0.5, "Jig command pulls sharply upward")
 	lure_driver._impulse_time = 0
 	lure_driver.pause_vertical_rate = -0.4
 	lure_driver.idle_action = BaitMotion.IdleAction.QUIVER
 	var paused = lure_driver.sample(mock_lure, 1.0 / 60)
-	check(paused.action == BaitMotion.Action.FALL and paused.idle_action == BaitMotion.IdleAction.QUIVER, "Pause buoyancy and player idle action use shared command")
+	check(paused.action == BaitMotion.Action.GLIDE and paused.idle_action == BaitMotion.IdleAction.NONE, "Release uses shared forward glide without idle poses")
 	mock_lure.queue_free()
 	var crab = bait(BaitMotion.Kind.CRAB, Vector3(0, 3, 0))
 	crab.driver.command = BaitMotion.BaitCommand.new(Vector3.RIGHT, 0.8, 0, BaitMotion.Action.CRAWL)
 	await frames(300)
 	check(crab.global_position.y < 0.6 and absf(crab.velocity.y) < 0.01 and crab.global_position.x > 0.5,
 		"Crab settles on bottom and crawls laterally (position=%s velocity=%s)" % [crab.global_position, crab.velocity])
+	# Check actual motor results, not just the labels on driver commands.
+	var falling = bait(BaitMotion.Kind.SHRIMP, Vector3(20, 8, 0))
+	falling.driver.command = BaitMotion.BaitCommand.new(Vector3.DOWN, 0.25, 0, BaitMotion.Action.FALL)
+	var old_heading = falling.heading
+	await frames(60)
+	check(falling.heading.is_equal_approx(old_heading) and falling.velocity.y < -0.1,
+		"Passive sinking preserves horizontal facing")
+	check(falling.driver.command.direction == Vector3.DOWN, "Motor does not mutate reusable input commands")
+	falling.queue_free()
+	lure_driver.anchor_position = Vector3(0, 31, 75)
+	lure_driver.cast_direction = Vector3.ZERO
+	mock_lure = bait(BaitMotion.Kind.MINNOW, Vector3(0, 8, 4), BaitMotion.Source.FISHERMAN)
+	lure_driver.retrieve_input = 1.0
+	lure_driver._impulse_time = 0.0
+	lure_driver.steer_input = -1.0
+	var left_pull = lure_driver.sample(mock_lure, 0.016)
+	lure_driver.steer_input = 1.0
+	var right_pull = lure_driver.sample(mock_lure, 0.016)
+	check(absf(left_pull.direction.y) < 0.4 and left_pull.direction.x * right_pull.direction.x < 0.0,
+		"Test retrieve is mostly horizontal and steering changes its path")
+	mock_lure.queue_free()
+	var nearby_shrimp = 0
+	var nearby_crabs = 0
+	for prey in school.get_children():
+		if prey is BaitActor and Vector2(prey.position.x, prey.position.z).length() < 30:
+			if prey.kind == BaitMotion.Kind.SHRIMP: nearby_shrimp += 1
+			if prey.kind == BaitMotion.Kind.CRAB: nearby_crabs += 1
+	check(nearby_shrimp > 0 and nearby_crabs > 0, "Shrimp and crabs are present near the starting area")
+	var moving_lure = bait(BaitMotion.Kind.MINNOW, Vector3(0, 12, 0), BaitMotion.Source.FISHERMAN)
+	var movement_driver = BaitMotion.FishingBaitDriver.new(Vector3(0, 100, -75))
+	moving_lure.driver = movement_driver
+	movement_driver.retrieve_input = 1.0
+	var begin = moving_lure.global_position
+	await frames(120)
+	var travel = moving_lure.global_position - begin
+	check(-travel.z > 4.0 and travel.y > 0.3 and travel.y < -travel.z * 0.3, "Two-second retrieve travels forward with shallow rise")
+	movement_driver.retrieve_input = 0.0
+	begin = moving_lure.global_position
+	await frames(120)
+	travel = moving_lure.global_position - begin
+	check(-travel.z > 1.0 and travel.y < -0.5, "Two-second release keeps forward glide and visibly sinks")
+	movement_driver.jerk_pressed = true
+	begin = moving_lure.global_position
+	await frames(12)
+	var jerk_travel = moving_lure.global_position - begin
+	await frames(40)
+	movement_driver.jig_pressed = true
+	begin = moving_lure.global_position
+	await frames(12)
+	var jig_travel = moving_lure.global_position - begin
+	check(absf(jerk_travel.x) > 0.3 and jig_travel.y > 0.3 and absf(jerk_travel.y) < jig_travel.y,
+		"Jerk moves sideways while jig hops upward")
+	moving_lure.queue_free()
+	var tester = LureTestController.new()
+	get_parent().add_child(tester)
+	tester.setup(fish, get_parent(), Vector3(0, 31, 12))
+	tester.set_active(true)
+	check(tester.bait_camera.current and not fish.camera.current, "Bait mode selects its angled camera")
+	var reset_consistent = true
+	for index in range(6):
+		tester.switch_lure()
+		reset_consistent = reset_consistent and tester.lure.heading == Vector3.FORWARD and tester.driver._impulse_time == 0.0
+	check(reset_consistent, "All species switches start with the same cast bearing and cleared impulses")
+	tester.toggle_camera()
+	check(fish.camera.current and fish.external_input, "Fish camera can observe bait while bait controls remain active")
+	tester.toggle_camera()
+	var motion = InputEventMouseMotion.new()
+	motion.relative = Vector2(100, 30)
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	var old_yaw = tester.orbit_yaw
+	tester.orbit_mouse(motion.relative)
+	check(tester.orbit_yaw != old_yaw, "Mouse motion changes bait camera orbit")
+	tester.set_active(false)
+	check(fish.camera.current and not fish.external_input, "Leaving bait mode restores fish camera and controls")
+	tester.lure.queue_free()
+	tester.bait_camera.queue_free()
+	tester.queue_free()
+	var profile = bait(BaitMotion.Kind.SQUID, Vector3(0, 15, 0))
+	profile.driver.command = BaitMotion.swimming(Vector3.FORWARD, 1.0)
+	var profile_start = profile.position
+	await frames(60)
+	check(profile.position.y > profile_start.y + 1.0 and absf(profile.position.z - profile_start.z) < 0.5, "Squid retrieve is predominantly vertical")
+	profile.driver.command = BaitMotion.gliding(Vector3.FORWARD)
+	profile_start = profile.position
+	await frames(90)
+	check(profile.position.y < profile_start.y - 0.5, "Squid drops when released")
+	profile.queue_free()
+	profile = bait(BaitMotion.Kind.SHRIMP, Vector3(0, 0.4, 0))
+	profile.driver.command = BaitMotion.BaitCommand.new(Vector3.FORWARD, 1, 1, BaitMotion.Action.JIG_UP)
+	await frames(20)
+	check(profile.position.y > 1.5, "Shrimp jig produces a fast vertical escape")
+	profile.queue_free()
+	profile = bait(BaitMotion.Kind.CRAB, Vector3(0, 5, 0))
+	await frames(90)
+	check(profile.position.y < 0.6, "Crab sinks quickly to bottom")
+	profile.driver.command = BaitMotion.BaitCommand.new(Vector3.FORWARD, 1, 1, BaitMotion.Action.JIG_UP)
+	profile_start = profile.position
+	await frames(20)
+	check(absf(profile.position.x - profile_start.x) > 0.7 and profile.position.y < 0.6, "Crab jig dashes sideways without lifting off")
+	var bounded = BaitMotion.FishingBaitDriver.new(Vector3(0, 30, -75))
+	bounded.cast_direction = Vector3.FORWARD
+	bounded.steer_input = 1
+	var limited = true
+	for i in range(1000):
+		var intent = bounded.sample(profile, 0.016)
+		limited = limited and intent.direction.dot(Vector3.FORWARD) >= cos(deg_to_rad(40.1))
+	check(limited, "Held glide steering stays inside the cast cone without accumulating a U-turn")
+	profile.queue_free()
 	print("SELF-TEST COMPLETE: %d checks, %d failures" % [checks, failures])
 	get_tree().quit(0 if failures == 0 else 1)

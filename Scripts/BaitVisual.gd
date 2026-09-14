@@ -104,10 +104,4 @@ func _process(delta: float) -> void:
 			_:
 				_appendages[i].rotation.y = wave * (0.5 if action in [BaitMotion.Action.JERK, BaitMotion.Action.JIG_UP] else 0.12)
 	_body.scale = Vector3(1 - twitch * 0.16, 1 - twitch * 0.16, 1 + twitch * 0.12) if kind == BaitMotion.Kind.SQUID else Vector3.ONE
-	# These are legal command-driven tells a future bait player can trigger while idle.
-	match idle_action:
-		BaitMotion.IdleAction.LOOK: _body.rotation.y = sin(_phase * 0.28) * 0.24
-		BaitMotion.IdleAction.QUIVER: _body.rotation.z = sin(_phase * 2.4) * 0.06
-		BaitMotion.IdleAction.FAN: _body.scale.y = 1.0 + sin(_phase * 0.5) * 0.06
-		BaitMotion.IdleAction.REST: _body.rotation.x = 0.08
-		_: _body.rotation = Vector3.ZERO
+	_body.rotation = Vector3.ZERO

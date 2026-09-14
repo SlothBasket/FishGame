@@ -7,6 +7,17 @@ enum Source { LIVE, FISHERMAN }
 enum Action { PAUSE, CRUISE, BURST, GLIDE, HOVER, SINK, RISE, DART, JERK, JIG_UP, FALL, CRAWL }
 enum IdleAction { NONE, LOOK, QUIVER, FAN, REST }
 
+# Both drivers use this profile: powered travel rises gently, slack glides down.
+static func horizontal(direction: Vector3) -> Vector3:
+	var flat = Vector3(direction.x, 0, direction.z)
+	return flat.normalized() if flat.length_squared() > 0.001 else Vector3.FORWARD
+
+static func swimming(direction: Vector3, effort: float) -> BaitCommand:
+	return BaitCommand.new(horizontal(direction), effort, 0, Action.CRUISE)
+
+static func gliding(direction: Vector3) -> BaitCommand:
+	return BaitCommand.new(horizontal(direction), 0.25, 0, Action.GLIDE)
+
 class BaitCommand:
 	extends RefCounted
 	var direction: Vector3
@@ -50,15 +61,21 @@ class FishingBaitDriver:
 	var jerk_strength: float = 1.0
 	var jerk_side_angle: float = 38.0
 	var jig_strength: float = 1.0
-	var maximum_line_distance: float = 32.0
+	var maximum_line_distance: float = 120.0
 	var _jerk_side: float = 1.0
 	var _impulse_time: float = 0.0
 	var _impulse_action: Action = Action.PAUSE
+	var _travel_direction: Vector3 = Vector3.FORWARD
+	var cast_direction: Vector3 = Vector3.ZERO
+	var steering_limit_degrees: float = 40.0
 	func _init(p_anchor: Vector3 = Vector3.ZERO) -> void:
 		anchor_position = p_anchor
 	func sample(bait, delta: float) -> BaitCommand:
-		var to_anchor: Vector3 = anchor_position - bait.global_position
-		var toward = to_anchor.normalized() if to_anchor.length_squared() > 0.001 else Vector3.UP
+		if cast_direction == Vector3.ZERO:
+			cast_direction = BaitMotion.horizontal(anchor_position - bait.global_position)
+		var toward = cast_direction
+		# Rod deflection is absolute, not cumulative. Passing the origin cannot reverse it.
+		_travel_direction = toward.rotated(Vector3.UP, -clampf(steer_input, -1, 1) * deg_to_rad(steering_limit_degrees))
 		if jerk_pressed:
 			jerk_pressed = false
 			_jerk_side *= -1.0
@@ -71,16 +88,14 @@ class FishingBaitDriver:
 		if _impulse_time > 0.0:
 			_impulse_time -= delta
 			if _impulse_action == Action.JIG_UP:
-				return BaitCommand.new((toward * 0.35 + Vector3.UP).normalized(), jig_strength, 1.0, Action.JIG_UP, idle_action)
+				if bait.kind == Kind.CRAB:
+					return BaitCommand.new(toward.cross(Vector3.UP) * _jerk_side, jig_strength, 1.0, Action.DART)
+				return BaitCommand.new(_travel_direction, jig_strength, 1.0, Action.JIG_UP)
 			var lateral = toward.cross(Vector3.UP).normalized() * _jerk_side
-			return BaitCommand.new((toward + lateral * sin(deg_to_rad(jerk_side_angle)) + Vector3.UP * steer_input * 0.18).normalized(), jerk_strength, 1.0, Action.JERK, idle_action)
+			return BaitCommand.new((toward * 0.3 + lateral).normalized(), jerk_strength, 1.0, Action.JERK)
 		if retrieve_input > 0.01:
-			return BaitCommand.new((toward + Vector3.UP * retrieve_vertical_influence * retrieve_input).normalized(), retrieve_input * retrieve_speed, 0.0, Action.CRUISE, idle_action)
-		if to_anchor.length() > maximum_line_distance:
-			return BaitCommand.new(toward, 0.45, 0.0, Action.GLIDE, idle_action)
-		var vertical = Vector3.UP * signf(pause_vertical_rate)
-		var action = Action.RISE if pause_vertical_rate > 0 else Action.FALL if pause_vertical_rate < 0 else Action.HOVER
-		return BaitCommand.new(vertical, absf(pause_vertical_rate), 0.0, action, idle_action)
+			return BaitMotion.swimming(_travel_direction, retrieve_input * retrieve_speed)
+		return BaitMotion.gliding(_travel_direction)
 
 class LiveBaitDriver:
 	extends IBaitDriver
@@ -97,6 +112,7 @@ class LiveBaitDriver:
 	var _twitch: float = 0.0
 	var _action: Action = Action.PAUSE
 	var _idle: IdleAction = IdleAction.NONE
+	var _sense_time: float = 0.0
 
 	func _init(p_home: Vector3 = Vector3.ZERO, seed_value: int = -1, p_radius: float = 28.0, p_depth_band: float = 5.0) -> void:
 		home = p_home
@@ -110,63 +126,79 @@ class LiveBaitDriver:
 
 	func sample(bait, delta: float) -> BaitCommand:
 		_remaining -= delta
+		_sense_time -= delta
+		if _sense_time <= 0.0:
+			_sense_time = 0.25
+			for predator in bait.get_tree().get_nodes_in_group("fish_predators"):
+				if bait.global_position.distance_to(predator.global_position) < 6.0 and state != "escape":
+					_remaining = 0.0
+			var start: Vector3 = bait.global_position + Vector3.UP * 0.2
+			var ray = PhysicsRayQueryParameters3D.create(start, start + bait.heading * 2.0, 1)
+			var wall = bait.get_world_3d().direct_space_state.intersect_ray(ray)
+			if not wall.is_empty():
+				_direction = (bait.heading.bounce(wall.normal) + Vector3.UP * 0.2).normalized()
+				_effort = 0.7
+				_remaining = 0.6
 		if _remaining <= 0.0:
 			choose_behavior(bait)
 		# Bursts decay into a glide, using commands also available to controlled bait.
 		var pulse = clampf(_remaining / _duration, 0.0, 1.0)
-		return BaitCommand.new(_direction, _effort * (pulse if _twitch > 0.0 else 1.0), _twitch * pulse, _action, _idle)
+		if bait.kind != Kind.CRAB:
+			if _action in [Action.GLIDE, Action.FALL, Action.HOVER, Action.PAUSE]:
+				return BaitMotion.gliding(_direction)
+			if _action == Action.CRUISE:
+				return BaitMotion.swimming(_direction, _effort)
+		return BaitCommand.new(_direction, _effort * (pulse if _twitch > 0.0 else 1.0), _twitch * pulse, _action)
 
 	func choose_behavior(bait) -> void:
+		var previous = state
 		var roll = rng.randf()
+		_direction = BaitMotion.horizontal(bait.heading).rotated(Vector3.UP, rng.randf_range(-0.22, 0.22))
+		_twitch = 0.0
+		_effort = rng.randf_range(0.65, 0.95)
+		_duration = rng.randf_range(2.0, 4.0)
 		match bait.kind:
 			Kind.MINNOW:
-				state = "cruise" if roll < 0.65 else "coast" if roll < 0.85 else "burst"
+				# Alternating longer strokes/glides make readable shallow rise/fall.
+				state = "coast" if previous == "cruise" else "cruise"
+				_action = Action.GLIDE if state == "coast" else Action.CRUISE
+				_duration = rng.randf_range(3.0, 6.0)
+				if home.y > 22.0 and bait.global_position.y > 2.0:
+					state = "descending"
+					_action = Action.GLIDE
+				elif bait.global_position.y < 2.0:
+					_action = Action.CRUISE
 			Kind.SHRIMP:
-				state = "hover" if roll < 0.7 else "kick"
+				state = "kick" if roll < 0.22 else "scoot"
+				_action = Action.JIG_UP if state == "kick" else Action.CRUISE
+				_duration = 0.4 if state == "kick" else rng.randf_range(1.0, 3.0)
 			Kind.SQUID:
-				state = "glide" if roll < 0.45 else "hover" if roll < 0.68 else "pulse"
+				state = "drop" if previous == "rise" else "rise"
+				_action = Action.GLIDE if state == "drop" else Action.CRUISE
+				_duration = rng.randf_range(2.0, 4.0)
 			Kind.CRAB:
-				state = "rest" if roll < 0.48 else "crawl" if roll < 0.86 else "scuttle"
+				state = "scuttle" if roll < 0.15 else "rest" if roll < 0.45 else "crawl"
+				_action = Action.DART if state == "scuttle" else Action.PAUSE if state == "rest" else Action.CRAWL
+				_effort = 0.0 if state == "rest" else 0.7
+				if state == "scuttle":
+					_direction = BaitMotion.horizontal(bait.heading).cross(Vector3.UP)
+					_duration = 0.35
 			_:
-				state = "pause"
-		_twitch = 0.0
-		_idle = IdleAction.NONE
-		match state:
-			"cruise":
-				_duration = rng.randf_range(2.5, 6.0)
-				_effort = rng.randf_range(0.4, 0.7)
 				_action = Action.CRUISE
-			"coast", "hover", "glide":
-				_duration = rng.randf_range(1.0, 3.2)
-				_effort = rng.randf_range(0.03, 0.22)
-				_action = Action.HOVER if state == "hover" else Action.GLIDE
-			"rest":
-				_duration = rng.randf_range(1.0, 3.5)
-				_effort = 0.0
-				_action = Action.PAUSE
-				_idle = [IdleAction.LOOK, IdleAction.FAN, IdleAction.REST][rng.randi_range(0, 2)]
-			"crawl", "scuttle":
-				_duration = rng.randf_range(0.4, 3.0)
-				_effort = rng.randf_range(0.25, 0.5) if state == "crawl" else rng.randf_range(0.8, 1.0)
-				_action = Action.CRAWL
-				_twitch = 0.0 if state == "crawl" else 0.8
-			_:
-				_duration = rng.randf_range(0.25, 0.75)
-				_effort = rng.randf_range(0.75, 1.0)
-				_twitch = rng.randf_range(0.65, 1.0)
-				_action = Action.BURST
-		_remaining = _duration
-		var yaw = rng.randf_range(-1.1, 1.1)
-		if state == "kick":
-			yaw = rng.randf_range(-PI, PI)
-		_direction = bait.heading.rotated(Vector3.UP, yaw)
-		_direction.y = 0.0 if bait.kind == Kind.CRAB else rng.randf_range(-0.25, 0.25)
-		if state == "kick": _direction.y = rng.randf_range(0.3, 0.65)
+		for predator in bait.get_tree().get_nodes_in_group("fish_predators"):
+			var away: Vector3 = bait.global_position - predator.global_position
+			if away.length() < 5.0 and previous != "escape":
+				_direction = BaitMotion.horizontal(away)
+				_action = Action.JIG_UP if bait.kind in [Kind.SHRIMP, Kind.SQUID] else Action.DART
+				_effort = 1.0
+				_twitch = 1.0
+				_duration = 0.4
+				state = "escape"
+				break
 		var offset: Vector3 = home - bait.global_position
-		# Soft return on the next decision, never an orbit or teleport.
-		if offset.length() > roam_radius:
-			_direction = (_direction * 0.2 + offset.normalized()).normalized()
-			_effort = maxf(_effort, 0.45)
-		if bait.kind != Kind.CRAB and absf(bait.global_position.y - preferred_y) > depth_band:
-			_direction.y = signf(preferred_y - bait.global_position.y) * 0.4
-		_direction = _direction.normalized()
+		if Vector2(offset.x, offset.z).length() > roam_radius:
+			_direction = BaitMotion.horizontal(offset)
+		if bait.kind == Kind.SQUID:
+			if bait.global_position.y < 2.0: _action = Action.CRUISE
+			if bait.global_position.y > 29.0: _action = Action.GLIDE
+		_remaining = _duration
