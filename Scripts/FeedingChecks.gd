@@ -336,7 +336,7 @@ func _ready() -> void:
 	var limited = true
 	for i in range(1000):
 		var intent = bounded.sample(profile, 0.016)
-		limited = limited and intent.direction.dot(Vector3.FORWARD) >= cos(deg_to_rad(40.1))
+		limited = limited and intent.direction.dot(Vector3.FORWARD) >= cos(deg_to_rad(45.1))
 	check(limited, "Held glide steering stays inside the cast cone without accumulating a U-turn")
 	profile.queue_free()
 	# Shared escape strength, recovery and presentation regressions.
@@ -352,7 +352,7 @@ func _ready() -> void:
 	var player_driver = BaitMotion.PlayerLiveDriver.new()
 	escape_actor.clear_actions()
 	player_driver.escape_held = true
-	var charging = player_driver.sample(escape_actor, 0.5)
+	var charging = player_driver.sample(escape_actor, 0.5 * escape_actor.flee_charge_time)
 	player_driver.escape_held = false
 	var released = player_driver.sample(escape_actor, 0.016)
 	check(charging.flee_fraction < 0 and is_equal_approx(released.flee_fraction, 0.5), "Hold charges without firing; release submits fractional escape")
@@ -408,7 +408,7 @@ func _ready() -> void:
 	check(Vector2(destination.x, destination.z).length() < Vector2(cast_test.anchor_position.x, cast_test.anchor_position.z).length(), "Cast aims toward arena center")
 	await frames(50)
 	check(cast_test.lure.position.y > 34, "Cast follows an airborne arc")
-	await frames(60)
+	await frames(80)
 	check(cast_test.lure.cast_remaining == 0 and cast_test.lure.velocity.y < 0, "Cast lands and enters downward")
 	cast_test.lure.queue_free()
 	cast_test._spawn_lure(BaitMotion.Kind.SQUID)
@@ -423,6 +423,7 @@ func _ready() -> void:
 	var threat_bait = bait(BaitMotion.Kind.MINNOW, fish.position + Vector3.RIGHT * 2)
 	fish.add_to_group("fish_predators")
 	var threat_driver = BaitMotion.LiveBaitDriver.new(threat_bait.position, 913)
+	threat_driver._sense_time = 0
 	var observed_strengths = {}
 	for i in range(20):
 		threat_driver.choose_behavior(threat_bait)
@@ -485,7 +486,7 @@ func _ready() -> void:
 	for i in range(1000):
 		var intent = rod.sample(straight, 0.016)
 		var bearing = BaitMotion.horizontal(rod.anchor_position - straight.position)
-		bounded_live = bounded_live and intent.direction.dot(bearing) >= cos(deg_to_rad(40.1))
+		bounded_live = bounded_live and intent.direction.dot(bearing) >= cos(deg_to_rad(45.1))
 	check(bounded_live, "Live bait steering stays within rod deflection limit on release")
 	straight.queue_free()
 	fish.velocity = Vector3(22, 22, -10)
@@ -515,6 +516,7 @@ func _ready() -> void:
 	check(bird.try_bite(fish) and fish.feeding.food == before_bird + 5, "Seagull uses ordinary catch and nutrition gate")
 	bird.queue_free()
 	await check_readability_and_shared_motion()
+	await check_navigation_and_sequences()
 	print("SELF-TEST COMPLETE: %d checks, %d failures" % [checks, failures])
 	get_tree().quit(0 if failures == 0 else 1)
 
@@ -526,10 +528,11 @@ func check_readability_and_shared_motion() -> void:
 	ai._charging_escape = true
 	ai._escape_clock = 0
 	ai._random_charge = 0.75
+	ai.sequence_chance = 0.0
 	ai_shrimp.driver = ai
 	var human = BaitMotion.PlayerLiveDriver.new()
 	human.escape_held = true
-	human.sample(human_shrimp, 0.75)
+	human.sample(human_shrimp, 0.75 * human_shrimp.flee_charge_time)
 	human.escape_held = false
 	human_shrimp.driver = human
 	await frames(14)
@@ -540,14 +543,15 @@ func check_readability_and_shared_motion() -> void:
 	check((human_shrimp.position - ai_shrimp.position - Vector3(3,0,0)).length() < 0.01, "Matching AI and human charges produce the same shrimp trajectory")
 	await frames(34)
 	check(ai_shrimp.position.z < 13.5 and ai_shrimp.velocity.y < 0, "Shrimp glide advances out of its column and starts sinking")
-	check(not ai_shrimp.start_flee(1, Vector3.UP), "Shrimp cannot chain another kick before glide recovery")
+	check(ai_shrimp.start_flee(1, Vector3.UP), "Shrimp can chain another kick after its short recovery")
 	ai_shrimp.queue_free()
 	human_shrimp.queue_free()
 	var steer_actor = bait(BaitMotion.Kind.MINNOW, Vector3(65, 12, 0))
 	var intent = BaitMotion.swimming(Vector3.BACK, 1)
 	var legal = ai.player_reproducible_command(steer_actor, intent, 0.016)
-	check(rad_to_deg(steer_actor.heading.angle_to(legal.direction)) <= 40.01, "AI destination steering respects the player input cone")
+	check(rad_to_deg(steer_actor.heading.angle_to(legal.direction)) <= 45.01, "AI destination steering respects the player input cone")
 	steer_actor.queue_free()
+	for existing in get_tree().get_nodes_in_group("rock_shelters"): existing.guest = null
 	var cover = RockShelter.new()
 	cover.position = Vector3(84, 0, 0)
 	cover.radius = 2.5
@@ -596,6 +600,99 @@ func check_readability_and_shared_motion() -> void:
 	for i in range(8): feedback.emit_crossing(Vector3.ZERO, 6)
 	check(feedback.effects.size() == 3, "Simultaneous water effects stay bounded")
 	feedback._physics_process(1.5)
-	check(feedback.effects.is_empty(), "Splash effects expire and release their nodes")
+	check(feedback.effects.is_empty() and feedback.pool.size() == 3, "Splash effects expire and return to their reusable pool")
 	crossing.queue_free()
 	feedback.queue_free()
+
+func check_navigation_and_sequences() -> void:
+	reset()
+	fish.remove_from_group("fish_predators")
+	var crab = bait(BaitMotion.Kind.CRAB, Vector3(112, 0.4, 0))
+	crab.heading = Vector3.RIGHT
+	var crab_ai = BaitMotion.LiveBaitDriver.new(Vector3(80,0.4,0), 72, 12)
+	crab_ai._escape_clock = 100
+	crab.driver = crab_ai
+	await frames(360)
+	check(crab.position.x < 108 and crab.heading.x < -0.5, "AI crab turns away from the arena edge and returns toward home")
+	crab.queue_free()
+	var squid = bait(BaitMotion.Kind.SQUID, Vector3(85, 0.8, 0))
+	var squid_ai = BaitMotion.LiveBaitDriver.new(Vector3(85,12,0), 6)
+	squid_ai.state = "drop"
+	squid_ai._action = BaitMotion.Action.GLIDE
+	squid_ai._remaining = 20
+	squid_ai._escape_clock = 100
+	squid.driver = squid_ai
+	await frames(120)
+	check(squid.position.y > 2.5 and squid.velocity.y >= 0, "AI squid overrides its drop state and rises before hitting the floor")
+	squid.queue_free()
+	var player_squid = bait(BaitMotion.Kind.SQUID, Vector3(85,15,0))
+	var rod = BaitMotion.PlayerLiveDriver.new()
+	rod.use_anchor = true
+	rod.anchor_position = Vector3(85,32,0)
+	player_squid.driver = rod
+	player_squid.start_flee(1, Vector3.RIGHT)
+	await frames(25)
+	check(player_squid.position.x > 86.5 and absf(player_squid.position.y - 15) < 0.05, "Player squid can dash straight horizontally beside the boat")
+	var radius_ok = true
+	for i in range(7):
+		player_squid.start_flee(1, Vector3.RIGHT)
+		await frames(42)
+		radius_ok = radius_ok and Vector2(player_squid.position.x - 85, player_squid.position.z).length() <= player_squid.squid_roam_radius + 0.1
+	check(radius_ok, "Repeated squid dashes stay within the boat radius")
+	rod.steering = -1
+	rod.escape_held = true
+	rod.sample(player_squid, player_squid.flee_charge_time * 0.5)
+	rod.escape_held = false
+	player_squid.flee_recovery = 0
+	var left = rod.sample(player_squid, 0.016)
+	rod.steering = 1
+	rod.escape_held = true
+	rod.sample(player_squid, player_squid.flee_charge_time * 0.5)
+	rod.escape_held = false
+	var right = rod.sample(player_squid, 0.016)
+	check(left.direction.dot(right.direction) < -0.99 and left.direction.y == 0, "Squid left and right inputs remain opposite as its boat offset changes")
+	player_squid.queue_free()
+	var minnow = bait(BaitMotion.Kind.MINNOW, Vector3(80,12,30))
+	minnow.set_physics_process(false)
+	var sequence = BaitMotion.LiveBaitDriver.new(minnow.position, 51)
+	sequence.minnow_sequence_chance = 1
+	sequence._charging_escape = true
+	sequence._random_charge = 0.5
+	sequence._escape_clock = 0
+	var first = sequence.sample(minnow, 0.016)
+	minnow.heading = first.direction
+	var second = sequence.sample(minnow, 1.0)
+	check(first.flee_fraction >= 0.35 and first.flee_fraction <= 0.6 and is_equal_approx(first.flee_fraction, second.flee_fraction), "AI minnow can schedule a paired half-strength escape")
+	check(absf(first.direction.dot(second.direction)) < 0.01 and first.direction.z < -0.7 and second.direction.z < -0.7, "Minnow pair alternates 45 degrees each side of a stable forward bearing")
+	var buffering = BaitMotion.PlayerLiveDriver.new()
+	minnow.flee_recovery = 0.4
+	buffering.escape_held = true
+	buffering.sample(minnow, minnow.flee_charge_time * 0.5)
+	buffering.escape_held = false
+	var waiting = buffering.sample(minnow, 0.016)
+	minnow.flee_recovery = 0
+	var queued = buffering.sample(minnow, 0.016)
+	var consumed = buffering.sample(minnow, 0.016)
+	check(waiting.flee_fraction < 0 and is_equal_approx(queued.flee_fraction, 0.5) and consumed.flee_fraction < 0, "A player follow-up released during recovery is buffered and fires once")
+	minnow.queue_free()
+	var casting = LureTestController.new()
+	get_parent().add_child(casting)
+	casting.setup(fish, get_parent(), Vector3(0,31,0))
+	var distances = {}
+	var cast_bounds = true
+	for i in range(12):
+		casting.cast_bait()
+		var offset = casting.spawn_position - casting.anchor_position
+		var flat = Vector2(offset.x, offset.z).length()
+		distances[int(flat)] = true
+		cast_bounds = cast_bounds and flat >= casting.cast_distance * (1-casting.cast_distance_variation)-0.01 and flat <= casting.cast_distance * (1+casting.cast_distance_variation)+0.01
+		cast_bounds = cast_bounds and BaitMotion.horizontal(offset).dot(BaitMotion.horizontal(-casting.anchor_position)) >= cos(casting.cast_angle_variation)-0.01
+	check(cast_bounds and distances.size() > 2, "Casts vary distance and direction inside their center-facing envelope")
+	var origin = casting.lure.position
+	var forward = BaitMotion.horizontal(casting.spawn_position - casting.anchor_position)
+	await frames(8)
+	check((casting.lure.position - origin).dot(forward) < -0.5 and casting.lure.cast_windup > 0, "Cast pulls backward briefly before launching")
+	casting.lure.queue_free()
+	casting.boat.queue_free()
+	casting.bait_camera.queue_free()
+	casting.queue_free()

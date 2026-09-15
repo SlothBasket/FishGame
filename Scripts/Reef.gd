@@ -19,8 +19,7 @@ func _ready() -> void:
 	_fish = $FishPlayer
 	_fish.water_height = water_depth
 	var args = OS.get_cmdline_user_args()
-	if "--perf-check" in args:
-		add_child(PerformanceProbe.new())
+	add_child(PerformanceProbe.new())
 	_capture = "--capture" in args
 	_feeding_preview = "--feeding-preview" in args
 	_charge_preview = "--charge-preview" in args

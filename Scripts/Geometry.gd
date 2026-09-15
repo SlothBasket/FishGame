@@ -3,6 +3,7 @@ extends RefCounted
 ## Shared procedural building blocks. Fish and bait use the same material style.
 
 static var _unit_sphere: SphereMesh
+static var _palette: Dictionary = {}
 
 static func material(hex: String, metallic: float = 0.0) -> StandardMaterial3D:
 	var result = StandardMaterial3D.new()
@@ -11,6 +12,12 @@ static func material(hex: String, metallic: float = 0.0) -> StandardMaterial3D:
 	result.roughness = 0.55
 	result.cull_mode = BaseMaterial3D.CULL_DISABLED
 	return result
+
+## Bait palettes are immutable shared materials; customized environment materials use material().
+static func bait_material(hex: String, metallic: float = 0.0) -> StandardMaterial3D:
+	var key = hex + ":" + str(metallic)
+	if not _palette.has(key): _palette[key] = material(hex, metallic)
+	return _palette[key]
 
 static func sphere(parent: Node3D, label: String, where: Vector3, size: Vector3, mat: Material) -> MeshInstance3D:
 	var node = MeshInstance3D.new()

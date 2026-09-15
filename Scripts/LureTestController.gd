@@ -7,6 +7,8 @@ var lure: BaitActor
 var driver: BaitMotion.FishingBaitDriver
 var live_driver: BaitMotion.PlayerLiveDriver
 @export var cast_distance: float = 65.0
+@export var cast_distance_variation: float = 0.22
+@export var cast_angle_variation: float = 0.3
 @export var cast_entry_speed: float = 4.0
 @export var origin_move_speed: float = 12.0
 var boat: Node3D
@@ -93,6 +95,7 @@ func set_active(value: bool) -> void:
 		driver.escape_held = false
 		driver._escape_was_held = false
 		driver._escape_charge = 0.0
+		driver.pending_fraction = -1.0
 		if live_driver != null:
 			live_driver.throttle = 0.0
 			live_driver.descend = false
@@ -100,6 +103,7 @@ func set_active(value: bool) -> void:
 			live_driver.escape_held = false
 			live_driver._held = false
 			live_driver.charge = 0.0
+			live_driver._pending_escape = null
 	_update_label()
 
 func reset_lure() -> void:
@@ -108,11 +112,13 @@ func reset_lure() -> void:
 	lure.clear_actions()
 	if live_driver != null:
 		live_driver.charge = 0.0
+		live_driver._pending_escape = null
 		live_driver._held = false
 		live_driver.escape_held = false
 	lure.heading = BaitMotion.horizontal(anchor_position - spawn_position)
 	driver._impulse_time = 0.0
 	driver._escape_charge = 0.0
+	driver.pending_fraction = -1.0
 	driver._escape_was_held = false
 	driver.escape_held = false
 	driver.jerk_pressed = false
@@ -137,6 +143,7 @@ func _spawn_lure(kind: BaitMotion.Kind) -> void:
 	lure.heading = BaitMotion.horizontal(anchor_position - spawn_position)
 	driver._impulse_time = 0.0
 	driver._escape_charge = 0.0
+	driver.pending_fraction = -1.0
 	driver._escape_was_held = false
 	driver.escape_held = false
 	driver.jerk_pressed = false
@@ -144,6 +151,7 @@ func _spawn_lure(kind: BaitMotion.Kind) -> void:
 	driver._travel_direction = Vector3.FORWARD
 	driver.cast_direction = BaitMotion.horizontal(anchor_position - spawn_position)
 	live_driver = BaitMotion.PlayerLiveDriver.new()
+	live_driver.squid_axis = BaitMotion.horizontal(-anchor_position)
 	live_driver.use_anchor = true
 	live_driver.anchor_position = anchor_position
 	lure.driver = live_driver if is_live_selection() else driver
@@ -162,12 +170,14 @@ func is_live_selection() -> bool:
 
 func _physics_process(delta: float) -> void:
 	if not active: return
+	if is_instance_valid(lure) and (lure.cast_windup > 0 or lure.cast_remaining > 0): return
 	var moving_origin = Input.is_physical_key_pressed(KEY_ALT)
 	if moving_origin:
 		var move = Vector3(Input.get_axis("left", "right"), 0, Input.get_axis("forward", "back"))
 		move_origin(move, delta)
 		driver._escape_was_held = false
 		driver._escape_charge = 0.0
+		driver.pending_fraction = -1.0
 	driver.retrieve_input = 0.0 if moving_origin else Input.get_action_strength("forward")
 	driver.steer_input = 0.0 if moving_origin else Input.get_axis("left", "right")
 	driver.escape_held = not moving_origin and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
@@ -179,13 +189,17 @@ func _physics_process(delta: float) -> void:
 		if moving_origin:
 			live_driver._held = false
 			live_driver.charge = 0.0
+			live_driver._pending_escape = null
 		live_driver.escape_held = not moving_origin and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
 		live_driver.escape_side = -1.0 if driver.steer_input < 0 else 1.0
 	_update_label()
 
 func cast_bait() -> void:
-	var cast_direction = BaitMotion.horizontal(-anchor_position).rotated(Vector3.UP, randf_range(-0.2, 0.2))
-	spawn_position = anchor_position + cast_direction * cast_distance
+	var cast_direction = BaitMotion.horizontal(-anchor_position).rotated(Vector3.UP, randf_range(-cast_angle_variation, cast_angle_variation))
+	var distance = cast_distance * randf_range(1.0 - cast_distance_variation, 1.0 + cast_distance_variation)
+	spawn_position = anchor_position + cast_direction * distance
+	spawn_position.x = clampf(spawn_position.x, -110, 110)
+	spawn_position.z = clampf(spawn_position.z, -110, 110)
 	spawn_position.y = anchor_position.y - 0.45
 	if is_instance_valid(lure): lure.queue_free()
 	_spawn_lure(selected_kind)

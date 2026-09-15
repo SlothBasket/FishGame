@@ -13,8 +13,8 @@ signal bitten(bait, eater)
 @export var sink_speed: float = 1.0
 @export var bottom_clearance: float = 0.32
 @export_group("Escape and depth")
-@export var flee_charge_time: float = 1.0
-@export var flee_cooldown: float = 2.0
+@export var flee_charge_time: float = 0.65
+@export var flee_cooldown: float = 0.6
 @export var minimum_flee_strength: float = 0.25
 @export var maximum_flee_strength: float = 1.0
 @export var dart_speed: float = 11.0
@@ -44,6 +44,13 @@ var _escape_age: float = 0.0
 var entry_remaining: float = 0.0
 var cast_remaining: float = 0.0
 var cast_gravity: float = 14.0
+var cast_windup: float = 0.0
+var cast_windup_duration: float = 0.28
+var cast_origin: Vector3
+var cast_launch_velocity: Vector3
+@export var squid_roam_radius: float = 6.0
+var floor_height: float = 0.0
+var _floor_scan: float = 0.0
 var cast_destination: Vector3
 var _visual_yaw: float = 0.0
 var _curve_side: float = 1.0
@@ -89,6 +96,15 @@ func _ready() -> void:
 func _physics_process(delta: float) -> void:
 	if claimed:
 		return
+	if cast_windup > 0:
+		cast_windup = maxf(0, cast_windup - delta)
+		var t = 1.0 - cast_windup / cast_windup_duration
+		var back = -BaitMotion.horizontal(cast_destination - cast_origin)
+		position = cast_origin + (back * 1.5 + Vector3.UP * 0.4) * sin(t * PI)
+		if cast_windup <= 0:
+			position = cast_origin
+			velocity = cast_launch_velocity
+		return
 	if cast_remaining > 0:
 		var dt = minf(delta, cast_remaining)
 		position += velocity * dt + Vector3.DOWN * 0.5 * cast_gravity * dt * dt
@@ -99,6 +115,12 @@ func _physics_process(delta: float) -> void:
 			velocity = Vector3.DOWN * 4.0
 			entry_remaining = 0.35
 		return
+	_floor_scan -= delta
+	if kind == BaitMotion.Kind.SQUID and _floor_scan <= 0:
+		_floor_scan = 0.25
+		var ray = PhysicsRayQueryParameters3D.create(global_position + Vector3.UP * 0.2, Vector3(global_position.x, -2, global_position.z), 1)
+		var hit = get_world_3d().direct_space_state.intersect_ray(ray)
+		floor_height = hit.position.y if not hit.is_empty() else 0.0
 	_motion_age += delta
 	var command = driver.sample(self, delta)
 	flee_recovery = maxf(0.0, flee_recovery - delta)
@@ -109,7 +131,7 @@ func _physics_process(delta: float) -> void:
 	var direction = BaitMotion.horizontal(command.direction)
 	var bottom_kind = kind in [BaitMotion.Kind.CRAB, BaitMotion.Kind.JIG, BaitMotion.Kind.SHRIMP]
 	var passive = command.action in [BaitMotion.Action.GLIDE, BaitMotion.Action.FALL, BaitMotion.Action.SINK, BaitMotion.Action.RISE]
-	if kind != BaitMotion.Kind.CRAB and flee_remaining <= 0 and not airborne and command.direction.length_squared() > 0.001 and not command.action in [BaitMotion.Action.FALL, BaitMotion.Action.SINK, BaitMotion.Action.RISE]:
+	if flee_remaining <= 0 and not airborne and command.direction.length_squared() > 0.001 and not command.action in [BaitMotion.Action.FALL, BaitMotion.Action.SINK, BaitMotion.Action.RISE]:
 		heading = FishInput.turn_toward(BaitMotion.horizontal(heading), direction, deg_to_rad(turn_rate) * delta)
 	var target = BaitMotion.horizontal(heading) * swim_speed * command.effort
 	var response = acceleration
@@ -142,7 +164,7 @@ func _physics_process(delta: float) -> void:
 		if command.action == BaitMotion.Action.JIG_UP:
 			target = BaitMotion.horizontal(heading) * 0.15 + Vector3.UP * 5.5
 	elif kind == BaitMotion.Kind.CRAB:
-		target = direction * (crab_scuttle_speed if command.action == BaitMotion.Action.DART else swim_speed) * command.effort
+		target = (direction if command.action == BaitMotion.Action.DART else BaitMotion.horizontal(heading)) * (crab_scuttle_speed if command.action == BaitMotion.Action.DART else swim_speed) * command.effort
 		target.y = -4.5
 		if passive: target.x = 0.0; target.z = 0.0
 		if command.action == BaitMotion.Action.JIG_UP:
@@ -180,12 +202,19 @@ func _physics_process(delta: float) -> void:
 	if entry_remaining > 0.0:
 		entry_remaining = maxf(0.0, entry_remaining - delta)
 		velocity.y = minf(velocity.y, -2.5)
-	if kind == BaitMotion.Kind.SQUID and driver is BaitMotion.PlayerLiveDriver and driver.use_anchor:
-		# Vertical fishing column: horizontal input never becomes an arbitrary side jet.
-		var offset: Vector3 = driver.anchor_position - global_position
-		var correction = Vector3(offset.x, 0, offset.z).limit_length(2.0)
-		velocity.x = correction.x
-		velocity.z = correction.z
+	if kind == BaitMotion.Kind.SQUID:
+		# Ground protection also applies to player jets; collision cannot pin a downward escape.
+		if global_position.y < floor_height + 0.65 and velocity.y < 0:
+			velocity.y = 0
+			flee_velocity.y = maxf(0, flee_velocity.y)
+		if driver is BaitMotion.PlayerLiveDriver and driver.use_anchor:
+			var offset = Vector3(global_position.x - driver.anchor_position.x, 0, global_position.z - driver.anchor_position.z)
+			var radius = offset.length()
+			if radius > squid_roam_radius - 0.6:
+				var outward = offset.normalized()
+				var radial_speed = velocity.dot(outward)
+				if radial_speed > 0: velocity -= outward * radial_speed
+				velocity -= outward * minf(3.0, maxf(0, radius - squid_roam_radius + 0.6) * 5.0)
 	flee_remaining = maxf(0.0, flee_remaining - delta)
 	move_and_slide()
 	if kind == BaitMotion.Kind.MULLET:
@@ -232,7 +261,7 @@ func start_flee(fraction: float, away: Vector3) -> bool:
 			_shrimp_kick_duration = lerpf(0.22, 0.5, strength)
 			flee_velocity = -_escape_axis * 0.65 * strength + Vector3.UP * shrimp_kick_speed * strength
 			flee_remaining = _shrimp_kick_duration + shrimp_glide_duration
-			flee_recovery = maxf(flee_cooldown, flee_remaining + 0.7)
+			flee_recovery = maxf(flee_cooldown, _shrimp_kick_duration + 0.12)
 		BaitMotion.Kind.SQUID:
 			flee_velocity = (away.normalized() if away.length() > 0.01 else Vector3.UP) * squid_jet_speed * strength
 			flee_remaining = lerpf(0.3, 0.8, strength)
@@ -256,6 +285,7 @@ func clear_actions() -> void:
 	_breaching = false
 	velocity = Vector3.ZERO
 	cast_remaining = 0.0
+	cast_windup = 0.0
 	entry_remaining = 0.0
 
 func _apply_bottom_constraint(stick_to_bottom: bool) -> void:
@@ -297,4 +327,7 @@ func launch_cast(origin: Vector3, destination: Vector3, duration: float = 1.8) -
 	position = origin
 	cast_destination = destination
 	cast_remaining = maxf(0.2, duration)
-	velocity = (destination - origin) / cast_remaining + Vector3.UP * cast_gravity * cast_remaining * 0.5
+	cast_origin = origin
+	cast_launch_velocity = (destination - origin) / cast_remaining + Vector3.UP * cast_gravity * cast_remaining * 0.5
+	cast_windup = cast_windup_duration
+	velocity = Vector3.ZERO

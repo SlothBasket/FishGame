@@ -58,6 +58,8 @@ class FishingBaitDriver:
 	var escape_held: bool = false
 	var _escape_was_held: bool = false
 	var _escape_charge: float = 0.0
+	var pending_fraction: float = -1.0
+	var pending_direction: Vector3 = Vector3.FORWARD
 	var steer_input: float = 0.0
 	var jerk_pressed: bool = false
 	var jig_pressed: bool = false
@@ -74,18 +76,22 @@ class FishingBaitDriver:
 	var _impulse_action: Action = Action.PAUSE
 	var _travel_direction: Vector3 = Vector3.FORWARD
 	var cast_direction: Vector3 = Vector3.ZERO
-	var steering_limit_degrees: float = 40.0
+	var steering_limit_degrees: float = 45.0
 	func _init(p_anchor: Vector3 = Vector3.ZERO) -> void:
 		anchor_position = p_anchor
 	func sample(bait, delta: float) -> BaitCommand:
-		if escape_held and bait.flee_recovery <= 0:
+		if escape_held:
 			_escape_charge = minf(bait.flee_charge_time, _escape_charge + delta)
 		var released = _escape_was_held and not escape_held
 		_escape_was_held = escape_held
 		if released:
-			var cmd = BaitCommand.new(Vector3.UP if bait.kind == Kind.JIG else BaitMotion.horizontal(bait.heading))
-			cmd.flee_fraction = _escape_charge / maxf(0.01, bait.flee_charge_time)
+			pending_fraction = _escape_charge / maxf(0.01, bait.flee_charge_time)
+			pending_direction = Vector3.UP if bait.kind == Kind.JIG else BaitMotion.horizontal(bait.heading)
 			_escape_charge = 0.0
+		if pending_fraction >= 0 and bait.flee_recovery <= 0:
+			var cmd = BaitCommand.new(pending_direction)
+			cmd.flee_fraction = pending_fraction
+			pending_fraction = -1.0
 			return cmd
 		if cast_direction == Vector3.ZERO:
 			cast_direction = BaitMotion.horizontal(anchor_position - bait.global_position)
@@ -125,7 +131,7 @@ class PlayerLiveDriver:
 	extends IBaitDriver
 	var anchor_position: Vector3 = Vector3.ZERO
 	var use_anchor: bool = false
-	var steering_limit_degrees: float = 40.0
+	var steering_limit_degrees: float = 45.0
 	var throttle: float = 0.0
 	var steering: float = 0.0
 	var descend: bool = false
@@ -134,6 +140,8 @@ class PlayerLiveDriver:
 	var escape_side: float = 1.0
 	var charge: float = 0.0
 	var _held: bool = false
+	var _pending_escape: BaitCommand
+	var squid_axis: Vector3 = Vector3.FORWARD
 	func sample(bait, delta: float) -> BaitCommand:
 		var bearing = BaitMotion.horizontal(anchor_position - bait.global_position) if use_anchor else BaitMotion.horizontal(bait.heading)
 		var direction = bearing.rotated(Vector3.UP, -clampf(steering, -1, 1) * deg_to_rad(steering_limit_degrees))
@@ -144,15 +152,23 @@ class PlayerLiveDriver:
 			cmd.arriving = true
 			cmd.arrival_velocity = Vector3(to_anchor.x, to_anchor.y - 0.65, to_anchor.z).limit_length(bait.swim_speed)
 		if rise: cmd.action = Action.RISE; cmd.effort = 1.0
-		if escape_held and bait.flee_recovery <= 0.0:
+		if escape_held:
 			charge = minf(bait.flee_charge_time, charge + delta)
 		elif _held and not escape_held:
 			cmd.flee_fraction = clampf(charge / maxf(0.01, bait.flee_charge_time), 0, 1)
 			cmd.direction = direction
-			if bait.kind == Kind.SQUID: cmd.direction = Vector3.DOWN if descend else Vector3.UP
+			if bait.kind == Kind.SQUID:
+				cmd.direction = Vector3.DOWN if descend else Vector3.UP if rise else squid_axis.cross(Vector3.UP) * (-1.0 if steering < 0 else 1.0)
 			if bait.kind == Kind.CRAB: cmd.direction = BaitMotion.horizontal(bait.heading).cross(Vector3.UP) * escape_side
 			charge = 0.0
+			cmd.set_meta("fraction", cmd.flee_fraction)
+			_pending_escape = cmd
+			cmd.flee_fraction = -1.0
 		_held = escape_held
+		if _pending_escape != null and bait.flee_recovery <= 0:
+			cmd.flee_fraction = _pending_escape.get_meta("fraction", -1.0)
+			cmd.direction = _pending_escape.direction
+			_pending_escape = null
 		return cmd
 class LiveBaitDriver:
 	extends IBaitDriver
@@ -192,6 +208,13 @@ class LiveBaitDriver:
 	var _mullet_dive: float = 0.0
 	var _mullet_dive_wait: float = 7.0
 	var controls = PlayerLiveDriver.new()
+	var sequence_chance: float = 0.45
+	var minnow_sequence_chance: float = 0.7
+	var _burst_pending: bool = false
+	var _burst_axis: Vector3 = Vector3.FORWARD
+	var _burst_side: float = 1.0
+	var _burst_strength: float = 0.5
+	var _use_burst_bearing: bool = false
 	var shelter_enabled: bool = false
 	var shelter: RockShelter
 	var shelter_wait: float = 5.0
@@ -214,6 +237,7 @@ class LiveBaitDriver:
 		shelter_wait = rng.randf_range(3, 12)
 
 	func sample(bait, delta: float) -> BaitCommand:
+		_use_burst_bearing = false
 		_remaining -= delta
 		_turn_clock -= delta
 		_mullet_dive_wait -= delta
@@ -259,6 +283,21 @@ class LiveBaitDriver:
 		_pulse_clock += delta
 		# The shared motor now owns squid pulses; players get the same push/coast rhythm.
 		cmd = shelter_intent(bait, cmd, delta)
+		var to_home: Vector3 = home - bait.global_position
+		if Vector2(to_home.x, to_home.z).length() > roam_radius or absf(bait.position.x) > 105 or absf(bait.position.z) > 105:
+			cmd.direction = BaitMotion.horizontal(to_home)
+		if bait.kind == Kind.SQUID:
+			if bait.position.y < bait.floor_height + 2.5:
+				if state != "rise":
+					state = "rise"
+					_effort = maxf(_effort, 0.75)
+					_action = Action.CRUISE
+					_remaining = rng.randf_range(2, 4)
+				cmd.action = Action.RISE
+				cmd.descend = false
+			elif bait.position.y > bait.water_height - 2:
+				cmd.action = Action.GLIDE
+				cmd.descend = true
 		var threat = _threat
 		var escape_direction = _threat_direction if threat else BaitMotion.horizontal(bait.heading)
 		if bait.flee_recovery <= 0 and not bait.airborne and _mullet_dive <= 0 and (threat or shelter_linger <= 0):
@@ -273,15 +312,37 @@ class LiveBaitDriver:
 					cmd.flee_fraction = _random_charge
 			if cmd.flee_fraction >= 0:
 				if not threat and bait.kind == Kind.SQUID:
-					escape_direction = Vector3.DOWN if rng.randf() < 0.45 else Vector3.UP
+					escape_direction = [Vector3.DOWN, Vector3.UP, BaitMotion.horizontal(bait.heading).cross(Vector3.UP)][rng.randi_range(0, 2)]
 				cmd.direction = escape_direction
 				_charging_escape = false
 				_escape_clock = rng.randf_range(escape_interval_min, escape_interval_max)
+				if bait.kind in [Kind.MINNOW, Kind.SHRIMP, Kind.SQUID, Kind.CRAB]:
+					var followup = _burst_pending
+					if followup:
+						_burst_side *= -1
+						_burst_pending = false
+					else:
+						_burst_axis = BaitMotion.horizontal(bait.heading)
+						_burst_side = -1.0 if rng.randf() < 0.5 else 1.0
+						_burst_pending = rng.randf() < (minnow_sequence_chance if bait.kind == Kind.MINNOW else sequence_chance)
+						_burst_strength = rng.randf_range(0.35, 0.6)
+					if followup or _burst_pending:
+						cmd.flee_fraction = _burst_strength
+						_use_burst_bearing = true
+						if bait.kind == Kind.MINNOW: cmd.direction = _burst_axis.rotated(Vector3.UP, deg_to_rad(45) * _burst_side)
+						elif bait.kind in [Kind.SQUID, Kind.CRAB]: cmd.direction = _burst_axis.cross(Vector3.UP) * _burst_side
+						else: cmd.direction = _burst_axis
+					if _burst_pending:
+						_charging_escape = true
+						_random_charge = _burst_strength
+						_escape_clock = bait.flee_cooldown + rng.randf_range(0.1, 0.3)
 		return player_reproducible_command(bait, cmd, delta)
 
 	func player_reproducible_command(bait, intent: BaitCommand, delta: float) -> BaitCommand:
 		# AI can choose a destination, but cannot exceed the player's local steering cone.
-		var flat = BaitMotion.horizontal(bait.heading)
+		var flat = _burst_axis if _use_burst_bearing else BaitMotion.horizontal(bait.heading)
+		controls.use_anchor = _use_burst_bearing
+		controls.anchor_position = bait.global_position + flat * 100.0
 		var desired = BaitMotion.horizontal(intent.direction)
 		controls.steering = clampf(-flat.signed_angle_to(desired, Vector3.UP) / deg_to_rad(controls.steering_limit_degrees), -1, 1)
 		controls.throttle = intent.effort if intent.action in [Action.CRUISE, Action.CRAWL, Action.BURST] else 0.0
@@ -290,7 +351,9 @@ class LiveBaitDriver:
 		var result = controls.sample(bait, delta)
 		result.flee_fraction = intent.flee_fraction
 		if result.flee_fraction >= 0:
-			if bait.kind == Kind.SQUID: result.direction = Vector3.DOWN if intent.direction.y < 0 else Vector3.UP
+			if bait.kind == Kind.SQUID:
+				result.direction = Vector3.DOWN if intent.direction.y < -0.5 else Vector3.UP if intent.direction.y > 0.5 else desired
+				if bait.position.y < bait.floor_height + 2.5 and result.direction.y < 0: result.direction = Vector3.UP
 			elif bait.kind == Kind.CRAB:
 				var side = flat.cross(Vector3.UP)
 				result.direction = side if side.dot(desired) >= 0 else -side

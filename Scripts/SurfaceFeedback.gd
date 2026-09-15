@@ -5,6 +5,7 @@ extends Node3D
 @export var max_effects: int = 12
 var sides: Dictionary = {}
 var effects: Array = []
+var pool: Array = []
 var ring_mesh: TorusMesh
 var droplet_material: StandardMaterial3D
 
@@ -16,6 +17,7 @@ func _ready() -> void:
 	ring_mesh.ring_segments = 6
 	droplet_material = Geometry.material("c5ece1")
 	droplet_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	for i in range(max_effects): pool.append(create_effect())
 
 func _physics_process(delta: float) -> void:
 	var actors = get_tree().get_nodes_in_group("bait")
@@ -43,14 +45,28 @@ func _physics_process(delta: float) -> void:
 			effect.drops[j].position = Vector3(cos(angle)*t, maxf(0, 2.2*t-4*t*t), sin(angle)*t) * effect.strength * 0.45
 			effect.drops[j].visible = t < 0.55
 		if t >= 1.3:
-			effect.root.queue_free()
+			effect.root.visible = false
+			pool.append(effect)
 			effects.remove_at(i)
 
 func emit_crossing(where: Vector3, speed: float) -> void:
-	if effects.size() >= max_effects: return
+	if pool.is_empty(): return
+	var effect: Dictionary = pool.pop_back()
+	effect.root.position = Vector3(where.x, water_height + 0.035, where.z)
+	effect.root.visible = true
+	effect.age = 0.0
+	effect.strength = clampf(speed * 0.2, 0.8, 2.5)
+	effect.ring.scale = Vector3.ONE * 0.3
+	effect.material.albedo_color.a = 0.7
+	for drop in effect.drops:
+		drop.visible = true
+		drop.position = Vector3.ZERO
+	effects.append(effect)
+
+func create_effect() -> Dictionary:
 	var root = Node3D.new()
-	root.position = Vector3(where.x, water_height + 0.035, where.z)
 	add_child(root)
+	root.visible = false
 	var ring = MeshInstance3D.new()
 	ring.mesh = ring_mesh
 	var mat = Geometry.material("c5ece1")
@@ -61,4 +77,4 @@ func emit_crossing(where: Vector3, speed: float) -> void:
 	var drops: Array = []
 	for i in range(5):
 		drops.append(Geometry.sphere(root, "Drop", Vector3.ZERO, Vector3.ONE*0.06, droplet_material))
-	effects.append({"root":root, "ring":ring, "material":mat, "drops":drops, "age":0.0, "strength":clampf(speed*0.2, 0.8, 2.5)})
+	return {"root":root, "ring":ring, "material":mat, "drops":drops, "age":0.0, "strength":1.0}
