@@ -30,7 +30,9 @@ extends CharacterBody3D
 @export var bite_radius: float = 0.9
 @export_group("Air and surface")
 @export var water_height: float = 32.0
-@export var air_gravity: float = 9.8
+@export var air_gravity: float = 12.0
+@export var max_breach_horizontal_speed: float = 8.0
+@export var max_breach_vertical_speed: float = 8.0
 var airborne: bool = false
 @export_group("Growth")
 @export var growth_per_food: float = 0.01
@@ -133,6 +135,7 @@ func _physics_process(delta: float) -> void:
 		velocity = FishInput.next_velocity(velocity, heading, swim, speed, boost_multiplier,
 			reverse_speed_multiplier, acceleration, reverse_acceleration, water_drag, vertical_speed_multiplier, delta)
 		move_and_slide()
+	if global_position.y > water_height and not airborne: limit_breach_velocity()
 	airborne = global_position.y > water_height
 	if feeding.grace_remaining > 0.0 and not feeding.is_dashing():
 		feeding.sweep_bite(bite_start, global_position)
@@ -176,3 +179,7 @@ func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
 		cancel_attack()
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+func limit_breach_velocity() -> void:
+	var flat = Vector3(velocity.x, 0, velocity.z).limit_length(max_breach_horizontal_speed)
+	velocity = flat + Vector3.UP * minf(velocity.y, max_breach_vertical_speed)

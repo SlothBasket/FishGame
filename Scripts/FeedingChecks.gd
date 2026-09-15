@@ -202,7 +202,7 @@ func _ready() -> void:
 	var population = get_tree().get_nodes_in_group("bait").size()
 	get_tree().get_nodes_in_group("bait")[0].try_bite(fish)
 	await frames(30)
-	check(population == 36 and get_tree().get_nodes_in_group("bait").size() == population, "Sparse four-species population replenishes")
+	check(population == 72 and get_tree().get_nodes_in_group("bait").size() == population, "Expanded bait and gull population replenishes")
 	# Fishing driver intent: retrieve is anchor-dominant; jerk alternates laterally;
 	# jig rises; pause respects configured buoyancy; idle poses share the command.
 	var lure_driver = BaitMotion.FishingBaitDriver.new(Vector3(10, 10, 0))
@@ -377,7 +377,7 @@ func _ready() -> void:
 	escape_actor.start_flee(1.0, Vector3.FORWARD)
 	var highest = escape_actor.position.y
 	var saw_air = false
-	for i in range(180):
+	for i in range(240):
 		await frames(1)
 		highest = maxf(highest, escape_actor.position.y)
 		saw_air = saw_air or escape_actor.airborne
@@ -403,8 +403,18 @@ func _ready() -> void:
 	check(cast_test.boat.position.is_equal_approx(cast_test.anchor_position) and cast_test.driver.anchor_position.is_equal_approx(cast_test.anchor_position) and cast_test.anchor_position.y == 32,
 		"Boat and lure anchor track horizontal origin movement at surface")
 	cast_test.cast_bait()
-	check(absf(cast_test.lure.position.y - 31.55) < 0.01 and absf(Vector2(cast_test.lure.position.x - cast_test.anchor_position.x, cast_test.lure.position.z - cast_test.anchor_position.z).length() - cast_test.cast_distance) < 0.01,
-		"Cast redeploys selected bait at surface and configured distance")
+	check(cast_test.lure.position.distance_to(cast_test.anchor_position) < 1 and cast_test.lure.cast_remaining > 0, "Cast starts at boat with a flight phase")
+	var destination = cast_test.lure.cast_destination
+	check(Vector2(destination.x, destination.z).length() < Vector2(cast_test.anchor_position.x, cast_test.anchor_position.z).length(), "Cast aims toward arena center")
+	await frames(50)
+	check(cast_test.lure.position.y > 34, "Cast follows an airborne arc")
+	await frames(60)
+	check(cast_test.lure.cast_remaining == 0 and cast_test.lure.velocity.y < 0, "Cast lands and enters downward")
+	cast_test.lure.queue_free()
+	cast_test._spawn_lure(BaitMotion.Kind.SQUID)
+	cast_test.lure.start_flee(1, Vector3.UP)
+	await frames(30)
+	check(Vector2(cast_test.lure.position.x - cast_test.anchor_position.x, cast_test.lure.position.z - cast_test.anchor_position.z).length() < 0.1, "Player squid stays directly below boat during escape")
 	cast_test.set_active(false)
 	cast_test.lure.queue_free()
 	cast_test.boat.queue_free()
@@ -460,5 +470,132 @@ func _ready() -> void:
 	var food_before_air = fish.feeding.food
 	await dash(60, fish.heading)
 	check(fish.feeding.food == food_before_air + 3 and fish.position.y > 32, "Breaching fish strike eats airborne mullet")
+	var straight = bait(BaitMotion.Kind.MINNOW, Vector3(0, 12, 0))
+	straight.start_flee(1, Vector3.FORWARD)
+	var max_side = 0.0
+	for i in range(25):
+		await frames(1)
+		max_side = maxf(max_side, absf(straight.position.x))
+	check(straight.position.z < -2 and max_side < 0.45, "Minnow darts forward with bounded wiggle instead of turning sideways")
+	var rod = BaitMotion.PlayerLiveDriver.new()
+	rod.use_anchor = true
+	rod.anchor_position = Vector3(0, 32, -60)
+	rod.steering = 1
+	var bounded_live = true
+	for i in range(1000):
+		var intent = rod.sample(straight, 0.016)
+		var bearing = BaitMotion.horizontal(rod.anchor_position - straight.position)
+		bounded_live = bounded_live and intent.direction.dot(bearing) >= cos(deg_to_rad(40.1))
+	check(bounded_live, "Live bait steering stays within rod deflection limit on release")
+	straight.queue_free()
+	fish.velocity = Vector3(22, 22, -10)
+	fish.limit_breach_velocity()
+	check(Vector2(fish.velocity.x, fish.velocity.z).length() <= 8.01 and fish.velocity.y <= 8.01, "Player breach velocity is capped horizontally and vertically")
+	var bird = Seagull.new()
+	bird.position = Vector3(0, 33, 0)
+	get_parent().add_child(bird)
+	bird.phase = 2
+	bird.remaining = 6.0
+	await frames(120)
+	check(absf(bird.position.y - 32.15) < 0.3, "Gull can settle onto the surface")
+	check(absf(bird.visual.rotation.x) < 0.05, "Resting gull stays upright")
+	var surface_mullet = bait(BaitMotion.Kind.MULLET, Vector3(2, 31, 0))
+	bird.phase = 0
+	bird.scan_clock = 0
+	await frames(2)
+	check(bird.prey != null and bird.prey.get_ref() == surface_mullet and bird.phase == 1, "Gull aims a swoop at nearby surface mullet")
+	surface_mullet.position = Vector3(40, 31, 40)
+	var diving = BaitMotion.LiveBaitDriver.new(surface_mullet.position, 18)
+	diving._mullet_dive_wait = 0
+	surface_mullet.driver = diving
+	await frames(180)
+	check(surface_mullet.position.y < 27, "Mullet occasionally dives away from surface")
+	surface_mullet.queue_free()
+	var before_bird = fish.feeding.food
+	check(bird.try_bite(fish) and fish.feeding.food == before_bird + 5, "Seagull uses ordinary catch and nutrition gate")
+	bird.queue_free()
+	await check_readability_and_shared_motion()
 	print("SELF-TEST COMPLETE: %d checks, %d failures" % [checks, failures])
 	get_tree().quit(0 if failures == 0 else 1)
+
+func check_readability_and_shared_motion() -> void:
+	reset()
+	var ai_shrimp = bait(BaitMotion.Kind.SHRIMP, Vector3(-60, 10, 15))
+	var human_shrimp = bait(BaitMotion.Kind.SHRIMP, Vector3(-57, 10, 15))
+	var ai = BaitMotion.LiveBaitDriver.new(ai_shrimp.position, 812)
+	ai._charging_escape = true
+	ai._escape_clock = 0
+	ai._random_charge = 0.75
+	ai_shrimp.driver = ai
+	var human = BaitMotion.PlayerLiveDriver.new()
+	human.escape_held = true
+	human.sample(human_shrimp, 0.75)
+	human.escape_held = false
+	human_shrimp.driver = human
+	await frames(14)
+	check(ai_shrimp.velocity.y > 2 and ai_shrimp.visual.rotation.x < -0.7, "Shrimp kick rises with nose pointed down")
+	check(ai_shrimp.velocity.z > 0, "Shrimp kick has a small backward component")
+	await frames(42)
+	check(ai_shrimp.velocity.z < -1.5 and absf(ai_shrimp.visual.rotation.x) < 0.15, "Shrimp transitions into a level forward glide")
+	check((human_shrimp.position - ai_shrimp.position - Vector3(3,0,0)).length() < 0.01, "Matching AI and human charges produce the same shrimp trajectory")
+	await frames(34)
+	check(ai_shrimp.position.z < 13.5 and ai_shrimp.velocity.y < 0, "Shrimp glide advances out of its column and starts sinking")
+	check(not ai_shrimp.start_flee(1, Vector3.UP), "Shrimp cannot chain another kick before glide recovery")
+	ai_shrimp.queue_free()
+	human_shrimp.queue_free()
+	var steer_actor = bait(BaitMotion.Kind.MINNOW, Vector3(65, 12, 0))
+	var intent = BaitMotion.swimming(Vector3.BACK, 1)
+	var legal = ai.player_reproducible_command(steer_actor, intent, 0.016)
+	check(rad_to_deg(steer_actor.heading.angle_to(legal.direction)) <= 40.01, "AI destination steering respects the player input cone")
+	steer_actor.queue_free()
+	var cover = RockShelter.new()
+	cover.position = Vector3(84, 0, 0)
+	cover.radius = 2.5
+	cover.max_guests = 1
+	get_parent().add_child(cover)
+	var second_cover = RockShelter.new()
+	second_cover.position = Vector3(84, 0, 10)
+	second_cover.max_guests = 1
+	get_parent().add_child(second_cover)
+	var guest = bait(BaitMotion.Kind.SHRIMP, Vector3(78, 0.4, 0))
+	guest.heading = Vector3.RIGHT
+	var other = bait(BaitMotion.Kind.CRAB, Vector3(78, 0.4, 10))
+	check(cover.reserve(guest) and not cover.reserve(other), "A shelter reserves only one bait")
+	check(not second_cover.reserve(other), "Shelter reservations respect the global guest cap")
+	var seeking = BaitMotion.LiveBaitDriver.new(guest.position, 81)
+	seeking.shelter_enabled = true
+	seeking.shelter = cover
+	seeking.shelter_remaining = 16
+	seeking._escape_clock = 20
+	guest.driver = seeking
+	var start_distance = guest.position.distance_to(cover.spot)
+	await frames(120)
+	check(guest.position.distance_to(cover.spot) < start_distance - 1, "Shelter bait approaches cover using the shared swimming motor")
+	seeking._sense_time = 1
+	seeking._threat = true
+	seeking.sample(guest, 0.016)
+	check(not cover.occupied() and seeking.shelter == null, "Nearby predator interrupts shelter behavior and releases occupancy")
+	guest.queue_free()
+	other.queue_free()
+	cover.queue_free()
+	second_cover.queue_free()
+	var feedback = SurfaceFeedback.new()
+	feedback.water_height = 1000
+	feedback.max_effects = 3
+	get_parent().add_child(feedback)
+	feedback.set_physics_process(false)
+	var crossing = bait(BaitMotion.Kind.MULLET, Vector3(0, 999, 0))
+	crossing.set_physics_process(false)
+	feedback._physics_process(0.016)
+	crossing.position.y = 1001
+	feedback._physics_process(0.016)
+	check(feedback.effects.size() == 1, "Crossing the surface creates a splash and ripple")
+	crossing.position.y = 1000.02
+	feedback._physics_process(0.016)
+	check(feedback.effects.size() == 1, "Small waterline fluctuations do not repeat splashes")
+	for i in range(8): feedback.emit_crossing(Vector3.ZERO, 6)
+	check(feedback.effects.size() == 3, "Simultaneous water effects stay bounded")
+	feedback._physics_process(1.5)
+	check(feedback.effects.is_empty(), "Splash effects expire and release their nodes")
+	crossing.queue_free()
+	feedback.queue_free()

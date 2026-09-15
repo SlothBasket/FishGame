@@ -1,9 +1,9 @@
 extends Node3D
 ## Prototype level + HUD. Arena dimensions below drive seabed, surface, bounds and zones.
 
-@export var arena_width: float = 180.0
+@export var arena_width: float = 240.0
 @export var water_depth: float = 32.0
-@export var rock_count: int = 85
+@export var rock_count: int = 24
 var _fish
 var _telemetry: Label
 var _status: Label
@@ -19,6 +19,8 @@ func _ready() -> void:
 	_fish = $FishPlayer
 	_fish.water_height = water_depth
 	var args = OS.get_cmdline_user_args()
+	if "--perf-check" in args:
+		add_child(PerformanceProbe.new())
 	_capture = "--capture" in args
 	_feeding_preview = "--feeding-preview" in args
 	_charge_preview = "--charge-preview" in args
@@ -39,6 +41,8 @@ func _ready() -> void:
 		_lure_test = LureTestController.new()
 		add_child(_lure_test)
 		_lure_test.setup(_fish, self, Vector3(0, water_depth - 1, 12))
+	if "--readability-preview" in args:
+		add_child(ReadabilityPreview.new())
 	if _capture:
 		_fish.pivot.rotation = Vector3(-0.13, -0.45, 0)
 	if _feeding_preview or _charge_preview:
@@ -70,24 +74,26 @@ func build_water() -> void:
 	sun.rotation_degrees = Vector3(-58, -30, 0)
 	sun.light_color = Color("d0e4dc")
 	sun.light_energy = 0.85
-	sun.shadow_enabled = true
+	sun.shadow_enabled = false
 	add_child(sun)
-	var water = Geometry.material("428c97")
-	water.cull_mode = BaseMaterial3D.CULL_DISABLED
-	water.roughness = 0.22
-	water.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	water.albedo_color = Color(0.38, 0.72, 0.76, 0.58)
+	var water = ShaderMaterial.new()
+	water.shader = load("res://Shaders/WaterSurface.gdshader")
 	var surface = MeshInstance3D.new()
 	var plane = PlaneMesh.new()
 	plane.size = Vector2.ONE * arena_width
 	surface.mesh = plane
 	surface.position.y = water_depth
 	surface.material_override = water
+	surface.name = "WaterSurface"
 	add_child(surface)
+	var feedback = SurfaceFeedback.new()
+	feedback.water_height = water_depth
+	add_child(feedback)
 
 func build_reef() -> void:
 	var half = arena_width * 0.5
-	var sand = Geometry.material("617f78")
+	var sand = ShaderMaterial.new()
+	sand.shader = load("res://Shaders/Sand.gdshader")
 	Geometry.box(self, "Seabed", Vector3(0, -1, 0), Vector3(arena_width, 2, arena_width), sand)
 	Geometry.box(self, "SurfaceBoundary", Vector3(0, water_depth + 1, 0), Vector3(arena_width, 2, arena_width), sand, false)
 	get_node("SurfaceBoundary").collision_layer = 8
@@ -97,14 +103,16 @@ func build_reef() -> void:
 	var rng = RandomNumberGenerator.new()
 	rng.seed = 426 # Stable terrain; live behavior uses independent varied seeds.
 	var stone = Geometry.material("42686b")
-	var coral = Geometry.material("c28f73")
-	var weed = Geometry.material("367e77")
+	# Eight separated clusters leave open lanes through the center and between zones.
+	var clusters = [Vector2(-17,-17), Vector2(22,-36), Vector2(-48,18), Vector2(45,35), Vector2(-68,-58), Vector2(72,-62), Vector2(-20,74), Vector2(72,78)]
 	for i in range(rock_count):
-		var x = rng.randf_range(-half + 9, half - 9)
-		var z = rng.randf_range(-half + 9, half - 9)
+		var cluster: Vector2 = clusters[i % clusters.size()]
+		var offset = Vector2.from_angle(float(i / clusters.size()) * 2.4) * float(i / clusters.size()) * 7.0
+		var x = cluster.x + offset.x
+		var z = cluster.y + offset.y
 		if absf(x) < 5 and z > -32 and z < 20:
 			continue
-		var size = Vector3(rng.randf_range(1, 3.5), rng.randf_range(0.8, 3), rng.randf_range(1, 3))
+		var size = Vector3(rng.randf_range(2, 4.5), rng.randf_range(1.3, 3.5), rng.randf_range(2, 4.5))
 		var rock = StaticBody3D.new()
 		rock.position = Vector3(x, size.y * 0.35, z)
 		add_child(rock)
@@ -117,11 +125,24 @@ func build_reef() -> void:
 		shape.points = points
 		collision.shape = shape
 		rock.add_child(collision)
-		for j in range(3):
-			var height = rng.randf_range(0.8, 2.8)
-			Geometry.sphere(self, "SeaGrass", Vector3(x + size.x + j * 0.32, height * 0.5, z), Vector3(0.12, height * 0.5, 0.22), weed)
-		if i % 3 == 0:
-			Geometry.sphere(self, "Coral", Vector3(x - 1, 0.5, z + 2), Vector3(1.1, 0.7, 0.85), coral)
+		var shelter = RockShelter.new()
+		shelter.radius = maxf(size.x, size.z) + 1.1
+		rock.add_child(shelter)
+	# One instanced draw for small, non-colliding seabed detail.
+	var pebbles = MultiMeshInstance3D.new()
+	var batch = MultiMesh.new()
+	batch.transform_format = MultiMesh.TRANSFORM_3D
+	var pebble_mesh = SphereMesh.new()
+	pebble_mesh.radial_segments = 8
+	pebble_mesh.rings = 4
+	batch.mesh = pebble_mesh
+	batch.instance_count = 650
+	for i in range(batch.instance_count):
+		var scale = Vector3(rng.randf_range(0.12,0.45), rng.randf_range(0.06,0.18), rng.randf_range(0.12,0.4))
+		batch.set_instance_transform(i, Transform3D(Basis.IDENTITY.scaled(scale), Vector3(rng.randf_range(-half,half),0.04,rng.randf_range(-half,half))))
+	pebbles.multimesh = batch
+	pebbles.material_override = Geometry.material("728378")
+	add_child(pebbles)
 	var ring_material = Geometry.material("efc581", 0.45)
 	ring_material.emission_enabled = true
 	ring_material.emission = Color("896a35")

@@ -70,6 +70,8 @@ func advance_dash(delta: float) -> void:
 			fish.heading = fish.velocity.normalized()
 		var step = fish.lunge_speed * dt
 		var collision = fish.move_and_collide(fish.velocity * dt)
+		if start.y <= fish.water_height and fish.global_position.y > fish.water_height:
+			fish.limit_breach_velocity()
 		sweep_bite(start, fish.global_position)
 		# Skim along floor slopes; a frontal wall still ends the attack.
 		if collision != null and collision.get_normal().y > 0.55:

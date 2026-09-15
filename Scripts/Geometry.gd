@@ -2,6 +2,8 @@ class_name Geometry
 extends RefCounted
 ## Shared procedural building blocks. Fish and bait use the same material style.
 
+static var _unit_sphere: SphereMesh
+
 static func material(hex: String, metallic: float = 0.0) -> StandardMaterial3D:
 	var result = StandardMaterial3D.new()
 	result.albedo_color = Color(hex)
@@ -15,11 +17,13 @@ static func sphere(parent: Node3D, label: String, where: Vector3, size: Vector3,
 	node.name = label
 	node.position = where
 	node.scale = size
-	var mesh = SphereMesh.new()
-	mesh.radius = 1.0
-	mesh.height = 2.0
-	mesh.radial_segments = 24
-	mesh.rings = 12
+	if _unit_sphere == null:
+		_unit_sphere = SphereMesh.new()
+		_unit_sphere.radius = 1.0
+		_unit_sphere.height = 2.0
+		_unit_sphere.radial_segments = 16
+		_unit_sphere.rings = 8
+	var mesh = _unit_sphere
 	node.mesh = mesh
 	node.material_override = mat
 	parent.add_child(node)

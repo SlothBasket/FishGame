@@ -73,6 +73,18 @@ func _ready() -> void:
 				_body.add_child(leg)
 				_appendages.append(leg)
 				Geometry.triangle(leg, Vector3.ZERO, Vector3(side * 0.35, -0.12, 0.04), Vector3(side * 0.1, -0.04, 0.09), shell)
+	elif kind == BaitMotion.Kind.GULL:
+		var white = Geometry.material("eee9d9")
+		var tips = Geometry.material("454d59")
+		Geometry.sphere(_body, "Body", Vector3.ZERO, Vector3(0.25, 0.26, 0.6), white)
+		Geometry.sphere(_body, "Head", Vector3(0, 0.15, -0.5), Vector3.ONE * 0.21, white)
+		Geometry.sphere(_body, "Beak", Vector3(0, 0.12, -0.76), Vector3(0.08, 0.07, 0.18), Geometry.material("dfb652"))
+		for side in [-1, 1]:
+			var wing = Node3D.new()
+			_body.add_child(wing)
+			_appendages.append(wing)
+			Geometry.triangle(wing, Vector3(0, 0.1, -0.25), Vector3(side * 1.2, 0, 0.25), Vector3(0, 0.1, 0.35), white)
+			Geometry.triangle(wing, Vector3(side * 0.9, 0, 0.1), Vector3(side * 1.5, 0, 0.42), Vector3(side * 1.1, 0, 0.3), tips)
 	else:
 		var lure_color = Geometry.material("d9e166" if kind == BaitMotion.Kind.JERKBAIT else "cc7b45", 0.5)
 		Geometry.sphere(_body, "Lure", Vector3.ZERO,
@@ -101,7 +113,9 @@ func _process(delta: float) -> void:
 				_appendages[i].rotation = Vector3(wave * 0.25, cos(_phase + i) * 0.25, 0)
 			BaitMotion.Kind.CRAB:
 				_appendages[i].rotation.z = wave * (0.35 if action == BaitMotion.Action.CRAWL else 0.08)
+			BaitMotion.Kind.GULL:
+				_appendages[i].rotation.z = (0.7 if action == BaitMotion.Action.PAUSE else sin(_phase * 0.18) * 0.35) * (-1 if i == 0 else 1)
 			_:
 				_appendages[i].rotation.y = wave * (0.5 if action in [BaitMotion.Action.JERK, BaitMotion.Action.JIG_UP] else 0.12)
 	_body.scale = Vector3(1 - twitch * 0.16, 1 - twitch * 0.16, 1 + twitch * 0.12) if kind == BaitMotion.Kind.SQUID else Vector3.ONE
-	_body.rotation = Vector3.ZERO
+	_body.rotation = Vector3(0, sin(_phase * 1.4) * twitch * 0.22, 0) if kind == BaitMotion.Kind.MINNOW else Vector3.ZERO
