@@ -3,10 +3,10 @@ extends Node3D
 ## Only species, speed and twitch affect presentation; bait source is never inspected.
 
 var kind: BaitMotion.Kind = BaitMotion.Kind.MINNOW
+var bird_pose: int = 0 # 0 flight, 1 tucked dive, 2 floating, 3 underwater paddle
 var speed: float = 0.0
 var twitch: float = 0.0
 var action: BaitMotion.Action = BaitMotion.Action.PAUSE
-var idle_action: BaitMotion.IdleAction = BaitMotion.IdleAction.NONE
 var _appendages: Array[Node3D] = []
 var _body: Node3D
 var _phase: float = 0.0
@@ -85,16 +85,6 @@ func _ready() -> void:
 			_appendages.append(wing)
 			Geometry.triangle(wing, Vector3(0, 0.1, -0.25), Vector3(side * 1.2, 0, 0.25), Vector3(0, 0.1, 0.35), white)
 			Geometry.triangle(wing, Vector3(side * 0.9, 0, 0.1), Vector3(side * 1.5, 0, 0.42), Vector3(side * 1.1, 0, 0.3), tips)
-	else:
-		var lure_color = Geometry.bait_material("d9e166" if kind == BaitMotion.Kind.JERKBAIT else "cc7b45", 0.5)
-		Geometry.sphere(_body, "Lure", Vector3.ZERO,
-			Vector3(0.18, 0.20, 0.68) if kind == BaitMotion.Kind.JERKBAIT else Vector3(0.22, 0.34, 0.24), lure_color)
-		_eyes(dark, 0.14, 0.06, -0.38 if kind == BaitMotion.Kind.JERKBAIT else -0.15, 0.05)
-		var tail = Node3D.new()
-		tail.position = Vector3(0, 0, 0.48 if kind == BaitMotion.Kind.JERKBAIT else 0.2)
-		_body.add_child(tail)
-		_appendages.append(tail)
-		Geometry.triangle(tail, Vector3.ZERO, Vector3(-0.2, 0.18, 0.38), Vector3(0.2, -0.18, 0.38), lure_color)
 
 func _eyes(mat: Material, x: float, y: float, z: float, radius: float) -> void:
 	for side in [-1, 1]:
@@ -126,10 +116,12 @@ func _process(delta: float) -> void:
 			BaitMotion.Kind.SQUID:
 				_appendages[i].rotation = Vector3(wave * 0.25, cos(_phase + i) * 0.25, 0)
 			BaitMotion.Kind.CRAB:
-				_appendages[i].rotation.z = wave * (0.35 if action == BaitMotion.Action.CRAWL else 0.08)
+				_appendages[i].rotation.z = wave * (0.35 if speed > 0.1 else 0.08)
 			BaitMotion.Kind.GULL:
-				_appendages[i].rotation.z = (0.7 if action == BaitMotion.Action.PAUSE else sin(_phase * 0.18) * 0.35) * (-1 if i == 0 else 1)
+				var fold = 1.15 if bird_pose == 1 else 0.7 if bird_pose == 2 else 0.55 + sin(_phase*0.25)*0.45 if bird_pose == 3 else sin(_phase*0.18)*0.35
+				_appendages[i].rotation.z = lerp_angle(_appendages[i].rotation.z, fold * (-1 if i == 0 else 1), 1-exp(-10*delta))
+				_appendages[i].rotation.y = lerp_angle(_appendages[i].rotation.y, (0.6 if bird_pose == 1 else 0.0) * (-1 if i == 0 else 1), 1-exp(-10*delta))
 			_:
-				_appendages[i].rotation.y = wave * (0.5 if action in [BaitMotion.Action.JERK, BaitMotion.Action.JIG_UP] else 0.12)
+				_appendages[i].rotation.y = wave * 0.12
 	_body.scale = Vector3(1 - twitch * 0.16, 1 - twitch * 0.16, 1 + twitch * 0.12) if kind == BaitMotion.Kind.SQUID else Vector3.ONE
 	_body.rotation = Vector3(0, sin(_phase * 1.4) * twitch * 0.22, 0) if kind == BaitMotion.Kind.MINNOW else Vector3.ZERO

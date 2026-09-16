@@ -14,18 +14,18 @@ signal bitten(bait, eater)
 @export var bottom_clearance: float = 0.32
 @export_group("Escape and depth")
 @export var flee_charge_time: float = 0.65
-@export var flee_cooldown: float = 0.6
+@export var flee_cooldown: float = 0.95
 @export var minimum_flee_strength: float = 0.25
 @export var maximum_flee_strength: float = 1.0
-@export var dart_speed: float = 11.0
-@export var shrimp_kick_speed: float = 5.0
-@export var shrimp_glide_speed: float = 4.5
+@export var dart_speed: float = 10.0
+@export var shrimp_kick_speed: float = 4.5
+@export var shrimp_glide_speed: float = 4.0
 @export var shrimp_glide_duration: float = 1.1
 var _shrimp_kick_duration: float = 0.4
 var _escape_strength: float = 1.0
 var _motion_age: float = 0.0
-@export var squid_jet_speed: float = 6.0
-@export var crab_scuttle_speed: float = 5.5
+@export var squid_jet_speed: float = 5.5
+@export var crab_scuttle_speed: float = 5.0
 @export var powered_descent_speed: float = 2.8
 @export var breach_impulse: float = 10.0
 @export var airborne_gravity: float = 6.5
@@ -48,12 +48,11 @@ var cast_windup: float = 0.0
 var cast_windup_duration: float = 0.28
 var cast_origin: Vector3
 var cast_launch_velocity: Vector3
-@export var squid_roam_radius: float = 6.0
+@export var squid_roam_radius: float = 8.4
 var floor_height: float = 0.0
 var _floor_scan: float = 0.0
 var cast_destination: Vector3
 var _visual_yaw: float = 0.0
-var _curve_side: float = 1.0
 var driver: BaitMotion.IBaitDriver
 var claimed: bool = false
 var heading: Vector3 = Vector3.FORWARD
@@ -62,24 +61,40 @@ var _eater
 var _swallow: float = 0.0
 
 func hit_radius() -> float:
-	return [0.28, 0.28, 0.42, 0.38, 0.30, 0.32, 0.34, 0.55][kind] * body_size
+	return [0.28, 0.28, 0.42, 0.38, 0.34, 0.55][kind] * body_size
 
 func nutrition() -> int:
-	return [1, 2, 3, 2, 1, 1, 3, 5][kind]
+	return [1, 4, 3, 5, 3, 5][kind]
+
+func randomize_size(random: RandomNumberGenerator) -> void:
+	# Set before _ready so mesh, collision and bite reach agree. No score randomness.
+	body_size = (0.64 if kind == BaitMotion.Kind.MINNOW else 0.8) * random.randf_range(0.85, 1.15)
+
+func caught_by_bird(bird) -> bool:
+	if claimed: return false
+	claimed = true
+	_eater = bird
+	velocity = Vector3.ZERO
+	collision_layer = 0
+	collision_mask = 0
+	remove_from_group("bait")
+	set_physics_process(false)
+	bitten.emit(self, bird) # Reuses the normal population replacement queue, without player points.
+	return true
 
 func display_name() -> String:
-	return ["Minnow", "Shrimp", "Squid", "Crab", "Jerkbait", "Jig", "Mullet", "Seagull"][kind]
+	return ["Minnow", "Shrimp", "Squid", "Crab", "Mullet", "Seagull"][kind]
 
 func _ready() -> void:
 	collision_layer = 4
 	collision_mask = 1 if kind in [BaitMotion.Kind.MULLET, BaitMotion.Kind.GULL] else 1 | 8
 	motion_mode = MOTION_MODE_FLOATING
 	if swim_speed <= 0.0:
-		swim_speed = [3.2, 3.0, 3.1, 1.5, 3.4, 3.0, 4.2, 6.0][kind]
+		swim_speed = [2.9, 2.7, 2.8, 1.35, 3.8, 6.0][kind]
 	if acceleration <= 0.0:
-		acceleration = [4.5, 14.0, 6.0, 8.0, 11.0, 12.0, 6.0, 5.0][kind]
+		acceleration = [4.5, 14.0, 6.0, 8.0, 6.0, 5.0][kind]
 	if turn_rate <= 0.0:
-		turn_rate = [100.0, 250.0, 105.0, 180.0, 260.0, 220.0, 100.0, 90.0][kind]
+		turn_rate = [100.0, 250.0, 105.0, 180.0, 100.0, 90.0][kind]
 	var shape = SphereShape3D.new()
 	shape.radius = hit_radius()
 	var collision = CollisionShape3D.new()
@@ -129,46 +144,32 @@ func _physics_process(delta: float) -> void:
 	# Horizontal steering and vertical travel are independent. This same motor runs
 	# AI and player bait, so neither can invent a different retrieve silhouette.
 	var direction = BaitMotion.horizontal(command.direction)
-	var bottom_kind = kind in [BaitMotion.Kind.CRAB, BaitMotion.Kind.JIG, BaitMotion.Kind.SHRIMP]
-	var passive = command.action in [BaitMotion.Action.GLIDE, BaitMotion.Action.FALL, BaitMotion.Action.SINK, BaitMotion.Action.RISE]
-	if flee_remaining <= 0 and not airborne and command.direction.length_squared() > 0.001 and not command.action in [BaitMotion.Action.FALL, BaitMotion.Action.SINK, BaitMotion.Action.RISE]:
+	var bottom_kind = kind in [BaitMotion.Kind.CRAB, BaitMotion.Kind.SHRIMP]
+	var passive = command.action in [BaitMotion.Action.GLIDE, BaitMotion.Action.RISE]
+	if flee_remaining <= 0 and not airborne and command.direction.length_squared() > 0.001 and command.action != BaitMotion.Action.RISE:
 		heading = FishInput.turn_toward(BaitMotion.horizontal(heading), direction, deg_to_rad(turn_rate) * delta)
 	var target = BaitMotion.horizontal(heading) * swim_speed * command.effort
 	var response = acceleration
 	match command.action:
-		BaitMotion.Action.CRUISE, BaitMotion.Action.BURST:
+		BaitMotion.Action.CRUISE:
 			target.y = swim_speed * 0.18 * command.effort
-		BaitMotion.Action.GLIDE, BaitMotion.Action.FALL, BaitMotion.Action.SINK:
+		BaitMotion.Action.GLIDE:
 			target = BaitMotion.horizontal(heading) * swim_speed * 0.24
 			target.y = -sink_speed * 0.65
 			response = 1.8
 		BaitMotion.Action.RISE:
 			target.y = sink_speed * command.effort
-		BaitMotion.Action.JERK, BaitMotion.Action.DART:
-			# A short sideways kick, not a turn-limited copy of reeling.
-			target = direction * swim_speed * 1.5
-			target.y = 0.05
-			response = 28.0
-		BaitMotion.Action.JIG_UP:
-			target = BaitMotion.horizontal(heading) * swim_speed * 0.18
-			target.y = 2.8
-			response = 24.0
 	# Species profiles apply equally to human commands and AI commands.
 	if kind == BaitMotion.Kind.SQUID:
 		target = BaitMotion.horizontal(heading) * 0.45
 		target.y = -1.5 if passive else 2.0 * command.effort * (0.2 + 0.8 * pow(maxf(0, sin(_motion_age * 4)), 2))
-		if command.action == BaitMotion.Action.JIG_UP: target.y = 4.5
 	elif kind == BaitMotion.Kind.SHRIMP:
 		target.y = -1.4
 		target *= Vector3(0.55, 1, 0.55)
-		if command.action == BaitMotion.Action.JIG_UP:
-			target = BaitMotion.horizontal(heading) * 0.15 + Vector3.UP * 5.5
 	elif kind == BaitMotion.Kind.CRAB:
-		target = (direction if command.action == BaitMotion.Action.DART else BaitMotion.horizontal(heading)) * (crab_scuttle_speed if command.action == BaitMotion.Action.DART else swim_speed) * command.effort
+		target = BaitMotion.horizontal(heading) * swim_speed * command.effort
 		target.y = -4.5
 		if passive: target.x = 0.0; target.z = 0.0
-		if command.action == BaitMotion.Action.JIG_UP:
-			target = BaitMotion.horizontal(heading).cross(Vector3.UP) * 4.0 + Vector3.DOWN * 4.5
 	if kind == BaitMotion.Kind.MULLET:
 		target.y = clampf((water_height - surface_depth - global_position.y) * 2.0, -1.5, 2.5)
 	if command.action == BaitMotion.Action.RISE and kind != BaitMotion.Kind.CRAB:
@@ -186,7 +187,7 @@ func _physics_process(delta: float) -> void:
 			heading = _escape_axis
 		if kind == BaitMotion.Kind.SHRIMP:
 			if _escape_age < _shrimp_kick_duration:
-				flee_velocity = -_escape_axis * 0.65 * _escape_strength + Vector3.UP * shrimp_kick_speed * _escape_strength
+				flee_velocity = _escape_axis * 3.0 * _escape_strength + Vector3.UP * shrimp_kick_speed * _escape_strength
 			else:
 				var glide = clampf((_escape_age - _shrimp_kick_duration) / shrimp_glide_duration, 0, 1)
 				var glide_target = _escape_axis * shrimp_glide_speed * _escape_strength * lerpf(1.0, 0.45, glide)
@@ -223,7 +224,7 @@ func _physics_process(delta: float) -> void:
 			airborne = false
 			_breaching = false
 	if bottom_kind or passive:
-		_apply_bottom_constraint(command.action == BaitMotion.Action.CRAWL or kind == BaitMotion.Kind.CRAB)
+		_apply_bottom_constraint(kind == BaitMotion.Kind.CRAB)
 	var facing = FishInput.angles(heading)
 	if kind == BaitMotion.Kind.CRAB:
 		facing.x = 0.0
@@ -238,11 +239,11 @@ func _physics_process(delta: float) -> void:
 		var pitch = -1.0 if flee_remaining > 0 and _escape_age < _shrimp_kick_duration else 0.0
 		_visual_pitch = lerp_angle(_visual_pitch, pitch, 1.0-exp(-12.0*delta))
 		facing.x = _visual_pitch
+		facing.y += PI # Shrimp nose trails the tail/line while reeling and kicking.
 	visual.rotation = Vector3(facing.x, facing.y, 0.0)
 	visual.speed = velocity.length()
 	visual.twitch = maxf(clampf(command.twitch, 0.0, 1.0), 1.0 if flee_remaining > 0 else 0.0)
 	visual.action = command.action
-	visual.idle_action = command.idle_action
 
 func start_flee(fraction: float, away: Vector3) -> bool:
 	if flee_recovery > 0.0 or airborne or _breaching: return false
@@ -253,13 +254,12 @@ func start_flee(fraction: float, away: Vector3) -> bool:
 	var flat = BaitMotion.horizontal(away)
 	_escape_axis = flat
 	_escape_age = 0.0
-	_curve_side = 1.0 if BaitMotion.horizontal(heading).cross(flat).y > 0 else -1.0
 	match kind:
 		BaitMotion.Kind.SHRIMP:
-			# Body-relative kick then forward glide: identical for AI and human input.
-			_escape_axis = BaitMotion.horizontal(heading)
+			# Heading denotes tail-first travel for shrimp; the visual faces backward.
+			_escape_axis = flat
 			_shrimp_kick_duration = lerpf(0.22, 0.5, strength)
-			flee_velocity = -_escape_axis * 0.65 * strength + Vector3.UP * shrimp_kick_speed * strength
+			flee_velocity = _escape_axis * 3.0 * strength + Vector3.UP * shrimp_kick_speed * strength
 			flee_remaining = _shrimp_kick_duration + shrimp_glide_duration
 			flee_recovery = maxf(flee_cooldown, _shrimp_kick_duration + 0.12)
 		BaitMotion.Kind.SQUID:

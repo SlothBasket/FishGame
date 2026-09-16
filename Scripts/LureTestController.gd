@@ -1,251 +1,234 @@
 class_name LureTestController
 extends Node
-## Development-only bridge from keyboard to FishingBaitDriver intent.
-
-var fish
-var lure: BaitActor
-var driver: BaitMotion.FishingBaitDriver
-var live_driver: BaitMotion.PlayerLiveDriver
+## Development controls: fish view, bait view, or boat setup before a cast.
+const ROSTER = [BaitMotion.Kind.MINNOW, BaitMotion.Kind.SHRIMP, BaitMotion.Kind.SQUID, BaitMotion.Kind.CRAB, BaitMotion.Kind.MULLET]
 @export var cast_distance: float = 65.0
 @export var cast_distance_variation: float = 0.22
-@export var cast_angle_variation: float = 0.3
-@export var cast_entry_speed: float = 4.0
+@export var cast_angle_variation: float = 0.12
 @export var origin_move_speed: float = 12.0
+@export var orbit_distance: float = 10.8
+var fish
+var bait_parent: Node3D
+var lure: BaitActor
+var live_driver: BaitMotion.PlayerLiveDriver
 var boat: Node3D
+var bait_camera: Camera3D
+var mode_label: Label
 var selected_kind: int = BaitMotion.Kind.MINNOW
 var active: bool = false
+var boat_aiming: bool = false
 var anchor_position: Vector3
 var spawn_position: Vector3
-var mode_label: Label
-var bait_parent: Node3D
-var bait_camera: Camera3D
 var camera_focus: Vector3
 var use_fish_camera: bool = false
 var orbit_yaw: float = 0.93
 var orbit_pitch: float = 0.38
-var orbit_distance: float = 10.8
+var boat_yaw: float = 0.0
+var boat_pitch: float = -0.12
 
 func setup(owner_fish, parent: Node3D, anchor: Vector3) -> void:
 	fish = owner_fish
 	fish.add_to_group("fish_predators")
 	bait_parent = parent
-	anchor_position = Vector3(90.0, anchor.y + 1.0, 75.0)
-	spawn_position = fish.global_position + Vector3(0, 2, -8)
-	driver = BaitMotion.FishingBaitDriver.new(anchor_position)
-	driver.pause_vertical_rate = -0.42
-	driver.retrieve_vertical_influence = 0.12
-	# No stray test lure is spawned until the player enters bait mode.
+	anchor_position = Vector3(90, anchor.y + 1, 75)
+	spawn_position = fish.global_position + Vector3(0,2,-8)
+	boat_yaw = FishInput.angles(BaitMotion.horizontal(-anchor_position)).y
 	boat = Node3D.new()
 	boat.name = "TestBoat"
 	parent.add_child(boat)
 	boat.position = anchor_position
-	Geometry.sphere(boat, "Hull", Vector3(0, -0.45, 0), Vector3(1.4, 0.6, 2.8), Geometry.material("58473c"))
-	Geometry.sphere(boat, "Rim", Vector3.ZERO, Vector3(1.5, 0.14, 2.8), Geometry.material("bfaa85"))
+	Geometry.sphere(boat, "Hull", Vector3(0,-0.45,0), Vector3(1.4,0.6,2.8), Geometry.material("58473c"))
+	Geometry.sphere(boat, "Rim", Vector3.ZERO, Vector3(1.5,0.14,2.8), Geometry.material("bfaa85"))
 	boat.visible = false
-	_make_label(parent)
 	bait_camera = Camera3D.new()
 	bait_camera.fov = 52
 	parent.add_child(bait_camera)
 	camera_focus = spawn_position
-
-func _make_label(parent: Node) -> void:
 	var layer = CanvasLayer.new()
 	parent.add_child(layer)
 	mode_label = Label.new()
-	mode_label.position = Vector2(40, 140)
-	mode_label.add_theme_font_size_override("font_size", 16)
-	mode_label.add_theme_color_override("font_color", Color("efc581"))
+	mode_label.position = Vector2(40,140)
+	mode_label.add_theme_font_size_override("font_size",16)
+	mode_label.add_theme_color_override("font_color",Color("efc581"))
 	layer.add_child(mode_label)
 	_update_label()
 
 func _input(event: InputEvent) -> void:
-	if active and not use_fish_camera and event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		orbit_mouse(event.relative)
+	if active and event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		if boat_aiming:
+			boat_yaw -= event.relative.x * 0.004
+			boat_pitch = clampf(boat_pitch - event.relative.y * 0.004, -0.6, 0.65)
+		elif not use_fish_camera: orbit_mouse(event.relative)
+		else: return
 		get_viewport().set_input_as_handled()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		match event.keycode:
+			KEY_G: cast_bait()
 			KEY_TAB: set_active(not active)
 			KEY_C: toggle_camera()
-			KEY_G:
-				if active: cast_bait()
 			KEY_F:
-				if active: reset_lure()
+				if active and not boat_aiming: reset_lure()
 			KEY_X:
 				if active: switch_lure()
+
+func freeze_fish() -> void:
+	fish.external_input = true
+	fish.cancel_attack()
+	fish.command = FishInput.new()
+	fish.velocity = Vector3.ZERO
+
 func set_active(value: bool) -> void:
 	active = value
-	# Freeze player intent while testing the lure; camera remains available for viewing.
-	fish.external_input = active
+	boat_aiming = false
 	if active:
-		fish.command = FishInput.new()
+		freeze_fish()
 		boat.visible = true
 		if not is_instance_valid(lure): _spawn_lure(selected_kind)
-		fish.velocity = Vector3.ZERO
 		reset_lure()
-		camera_focus = spawn_position
-		bait_camera.position = camera_focus + Vector3(8, 4, 6)
-		bait_camera.look_at(camera_focus)
+		camera_focus = lure.global_position
 		_select_camera()
 	else:
 		fish.external_input = false
 		fish.camera.make_current()
-		driver.retrieve_input = 0.0
-		driver.escape_held = false
-		driver._escape_was_held = false
-		driver._escape_charge = 0.0
-		driver.pending_fraction = -1.0
-		if live_driver != null:
-			live_driver.throttle = 0.0
-			live_driver.descend = false
-			live_driver.rise = false
-			live_driver.escape_held = false
-			live_driver._held = false
-			live_driver.charge = 0.0
-			live_driver._pending_escape = null
+		if live_driver != null: live_driver.clear_input()
 	_update_label()
+
+func deployment_position() -> Vector3:
+	return Vector3(anchor_position.x, anchor_position.y-1, anchor_position.z) if selected_kind == BaitMotion.Kind.SQUID else spawn_position
 
 func reset_lure() -> void:
 	if not is_instance_valid(lure) or lure.claimed: return
 	lure.global_position = deployment_position()
 	lure.clear_actions()
-	if live_driver != null:
-		live_driver.charge = 0.0
-		live_driver._pending_escape = null
-		live_driver._held = false
-		live_driver.escape_held = false
-	lure.heading = BaitMotion.horizontal(anchor_position - spawn_position)
-	driver._impulse_time = 0.0
-	driver._escape_charge = 0.0
-	driver.pending_fraction = -1.0
-	driver._escape_was_held = false
-	driver.escape_held = false
-	driver.jerk_pressed = false
-	driver.jig_pressed = false
-	driver._travel_direction = Vector3.FORWARD
-	driver.cast_direction = BaitMotion.horizontal(anchor_position - spawn_position)
+	live_driver.clear_input()
+	lure.heading = BaitMotion.horizontal(anchor_position-lure.global_position)
 
-func switch_lure() -> void:
-	if not is_instance_valid(lure) or lure.claimed: return
-	var next_kind = (int(lure.kind) + 1) % 7
-	lure.queue_free()
-	_spawn_lure(next_kind)
-
-func _spawn_lure(kind: BaitMotion.Kind) -> void:
-	lure = BaitActor.new()
-	lure.name = "FishermanTestLure"
-	lure.kind = kind
+func _spawn_lure(kind: int) -> void:
+	assert(kind in ROSTER)
 	selected_kind = kind
+	lure = BaitActor.new()
+	lure.name = "FishermanTestBait"
+	lure.kind = kind
+	var size_rng = RandomNumberGenerator.new()
+	size_rng.randomize()
+	lure.randomize_size(size_rng)
 	lure.water_height = anchor_position.y
-	lure.source = BaitMotion.Source.LIVE if is_live_selection() else BaitMotion.Source.FISHERMAN
 	lure.position = deployment_position()
-	lure.heading = BaitMotion.horizontal(anchor_position - spawn_position)
-	driver._impulse_time = 0.0
-	driver._escape_charge = 0.0
-	driver.pending_fraction = -1.0
-	driver._escape_was_held = false
-	driver.escape_held = false
-	driver.jerk_pressed = false
-	driver.jig_pressed = false
-	driver._travel_direction = Vector3.FORWARD
-	driver.cast_direction = BaitMotion.horizontal(anchor_position - spawn_position)
+	lure.heading = BaitMotion.horizontal(anchor_position-lure.position)
 	live_driver = BaitMotion.PlayerLiveDriver.new()
-	live_driver.squid_axis = BaitMotion.horizontal(-anchor_position)
 	live_driver.use_anchor = true
 	live_driver.anchor_position = anchor_position
-	lure.driver = live_driver if is_live_selection() else driver
+	live_driver.squid_axis = Vector3.FORWARD.rotated(Vector3.UP,boat_yaw)
+	lure.driver = live_driver
 	lure.bitten.connect(_on_lure_bitten)
 	bait_parent.add_child(lure)
-	driver.pause_vertical_rate = -0.4
 	_update_label()
 
 func _on_lure_bitten(_bait, _eater) -> void:
-	var kind = lure.kind
-	await get_tree().create_timer(1.0).timeout
-	if not is_instance_valid(lure): _spawn_lure(kind)
+	await get_tree().create_timer(1).timeout
+	if active and not boat_aiming and not is_instance_valid(lure): _spawn_lure(selected_kind)
 
-func is_live_selection() -> bool:
-	return selected_kind not in [BaitMotion.Kind.JERKBAIT, BaitMotion.Kind.JIG]
-
-func _physics_process(delta: float) -> void:
-	if not active: return
-	if is_instance_valid(lure) and (lure.cast_windup > 0 or lure.cast_remaining > 0): return
-	var moving_origin = Input.is_physical_key_pressed(KEY_ALT)
-	if moving_origin:
-		var move = Vector3(Input.get_axis("left", "right"), 0, Input.get_axis("forward", "back"))
-		move_origin(move, delta)
-		driver._escape_was_held = false
-		driver._escape_charge = 0.0
-		driver.pending_fraction = -1.0
-	driver.retrieve_input = 0.0 if moving_origin else Input.get_action_strength("forward")
-	driver.steer_input = 0.0 if moving_origin else Input.get_axis("left", "right")
-	driver.escape_held = not moving_origin and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
-	if live_driver != null:
-		live_driver.throttle = driver.retrieve_input
-		live_driver.steering = driver.steer_input
-		live_driver.descend = not moving_origin and Input.is_physical_key_pressed(KEY_CTRL)
-		live_driver.rise = not moving_origin and Input.is_physical_key_pressed(KEY_SPACE)
-		if moving_origin:
-			live_driver._held = false
-			live_driver.charge = 0.0
-			live_driver._pending_escape = null
-		live_driver.escape_held = not moving_origin and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
-		live_driver.escape_side = -1.0 if driver.steer_input < 0 else 1.0
+func switch_lure() -> void:
+	selected_kind = ROSTER[(ROSTER.find(selected_kind)+1) % ROSTER.size()]
+	if not boat_aiming:
+		if is_instance_valid(lure): lure.queue_free()
+		_spawn_lure(selected_kind)
 	_update_label()
 
 func cast_bait() -> void:
-	var cast_direction = BaitMotion.horizontal(-anchor_position).rotated(Vector3.UP, randf_range(-cast_angle_variation, cast_angle_variation))
-	var distance = cast_distance * randf_range(1.0 - cast_distance_variation, 1.0 + cast_distance_variation)
-	spawn_position = anchor_position + cast_direction * distance
-	spawn_position.x = clampf(spawn_position.x, -110, 110)
-	spawn_position.z = clampf(spawn_position.z, -110, 110)
-	spawn_position.y = anchor_position.y - 0.45
-	if is_instance_valid(lure): lure.queue_free()
-	_spawn_lure(selected_kind)
-	lure.launch_cast(anchor_position + Vector3.UP * 0.7, deployment_position(), 0.55 if selected_kind == BaitMotion.Kind.SQUID else 1.8)
-
-func deployment_position() -> Vector3:
-	return Vector3(anchor_position.x, anchor_position.y - 1.0, anchor_position.z) if selected_kind == BaitMotion.Kind.SQUID else spawn_position
-
-func _update_label() -> void:
-	if mode_label == null:
+	# First press enters boat setup from either fish or bait mode. Second press launches.
+	if not boat_aiming:
+		active = true
+		boat_aiming = true
+		freeze_fish()
+		boat.visible = true
+		if is_instance_valid(lure): lure.queue_free()
+		lure = null
+		bait_camera.make_current()
+		_update_label()
 		return
-	var kind_name = lure.display_name() if is_instance_valid(lure) else "Respawning"
-	mode_label.text = ("LURE TEST: %s  |  W retrieve  A/D steer  LMB charge escape  X species  F reset\n" % kind_name
-		+ "Live: hold/release LMB escape, A/D direction, CTRL descend, SPACE rise | Lure: hold/release LMB escape\nALT+WASD boat | G cast | C camera | Mouse orbit | TAB fish") if active else "TAB  bait control  |  C choose bait/fish camera"
-	if active and live_driver != null and is_live_selection() and is_instance_valid(lure):
-		mode_label.text += "\nEscape charge: %d%%  Recovery: %.1fs" % [100 * live_driver.charge / lure.flee_charge_time, lure.flee_recovery]
+	var aim = Vector3.FORWARD.rotated(Vector3.UP,boat_yaw)
+	var direction = aim.rotated(Vector3.UP,randf_range(-cast_angle_variation,cast_angle_variation))
+	var distance = cast_distance * randf_range(1-cast_distance_variation,1+cast_distance_variation)
+	# Shorten a cast at the walls without rotating it away from the player's aim.
+	for axis in [0,2]:
+		if absf(direction[axis]) > 0.001:
+			var edge = 110.0 if direction[axis] > 0 else -110.0
+			distance = minf(distance,maxf(0,(edge-anchor_position[axis])/direction[axis]))
+	spawn_position = anchor_position + direction * distance
+	spawn_position.y -= 0.45
+	boat_aiming = false
+	_spawn_lure(selected_kind)
+	lure.launch_cast(anchor_position + Vector3.UP*0.7,deployment_position(),0.55 if selected_kind == BaitMotion.Kind.SQUID else 1.8)
+	camera_focus = anchor_position
+	_select_camera()
 
+func _physics_process(delta: float) -> void:
+	if not active: return
+	if boat_aiming:
+		var forward = Vector3.FORWARD.rotated(Vector3.UP,boat_yaw)
+		move_origin(forward*Input.get_axis("back","forward") + forward.cross(Vector3.UP)*Input.get_axis("left","right"),delta)
+		return
+	if not is_instance_valid(lure) or lure.claimed or lure.cast_windup > 0 or lure.cast_remaining > 0: return
+	if Input.is_action_pressed("forward") and lure.global_position.distance_to(anchor_position - Vector3.UP*0.65) < 1.2:
+		cast_bait()
+		return
+	live_driver.throttle = Input.get_action_strength("forward")
+	live_driver.steering = Input.get_axis("left","right")
+	live_driver.rise = Input.is_physical_key_pressed(KEY_SPACE)
+	live_driver.descend = Input.is_physical_key_pressed(KEY_CTRL)
+	live_driver.aim_direction = current_dash_aim()
+	live_driver.escape_held = Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
+	live_driver.escape_side = -1 if live_driver.steering < 0 else 1
+	_update_label()
+
+func move_origin(direction: Vector3, delta: float) -> void:
+	anchor_position += Vector3(direction.x,0,direction.z).limit_length()*origin_move_speed*delta
+	anchor_position.x = clampf(anchor_position.x,-105,105)
+	anchor_position.z = clampf(anchor_position.z,-105,105)
+	boat.position = anchor_position
+	if live_driver != null: live_driver.anchor_position = anchor_position
 
 func _process(delta: float) -> void:
-	if not active or not is_instance_valid(lure): return
-	camera_focus = camera_focus.lerp(lure.global_position, 1.0 - exp(-5.0 * delta))
-	# Fixed world angle makes rise/fall and sideways darts readable without rolling.
-	var offset = Vector3(sin(orbit_yaw) * cos(orbit_pitch), sin(orbit_pitch), cos(orbit_yaw) * cos(orbit_pitch)) * orbit_distance
-	bait_camera.global_position = camera_focus + offset
-	bait_camera.look_at(camera_focus + Vector3.FORWARD * 0.7)
+	if not active: return
+	if boat_aiming:
+		var forward = Vector3.FORWARD.rotated(Vector3.UP,boat_yaw)
+		boat.rotation.y = boat_yaw
+		bait_camera.position = anchor_position + Vector3.UP*1.8 - forward
+		bait_camera.look_at(bait_camera.position + forward*10 + Vector3.UP*tan(boat_pitch)*10)
+		return
+	if not is_instance_valid(lure): return
+	camera_focus = camera_focus.lerp(lure.global_position,1-exp(-5*delta))
+	var offset = Vector3(sin(orbit_yaw)*cos(orbit_pitch),sin(orbit_pitch),cos(orbit_yaw)*cos(orbit_pitch))*orbit_distance
+	bait_camera.position = camera_focus + offset
+	bait_camera.look_at(camera_focus + Vector3.FORWARD*0.7)
+
+func current_dash_aim() -> Vector3:
+	return -(fish.camera if use_fish_camera else bait_camera).global_basis.z.normalized()
+
+func orbit_mouse(relative: Vector2) -> void:
+	orbit_yaw -= relative.x*0.004
+	var limit = 1.52 if selected_kind == BaitMotion.Kind.SQUID else 1.25
+	orbit_pitch = clampf(orbit_pitch+relative.y*0.004,-limit if selected_kind == BaitMotion.Kind.SQUID else -0.65,limit)
 
 func toggle_camera() -> void:
+	if boat_aiming: return
 	use_fish_camera = not use_fish_camera
 	if active: _select_camera()
-	_update_label()
 
 func _select_camera() -> void:
 	if use_fish_camera: fish.camera.make_current()
 	else: bait_camera.make_current()
 
-func orbit_mouse(relative: Vector2) -> void:
-	orbit_yaw -= relative.x * 0.004
-	orbit_pitch = clampf(orbit_pitch + relative.y * 0.004, -0.65, 1.25)
-
-
-
-func move_origin(direction: Vector3, delta: float) -> void:
-	anchor_position += Vector3(direction.x, 0, direction.z).limit_length() * origin_move_speed * delta
-	anchor_position.x = clampf(anchor_position.x, -105, 105)
-	anchor_position.z = clampf(anchor_position.z, -105, 105)
-	boat.position = anchor_position
-	driver.anchor_position = anchor_position
-	if live_driver != null: live_driver.anchor_position = anchor_position
-	driver.cast_direction = BaitMotion.horizontal(anchor_position - lure.global_position) if is_instance_valid(lure) else Vector3.FORWARD
+func _update_label() -> void:
+	if mode_label == null: return
+	if boat_aiming:
+		mode_label.text = "BOAT: WASD move | Mouse aim | G cast | X species | TAB fish\nSelected: %s" % BaitMotion.Kind.keys()[selected_kind].capitalize()
+	elif active:
+		mode_label.text = "BAIT: W reel | A/D steer | Hold/release LMB escape | X species | G boat setup | C camera | TAB fish"
+		if selected_kind == BaitMotion.Kind.SQUID:
+			mode_label.text += "\nSQUID: Mouse aims dash | SPACE up jet | CTRL down jet | W slow reel | 8.4 m range"
+		if live_driver != null: mode_label.text += "\nCharge %d%%" % int(live_driver.charge / lure.flee_charge_time * 100)
+	else: mode_label.text = "TAB bait control | G enter boat and prepare a cast"

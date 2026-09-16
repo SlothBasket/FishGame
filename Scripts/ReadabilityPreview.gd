@@ -1,6 +1,6 @@
 class_name ReadabilityPreview
 extends Node
-## --readability-preview captures floor, water and both shrimp escape phases.
+## --readability-preview captures the environment, bait motion and boat/cast views.
 func _ready() -> void:
 	call_deferred("capture_views")
 
@@ -12,7 +12,8 @@ func capture_views() -> void:
 	var views = [
 		["floor", Vector3(0,7,5), Vector3(-14,0,-17)],
 		["surface-below", Vector3(0,28,5), Vector3(0,32,-12)],
-		["surface-above", Vector3(0,38,5), Vector3(0,32,-12)]]
+		["surface-above", Vector3(0,38,5), Vector3(0,32,-12)],
+		["midwater", Vector3(-8,19,-3), Vector3(-28,15,-20)]]
 	for view in views:
 		camera.position = view[1]
 		camera.look_at(view[2])
@@ -31,6 +32,13 @@ func capture_views() -> void:
 	await get_tree().create_timer(0.65).timeout
 	camera.look_at(shrimp.position)
 	await save_view("shrimp-glide")
+	var controller = get_parent()._lure_test
+	controller.cast_bait()
+	await get_tree().create_timer(0.4).timeout
+	await save_view("boat-aim")
+	controller.cast_bait()
+	await get_tree().create_timer(0.8).timeout
+	await save_view("cast-flight")
 	get_tree().quit()
 
 func save_view(label: String) -> void:

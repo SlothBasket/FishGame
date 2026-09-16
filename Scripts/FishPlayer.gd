@@ -32,11 +32,12 @@ extends CharacterBody3D
 @export var water_height: float = 32.0
 @export var air_gravity: float = 12.0
 @export var max_breach_horizontal_speed: float = 8.0
-@export var max_breach_vertical_speed: float = 8.0
+@export var max_breach_vertical_speed: float = 9.5
 var airborne: bool = false
 @export_group("Growth")
-@export var growth_per_food: float = 0.01
-@export var maximum_size: float = 1.6
+@export var starting_size: float = 0.58
+@export var growth_rate: float = 0.055
+@export var maximum_size: float = 2.1
 
 var heading: Vector3 = Vector3.FORWARD
 var external_input: bool = false
@@ -59,6 +60,7 @@ func _ready() -> void:
 	$CollisionShape3D.shape = $CollisionShape3D.shape.duplicate()
 	_body_radius = $CollisionShape3D.shape.radius
 	feeding = FishFeeding.new(self)
+	update_growth_collision()
 	$CameraPivot/SpringArm3D.add_excluded_object(get_rid())
 	var keys = {"forward": KEY_W, "back": KEY_S, "left": KEY_A, "right": KEY_D,
 		"rise": KEY_SPACE, "dive": KEY_CTRL, "boost": KEY_SHIFT, "reset": KEY_R}
@@ -150,7 +152,7 @@ func _physics_process(delta: float) -> void:
 	camera.fov = lerpf(camera.fov, fov, 1.0 - exp(-6.0 * delta))
 
 func size_multiplier() -> float:
-	return minf(maximum_size, 1.0 + feeding.food * growth_per_food)
+	return starting_size + (maximum_size - starting_size) * (1.0 - exp(-growth_rate * feeding.food))
 
 func mouth_position() -> Vector3:
 	return global_position + heading * 1.25 * size_multiplier()

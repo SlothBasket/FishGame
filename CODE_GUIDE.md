@@ -1,108 +1,222 @@
-# Code guide
+# FishGame: movement and tuning guide
 
-## Ownership and tick flow
+This is the current implementation, not a history of earlier experiments. All gameplay is GDScript. The sand and water materials use Godot's shader language only for drawing. Distances are metres, speeds are metres/second, timers are seconds, and `delta` is the elapsed time for a simulation or render tick. Y points upward; a model's nose normally points along local -Z. Shrimp deliberately face the other way so their tail leads motion.
 
-| File | Responsibility |
+## Where to make a change
+
+| Desired change | File and entry point |
 |---|---|
-| FishInput.gd | Fish input intent and movement/steering math |
-| FishPlayer.gd | Fish movement, water/air transitions, input/camera and exported tuning |
-| FishFeeding.gd | Charge/lunge, swept bite, grace timer, terrain checks and rewards |
-| BaitMotion.gd | Shared commands, live player input, AI decisions, artificial retrieve driver |
-| BaitActor.gd | Shared species motor, escape execution, terrain constraints, swallowing |
-| BaitVisual.gd | Procedural species meshes and locomotion animation |
-| BaitSchool.gd | Spawn locations, surface mullet, respawn population |
-| LureTestController.gd | Left-mouse input, camera switching/orbit, boat, origin motion, casting |
-| Reef.gd | Terrain, water plane, boundaries, HUD and startup |
-| FeedingChecks.gd | Headless regression checks |
-| RockShelter.gd | One-guest cover reservation, global cap, collision-safe shelter spots |
-| SurfaceFeedback.gd | Surface crossing detection, bounded splashes and expanding ripples |
-| Shaders/Sand.gdshader | World-space sand ripples, large-scale color variation, distance antialiasing |
-| Shaders/WaterSurface.gdshader | Animated surface streaks and view-angle transparency |
-| ReadabilityPreview.gd | Automated floor/water/shrimp screenshot capture |
+| Player fish speed, turning, drag, jump or bite | `Scripts/FishPlayer.gd` exports; math in `FishInput.gd` and `FishFeeding.gd` |
+| Fish starting size and growth curve | `FishPlayer.gd`: `starting_size`, `growth_rate`, `maximum_size`, `size_multiplier()` |
+| Bait speed, collision, escape strength or shape of a kick | `BaitActor.gd`: exports, `_physics_process()`, `start_flee()` |
+| Player bait buttons and charge buffering | `BaitMotion.gd`: `PlayerLiveDriver.sample()` |
+| AI decisions, depth preferences, threat response or paired escapes | `BaitMotion.gd`: `LiveBaitDriver.sample()` and `choose_behavior()` |
+| Population, spawn depth, pod locations and respawns | `BaitSchool.gd`: exports, `_ready()`, `_spawn()` |
+| School spacing and regrouping | `BaitPod.gd` and the pod block in `LiveBaitDriver.sample()` |
+| Boat movement, aiming, cast distance and cameras | `LureTestController.gd` |
+| Gull hunting and diving | `Seagull.gd` |
+| Body geometry and wiggles, without changing movement | `BaitVisual.gd`, `FishVisual.gd`, `Geometry.gd` |
+| Floor, water, rocks and arena boundaries | `Reef.gd`, `Shaders/Sand.gdshader`, `Shaders/WaterSurface.gdshader` |
 
-FishPlayer receives FishInput and calls FishFeeding. Underwater swimming steers heading and updates velocity. Airborne swimming keeps momentum and applies gravity. During a strike, FishFeeding advances short collision substeps and sweeps each actual travelled segment. Sloped floor collision redirects the strike; frontal walls end it. The grace timer allows short post-strike sweeps using normal movement. Cancel/reset clears it.
+An `@export` appears in Godot's Inspector on a node using that script. Most bait are created at runtime, so change their default exports in `BaitActor.gd`, or set a value in `BaitSchool._spawn()` before `add_child(bait)`. Driver classes inherit RefCounted, not Node; set their fields where they are constructed. A zero `swim_speed`, `acceleration` or `turn_rate` means "use the species default" and is replaced in the actor's `_ready()`.
 
-BaitActor samples one driver each physics tick. A command contains direction, effort, action, descend, and optional flee_fraction (-1 means no escape request). It does not identify AI versus human. The actor alone applies species speeds, collisions, escape recovery, and presentation. Live test bait awards food like other live prey; artificial lures emit bite callbacks without food.
+## Player fish: input to motion
 
-## Drivers and escape scheduling
+`FishPlayer.read_local_input()` reads the keyboard and camera and constructs `FishInput`. With `external_input` true, tests and bait/boat mode supply `command` instead. The input object contains throttle, yaw steering, vertical intent, boost, camera aim and bite/cancel state; it never moves anything.
 
-PlayerLiveDriver turns W/A/D/Space/Ctrl into organism commands. Left mouse uses one charge state; A/D selects crab/squid lateral direction. Holding fills charge; release sends a fraction. Squid escape uses a stable boat-relative lateral axis by default; Space/Ctrl select up/down. The motor bounds horizontal travel within `squid_roam_radius`. Artificial lures retain FishingBaitDriver and use the same left-mouse charge gesture for dart/lift.
+`FishPlayer._physics_process()` first updates the attack, then chooses exactly one path: feeding dash, airborne motion, or normal underwater swimming. This prevents several systems from competing to write velocity. `FishInput.steer_heading()` steers forward swimming toward mouse aim and adds A/D yaw assistance. S reverses along the existing facing; it never flips the model. `next_velocity()` computes a target vector, caps combined forward/vertical speed, and approaches it with acceleration or drag. The CharacterBody performs collision movement; the visual follows heading rather than velocity, preserving backward swimming.
 
-LiveBaitDriver chooses ordinary phases separately from its escape clock. The clock schedules random charge durations and intensities for every live species. Nearby predators override the ambient wait, subject to the same BaitActor recovery gate. Mullet uses a wider threat distance for chase anticipation. Seeded RNG remains reproducible at a fixed tick rate. Squid chooses lateral/up/down jets. Its ordinary propulsion pulses are applied by the shared actor motor for both drivers.
+| FishPlayer setting | Default | Effect |
+|---|---:|---|
+| `swim_speed` | 8 | Normal forward speed |
+| `boost_multiplier` | 1.85 | Forward boost speed multiplier |
+| `acceleration` | 12 | How quickly velocity approaches powered swimming |
+| `water_drag` | 4 | How quickly released input stops the fish |
+| `reverse_speed_multiplier` | 0.4 | Reverse speed relative to swim speed |
+| `reverse_acceleration` | 6 | Response while reversing |
+| `vertical_speed_multiplier` | 0.7 | Strength of Space/Ctrl relative to forward propulsion |
+| `forward_turn_rate`, `pitch_turn_rate` | 85, 65 | Mouse-follow yaw and pitch, degrees/second |
+| `manual_steering_strength` | 125 | Additional A/D yaw, degrees/second |
+| `idle_pivot_multiplier` | 0.45 | Reduced A/D turn strength without forward throttle |
+| `mouse_sensitivity` | 0.0025 | Mouse pixels to camera rotation |
+| `air_gravity` | 12 | Downward acceleration above the surface |
+| `max_breach_horizontal_speed`, `max_breach_vertical_speed` | 8, 9.5 | Entry-to-air speed limits; prevent map-spanning jumps |
 
-start_flee is the single physical escape implementation. Shrimp kicks upward/backward with a nose-down pose, then glides forward and sinks; crab selects the lateral axis of its unchanged body heading; squid jets along the requested vector. Minnow escape velocity uses a fixed forward axis with a bounded sinusoidal lateral component. Mullet preserves forward speed, gains vertical impulse, leaves water, falls under gravity and resumes swimming after re-entry. Only fish and mullet ignore surface collision layer 8; ordinary bait still collides with it. Side boundaries extend above the surface.
+The pitch clamp of 85 degrees in `FishInput.steer_heading()` keeps ordinary swimming away from a vertical yaw singularity. `turn_toward()` rotates around the cross-product axis; its explicit antiparallel fallback handles exactly opposite directions instead of producing an undefined axis. `approach_angle()` wraps angular differences so turning across -PI/PI takes the short route. These are numerical protections, not extra steering modes.
 
-## Main tuning values
+Fish state: `heading` is the actual facing, `velocity` is the CharacterBody velocity, `_spawn` is the R-reset location, `_camera_yaw/_camera_pitch` hold view orientation, and `airborne` selects gravity. `_body_radius` remembers the original collision size for growth. `suppress_bite_until_release` stops a click used to recapture the cursor from accidentally firing a bite. Reset cancels an attack and restores position, momentum and view; it preserves food and growth.
 
-| Owner | Variables / defaults |
-|---|---|
-| BaitActor | flee_charge_time 0.65 s; flee_cooldown 0.6 s; strength range 0.25–1 |
-| BaitActor | dart_speed 11 m/s; minnow_wiggle_speed 2.2 m/s; minnow_wiggle_frequency 12 radians/s |
-| BaitActor | shrimp_kick_speed 5 m/s; squid_jet_speed 6 m/s; crab_scuttle_speed 5.5 m/s |
-| BaitActor | powered_descent_speed 2.8 m/s |
-| BaitActor | breach_impulse 10 m/s; airborne_gravity 6.5 m/s²; surface_depth 0.45 m |
-| LiveBaitDriver | escape_interval_min/max 2.5/6 s; ai_charge_min/max 0.12/1; ambient minimum charge 0.3 |
-| LiveBaitDriver | flee_trigger_distance 14 m; mullet_threat_distance 20 m |
-| FishingBaitDriver | steering_limit_degrees 45; retrieve_speed 1; arrival starts within 6 horizontal metres |
-| LureTestController | cast_distance 65 m; cast_entry_speed 4 m/s; origin_move_speed 12 m/s; orbit_distance 10.8 m |
-| FishPlayer | bite_grace_duration 0.2 s; water_height from Reef; air_gravity 12 m/s²; max_breach_horizontal_speed/max_breach_vertical_speed 8 m/s |
+## Feeding dash, collision and growth
 
-BaitActor exports can be overridden before adding a bait or through Inspector on saved scenes. Driver fields are set where the driver is constructed. Keep shared movement rates in the actor so AI and player cannot drift apart. Major existing swim/lunge settings remain on FishPlayer. Surface height is passed from Reef into fish/school and the test boat.
+`FishFeeding.update_attack()` detects the start of an LMB hold and its release. Charge chooses a travel distance; it does not directly choose damage or speed. Release clamps aim once to the permitted cone. `advance_dash()` moves in substeps no larger than 1/120 second, turning physically toward that aim. Every travelled subsegment runs `sweep_bite()` so small bait cannot be skipped at high speed. A terrain ray prevents eating through a rock.
 
-## Boat, casts and arrival
+| Setting on FishPlayer | Default | Effect |
+|---|---:|---|
+| `full_charge_time` | 1.4 | Time to maximum feeding distance |
+| `minimum_lunge_distance`, `maximum_lunge_distance` | 3, 15 | Tap/full-charge travel distances |
+| `lunge_speed` | 26 | Underwater dash speed |
+| `maximum_lunge_turn_angle` | 65 degrees | Allowed release aim relative to facing |
+| `lunge_turn_rate` | 220 degrees/second | How quickly the dash bends |
+| `charge_swim_multiplier` | 0.25 | Swimming speed while charging |
+| `bite_radius` | 0.9 | Swept bite radius before growth scaling |
+| `bite_cooldown` | 0.45 | Recovery after the fish's feeding dash |
+| `bite_grace_duration` | 0.2 | Short catch window after the dash finishes |
 
-Boat.position and anchor_position use the same waterline coordinates. Alt+WASD updates both drivers immediately and cancels pending player charge without firing it. G chooses a center-facing bearing with +/-0.3 radians of variation and +/-22 percent distance variation. BaitActor.launch_cast integrates a ballistic arc from the boat to its destination before handing control back to the shared motor. Squid instead drops directly below the boat. Origin bounds leave room for the cast inside the arena.
+A floor contact with upward normal greater than 0.55 redirects the remaining movement along the floor tangent. A frontal wall stops the dash. The tangent must retain at least 15 percent of lunge speed to avoid treating a nearly direct collision as useful movement. Above water, gravity replaces underwater propulsion, while the bite remains active. `closest_point()` supplies the nearest point on each segment, including a safe zero-length case.
 
-Artificial retrieval tracks current boat bearing, fades rod deflection near it, then emits a bounded arrival velocity toward a point 0.65 m below the hull. Live test bait uses this arrival aid when W is held near the boat, but vertical controls override it. The actor interprets arrival without adding a second physics path. F resets to the current deployment point.
+`_charge_time`, `_dash_remaining` and `cooldown_remaining` track the three attack stages. `_was_held` detects input edges. `release_heading` and `dash_target` freeze the release cone reference and target. `_trail_time` emits cosmetic bubbles every 0.045 seconds. `grace_remaining` owns the final catch window; `meal_notice_time` and `bite_flash` only drive feedback. Food counters and `last_meal` drive the HUD.
 
-C retains the camera preference across Tab. Mouse input is consumed for bait orbit; fish-view mode uses the normal fish camera handler. Pitch is limited and roll stays zero. Squid visual pitch comes from actual velocity and is smoothed; crab translation does not rotate body facing.
+`BaitActor.try_bite()` marks an actor claimed before emitting signals, ensuring one reward even if several strikes touch it. Live food grants nutrition; `Source.FISHERMAN` preserves a tested hook/callback-only path for a future deceptive bait controller. It is not an extra menu species or a second movement system. The current five test species are ordinary live food. Fight mechanics are not implemented.
 
-## Tests and remaining manual checks
+Growth is an exponential approach to a cap:
 
-Run Launch.ps1 -Check after script structure edits, and Launch.ps1 -Test after movement changes. Tests measure trajectories and state transitions, including airborne feeding, floor glancing contact, random ambient escapes, dock arrival, strength variation and recovery. Review actual play for charge feel, visual pitch, camera framing and chase anticipation. These tests establish behavior, not whether the final movement feels right.
+```gdscript
+starting_size + (maximum_size - starting_size) * (1.0 - exp(-growth_rate * food))
+```
 
-## Surface population and frame-time controls
-Seagull.gd subclasses BaitActor to reuse catch/swallow/rewards, while owning bird flight/swoop/rest/take-off movement. GULL has a procedural BaitVisual mesh and is deliberately excluded from the controllable bait roster.
-BaitSchool adds 12 upper-water prey, four surface-entry slots and four gulls. Roam radius defaults to 45 m; upper zones use 55 m. Entry slots recycle only once their prey is below half depth, at 5–9 s intervals. Population stays bounded. Spawning after a multi-catch is spread across frames.
-Geometry.sphere shares one 16×8 unit sphere mesh; transforms provide shape variation. Actor collisions remain separate. LiveBaitDriver senses on staggered 0.3 s intervals, instead of scanning predators each physics tick. Peer checks only run on sensing ticks when no predator is present, and use a 1.7 m radius and 9 s peer recovery.
-PerformanceProbe.gd records bounded hitch samples in normal play. F9 saves them. With --perf-check it runs a 75-second timed benchmark and exits; add --perf-tour to move the camera.
-LureTestController casts inward from its bounded boat position and assigns a short downward entry period. PlayerLiveDriver applies an absolute ±45-degree boat-bearing deflection rather than accumulating turns. Escape/reset/cast/origin-modifier paths clear stale charge.
+| Growth setting | Default | Tuning consequence |
+|---|---:|---|
+| `starting_size` | 0.58 | Smaller values make early growth more dramatic |
+| `maximum_size` | 2.1 | Asymptotic upper size, in model scale units |
+| `growth_rate` | 0.055 | Larger values reach the cap with fewer meals |
 
-## Latest tuning points
-- `Reef.arena_width` (240), `rock_count` (24), and `build_water` light settings control the simplified, shadow-free arena.
-- `BaitSchool.zone_population` (6 per zone) produces 72 actors including upper-water bait and gulls. `individual_spacing` (7) spreads starting groups out.
-- `BaitActor.body_size` scales visuals and bite/collision radius together. `dart_speed` (11) and `minnow_wiggle_speed` (2.2) tune the minnow escape. Squid visual yaw and pitch follow velocity, including vertical jets.
-- `LiveBaitDriver._turn_clock` introduces small rod-like steering changes. `_mullet_dive_wait` is independently randomized; a 3-5 second descent overrides surface seeking, which resumes naturally afterward.
-- `Seagull` scans once per second for surface mullet using a weak reference, leads their motion during approach, and holds a level body during surface rest. It remains ordinary catchable food; gulls do not consume the mullet yet.
-- `LureTestController.deployment_position` places squid below the boat. The shared motor limits horizontal displacement to a six-metre disk around the boat. `BaitActor.launch_cast` owns the short flight phase and downward water entry; camera tracking remains in the controller.
+At 0/10/20/40 food, scale is approximately 0.58/1.22/1.59/1.93. Each equal food increment adds less size than the previous one; size never decreases. Visual size, collision radius, mouth position and bite radius all use the same multiplier. Changing growth does not secretly increase movement speed. `update_growth_collision()` runs at startup and after eating; normal render/physics updates apply the visual scale.
 
-## Editing the shrimp sequence
-`BaitActor.start_flee` locks the current horizontal body heading for the escape, so predator direction cannot invent a sideways kick that a player cannot copy. Charge maps to `_escape_strength` and a 0.22-0.5 second kick. During that phase the nose pitches down, velocity rises at `shrimp_kick_speed * strength`, and backward speed stays small.
+## Shared bait command and motor
 
-The next `shrimp_glide_duration` seconds (default 1.1) blend velocity into forward travel at `shrimp_glide_speed` (4.5 m/s at full strength), decelerating to 45 percent while vertical velocity transitions into sinking. The body levels out. Recovery lasts at least the kick duration plus 0.12 seconds; another release can interrupt the later glide. Change these exported values to tune feel without editing driver logic.
+There are six rendered kinds: minnow, shrimp, squid, crab, mullet and gull. `LureTestController.ROSTER` contains only the first five. The former two artificial test species and their driver are gone. There is no cover-seeking system.
 
-## Keeping AI reproducible by players
-`LiveBaitDriver` chooses retrieve/coast, desired steering, depth intent, cover and escape timing. `player_reproducible_command` translates ordinary decisions through `PlayerLiveDriver`, clamping the requested turn to its 45-degree cone. It no longer uses a separate crab scuttle action or AI-only squid pulse multiplier. Predator escape timing still reacts automatically; the shared actor owns the resulting motion. AI has no boat tether, so long-range roaming remains freer than a deployed lure.
+A `BaitCommand` contains direction, effort (0-1), action, optional descend/arrival intent, and `flee_fraction` (-1 means no escape request). `twitch` is an optional visual intensity used by scripted commands; escape animation also supplies it automatically. The four actions are PAUSE, CRUISE, GLIDE and RISE. `swimming()` and `gliding()` make the common forms. `ControlledBaitDriver` simply returns a supplied command for tests; `PlayerLiveDriver` reads assigned input fields; `LiveBaitDriver` decides those inputs automatically. None of them moves a Node.
 
-The parity test starts AI and player shrimp with equal charges and checks their relative trajectories during the escape. Other checks verify the kick pose, forward glide, recovery, shelter occupancy and approach, predator interruption, crossing detection, splash cap and cleanup.
+`BaitActor._physics_process()` executes in this order:
 
-## Terrain, shelter and surface tuning
-`Reef.build_reef` places 24 rocks around eight cluster centers. Adjust the centers to change swimming lanes. The 650 pebbles use one MultiMesh and have no collision. Sand pattern spacing and colors are shader uniforms, so the visual detail adds no terrain colliders. The water shader keeps the physical crossing plane flat at `water_depth`; its ripples are visual, preserving jump timing.
+1. A claimed actor stops simulating. Cast windup/flight, if active, runs before normal controls.
+2. Squid refresh a downward floor probe every 0.25 seconds. The driver produces one command and the shared recovery timer ticks down.
+3. An accepted escape request initializes a species-specific velocity/sequence.
+4. Normal heading steers toward command direction at `turn_rate`, unless escaping or airborne. The motor builds a cruise/glide/rise target, then applies species and descend/arrival overrides.
+5. Air gravity, escape velocity or normal acceleration owns this tick's velocity. Entry sinking and the player squid radius limit are applied afterward.
+6. `move_and_slide()` handles terrain. Bottom clearance, mullet re-entry and visual facing are updated.
 
-`BaitSchool` enables shelter seeking for every fifth eligible spawn. `LiveBaitDriver.shelter_intent` searches at spaced intervals within 24 m, allows up to 16 seconds to approach, lingers roughly four seconds and waits 18-30 seconds after leaving. All travel goes through normal player-compatible commands. Predators interrupt cover immediately on the next sensing update. `RockShelter.max_guests` defaults to six globally, with one weak-reference reservation per rock. Candidate spots are outside the rock radius and checked against adjacent terrain; no bait is placed inside cover.
+| Species | Swim speed | Acceleration | Turn rate (degrees/s) | Base hit radius | Food |
+|---|---:|---:|---:|---:|---:|
+| Minnow | 2.9 | 4.5 | 100 | 0.28 | 1 |
+| Shrimp | 2.7 | 14 | 250 | 0.28 | 4 |
+| Squid | 2.8 | 6 | 105 | 0.42 | 3 |
+| Crab | 1.35 | 8 | 180 | 0.38 | 5 |
+| Mullet | 3.8 | 6 | 100 | 0.34 | 3 |
+| Gull | 6 | 5 | 90 | 0.55 | 5 |
 
-`SurfaceFeedback` tracks actors crossing a 0.12 m band around the waterline. The band prevents repeated splashes while resting at the surface. Effects share mesh resources, return to a preallocated pool after 1.3 seconds, and are capped at 12. Their arrays and actor IDs are cleaned as objects leave. `--readability-preview` captures five render views; `--perf-check` measures the live population with terrain and water rendering enabled.
+The default arrays in `BaitActor._ready()`, `hit_radius()` and `nutrition()` follow `Kind` order. `body_size` scales both visible bait and its collision/bite radius. `randomize_size(rng)` runs before adding spawned AI or player bait: minnows use base 0.64, other species 0.8, each multiplied by a uniform 0.85-1.15. Food values do not vary with size. Tests may set exact sizes directly. Gull flight uses `Seagull` rather than the generic underwater motor.
 
-## Navigation and repeat escapes
-Crab normal locomotion now updates `heading` through the same turn limiter as the other bait. Escape scuttles still keep a fixed body heading. AI home/rim corrections are applied after random steering, every tick, so a new ambient turn cannot continually erase the return command.
+Normal cruise adds upward velocity equal to 18 percent of powered swim speed. Glide retains 24 percent forward speed and sinks at `sink_speed * 0.65`; its horizontal response is 1.8 and vertical response 2.5. `sink_speed` defaults to 1. `powered_descent_speed` is 2.8; RISE uses 70 percent of it. Arrival is an explicit bounded velocity toward the rod origin, preventing reeling past the boat.
 
-Squid sample floor height four times per second. Near the floor, the AI explicitly sets its state, action, effort and depth input to rising; changing only the action left the old descend flag active. The motor stops a downward jet at floor clearance for both drivers. Player squid keep free horizontal velocity inside a 6 m disk around the boat; an outward velocity component is removed in the final 0.6 m, with a gentle inward correction. `PlayerLiveDriver.squid_axis` supplies a stable lateral reference, independent of current offset.
+Species override that baseline: shrimp retain 55 percent horizontal travel and naturally descend at 1.4; crabs descend at 4.5 and stop horizontal movement on release; squid drift horizontally at 0.45 and push vertically in pulses; mullet seek `water_height - surface_depth` using a spring factor of 2, bounded between -1.5 and +2.5 vertical speed. Squid's pulse is `0.2 + 0.8 * max(0, sin(age*4))^2`, multiplied by powered effort and 2.0. Change that expression in the shared motor to alter both AI and player pulse shape.
 
-`sequence_chance` (0.45) and `minnow_sequence_chance` (0.7) control two-action sequences. `_burst_axis` holds the forward reference across both steps. Minnows use 0.35-0.6 charge and opposite 45-degree deflections; squid and crabs reverse lateral direction. Both drivers can charge during recovery and buffer one released command. The actor remains the authority on cooldown and physics. Reset, casting, leaving bait control and moving the boat cancel pending releases.
+`_apply_bottom_constraint()` probes up to four metres down. It maintains `bottom_clearance` (0.32) or the hit radius plus 0.02, whichever is larger. Crabs get a 0.3 m settling margin. It never pins an upward kick. Collision layers: world/floor is 1, edible bait is 4, and the ordinary-bait surface barrier is 8. Fish, mullet and gull can cross that surface layer.
 
-`cast_distance_variation` (0.22) and `cast_angle_variation` (0.3 radians) bound randomized inward casts. `BaitActor.cast_windup_duration` (0.28 s) owns the backward arc before ballistic launch; controls pause during windup/flight.
+## Bait escape tuning and internal state
 
-## Performance investigation
-`SurfaceFeedback` builds its complete effect pool at startup and returns expired effects to it, avoiding runtime mesh/node/material allocation during splashes. `Geometry.bait_material` caches immutable palettes; environment materials remain independently mutable. `BaitVisual` updates distant appendages at lower rates and hides bodies beyond 100 m without changing simulation.
+| BaitActor value | Default | Effect |
+|---|---:|---|
+| `flee_charge_time` | 0.65 | Time to full bait escape charge |
+| `flee_cooldown` | 0.95 | Minimum time between escapes |
+| `minimum_flee_strength`, `maximum_flee_strength` | 0.25, 1 | Tap/full charge strength mapping |
+| `dart_speed` | 10 | Minnow forward dart speed before strength scaling |
+| `minnow_wiggle_speed`, `minnow_wiggle_frequency` | 2.2, 12 | Side velocity and angular frequency of its small dart wiggle |
+| `shrimp_kick_speed` | 4.5 | Upward kick speed before strength scaling |
+| `shrimp_glide_speed`, `shrimp_glide_duration` | 4, 1.1 | Tail-first glide speed and duration |
+| `squid_jet_speed` | 5.5 | Jet speed along the requested 3D vector |
+| `crab_scuttle_speed` | 5 | Lateral escape speed |
+| `breach_impulse`, `airborne_gravity` | 10, 6.5 | Mullet jump strength and air gravity |
+| `surface_depth` | 0.45 | Mullet's preferred depth below water |
+| `squid_roam_radius` | 8.4 | Player squid's horizontal boat radius |
 
-`PerformanceProbe` is attached in normal play as a bounded hitch recorder. It keeps at most 240 records over 50 ms, at most two per second, with wall-frame, physics, process, node and draw-call measurements. F9 writes a CSV; ordinary sampling performs no file IO. `--perf-check` enables a 75-second wall-clock capture and summary; `--perf-tour` moves a diagnostic camera through floor/surface views. Durations use real clock time so a stalled simulation cannot hide elapsed seconds. These traces narrow the cause; they do not prove the user's multi-second slowdown is fixed.
+`start_flee()` maps charge to strength once and sets the sequence. Minnows lock `_escape_axis`, add a sinusoidal lateral component, and keep tracking forward. Shrimp use the commanded tail axis: kick for 0.22-0.5 seconds at horizontal `3 * strength` plus upward kick speed, then blend into a tail-first glide. Glide speed eases to 45 percent and vertical speed changes from +0.65 to -0.9. The velocity blend rate is 22. Their visible yaw is rotated PI from travel heading and their nose pitches down during the kick. Crabs select the side of their unchanged body heading closest to the escape request. Squid use the requested normalized vector, with no turn cone for jets. Mullet retain forward travel and begin an airborne arc.
+
+`flee_remaining` is escape duration; `flee_recovery` is its independent re-trigger gate. `_escape_age`, `_escape_axis` and `_escape_strength` describe the current sequence. `_shrimp_kick_duration` stores the charge-dependent first phase. `flee_velocity` persists while escaping. `_breaching` starts mullet gravity even before it crosses the waterline; `airborne` records crossing. `_motion_age` drives squid pulses. `_visual_pitch/_visual_yaw` smooth presentation, never alter physical velocity. `_floor_scan` schedules the cached `floor_height` probe.
+
+The player squid radius removes outward velocity in the final 0.6 m and adds a gentle inward correction capped at 3 m/s. Tangential and inward jets remain possible. A floor clearance of 0.65 blocks downward squid velocity at terrain. This physical safety margin is distinct from the AI's much higher preferred cruising band.
+
+## Player bait input, charge and cameras
+
+`PlayerLiveDriver` fields `throttle`, `steering`, `rise`, `descend` and `escape_held` are assigned by the test controller. `use_anchor` enables boat-relative bearing; otherwise ordinary direction is based on the actor's heading. `steering_limit_degrees` (45) limits ordinary rod deflection. Near the origin, retrieve arrival begins within 6 horizontal metres and aims 0.65 below the waterline.
+
+For squid, `aim_direction` is camera forward and bypasses that cone on escape. `squid_axis` is a fallback lateral axis for scripted input without camera aim. `squid_manual_jets` makes Space/Ctrl edge-triggered 0.65-charge jets rather than continuous rise/descend. W uses 30 percent retrieve effort and an arrival cap of 0.9 m/s; release sinks. AI sets `squid_manual_jets` false so its continuous depth decisions are not mistaken for keyboard presses.
+
+`charge` accumulates while LMB is held, including during recovery. `_held` detects release. `_pending_escape` stores one released direction/fraction until the actor is ready; the `fraction` metadata preserves charge without firing the returned ordinary command early. `_vertical_held` detects a new up/down press without repeating a held key. `clear_input()` clears every transient input/queued escape when resetting or changing modes. Crab's `escape_side` selects its lateral direction.
+
+## AI decisions, depth and pods
+
+`pause_clock` schedules hands-off intervals every `pause_interval_min/max` (4-9 s), staggered by each driver seed. `pause_remaining` holds a random 0.5-1.5 s pause. The final command becomes ordinary player GLIDE, so momentum eases and bait sinks normally instead of freezing. Fish threats cancel the pause; mullet dives also override it. Active physical escapes finish normally.
+
+`LiveBaitDriver.choose_behavior()` chooses short cruise/coast/rise/drop/rest phases. `_action`, `_direction`, `_effort` and `state` describe that decision; `_duration` is the chosen span and `_remaining` counts it down. `_turn_clock` requests small direction changes every 0.6-1.8 seconds, within +/-0.65 radians. Boundary/home corrections are applied later, so a random turn cannot keep crabs stuck at a rim. `home` and `roam_radius` define the return region; `preferred_y` and `depth_band` define depth preference.
+
+| AI field | Default | Effect |
+|---|---:|---|
+| `sense_interval` | 0.3 | Staggered predator/peer/obstacle checks |
+| `flee_trigger_distance` | 14 | Fish detection distance for ordinary bait |
+| `mullet_threat_distance` | 20 | Earlier mullet escape anticipation |
+| `peer_trigger_distance`, `peer_recovery_time` | 1.7, 9 | Small, infrequent responses to escaping neighbors |
+| `escape_interval_min/max` | 3 / 7 | Ambient wait between escape requests |
+| `ai_charge_min/max` | 0.12 / 1 | Random-charge tuning; ambient charge also has a 0.3 floor |
+| `sequence_chance`, `minnow_sequence_chance` | 0.45 / 0.7 | Chance of a paired escape |
+| `squid_floor_clearance` | 6 | Minimum AI cruise clearance over terrain |
+| `depth_band` | 5 | Distance above/below preferred depth before correction |
+
+`_sense_time` schedules scans. `_threat/_threat_direction` cache the first detected predator response; `_peer_recovery` prevents repeated neighbor chain reactions. `_escape_clock`, `_charging_escape` and `_random_charge` schedule ambient holds/releases separately from swimming phases. Threats override the wait but still obey physical recovery. `_burst_pending`, `_burst_axis`, `_burst_side` and `_burst_strength` hold the second step of a pair; `_use_burst_bearing` preserves a stable reference for that step. Minnows alternate 45-degree darts at 0.35-0.6 charge; squid/crabs reverse sides; shrimp repeat a tail-first kick. Paired spacing adds 0.2-0.45 seconds to physical recovery.
+
+Mullet's `_mullet_dive_wait` starts at 5-15 seconds, then waits 12-22 seconds between dives. `_mullet_dive` holds a 3-5 second descend phase; afterward the shared surface-seeking motion returns them upward. Squid use a floor-aware lower bound `max(floor + 6, preferred_y - depth_band)` and an upper bound `min(water - 2, preferred_y + depth_band)`. Low squid clear their drop state and request powered rise. Downward escapes near the lower bound are redirected upward. No player position is teleported by this AI correction.
+
+`player_reproducible_command()` translates AI decisions through `PlayerLiveDriver`: ordinary turns obey the same 45-degree input cone, depth commands use the same motor, and escape strength/cooldown remains shared. Wild bait have no boat tether. Shrimp panic direction and squid jets may point directly away from danger; their resulting sequence still comes from the same physical implementation.
+
+`BaitPod` is only a gathering point plus weak references to its minnow or mullet members. It never moves an actor. Each minnow has a `pod_slot` about 4.5 m from the pod center, with 1.8 m vertical variation. A nearby fish refreshes `scatter_remaining` to 5-9 seconds; during that time normal escape/swim decisions take over without cohesion. When calm, the command direction blends toward its slot with weight `clamp(distance/14, 0, 0.65)`. Height error greater than 1.8 m requests rise/descent. These values are in the pod block of `LiveBaitDriver.sample()`.
+
+`pod_separation` is cached on sensing ticks, using only that pod's members. `BaitPod.separation_distance` is 2.4 m and its repulsion is capped at 0.8. Increase slot radius or separation for looser schools; reduce cohesion's 0.65 cap for slower reunion. Do not apply this to every bait: only spawned minnow and mullet pod members receive a `pod` reference. Shrimp, crabs, squid and gulls remain independent. Mullet dive/airborne phases bypass cohesion so reunion cannot interrupt an escape; their slots have 5 m radius.
+
+## Population and respawning
+
+`BaitSchool` creates 194 actors by default: eight zones times `zone_population` 8, 12 upper-water bait, four independent mullet, four gulls, four surface entrants, eight minnow pods times `pod_population` 10, two mullet pods of eight, and `midwater_squid_count` 10. The minnow centers in `_ready()` span Y=4, 13-22 and 28 m; mullet pods are at 31.5 m. Edit those centers to move schools, or the population settings to increase density. Additional squid start at 14-24 m and all squid spawn heights are clamped to 14-25 m. Zone coordinates are fractions of arena width/depth; `individual_spacing` is 7 and `roam_radius` is 45.
+
+`seed_value = -1` varies play; set a nonnegative value for repeatable spawning. `_rng` belongs to the school; each driver gets its own seed. `_respawns` stores species, home, radius and any pod/slot assignment. `respawn_delay` is 8 seconds and at most one replacement is built per render frame. Pod membership is preserved, and dead weak references are pruned when replacements join.
+
+`_entry_baits` tracks the four descending surface entrants weakly. Every 5-9 seconds (`_entry_clock`), one that has reached below half depth is reset near the surface with downward velocity. This supplies non-player surface entries without accumulating more actors. `_spawn()` rays down to avoid embedding bottom bait in terrain; shrimp/crabs retain their bottom home but spawn at `water_depth - 0.5`, with downward speed 4 and entry duration 0.5 s. Every replacement follows the same surface entry, then uses the shared natural sinking motor (shrimp 1.4, crab 4.5 m/s). `arena_half_width` and `water_depth` are supplied by Reef.
+
+## Boat setup and ballistic casting
+
+`LureTestController.active` means the fish is frozen and boat/bait input is active. `boat_aiming` distinguishes boat setup from deployed bait. First G enters the boat from either fish or bait mode and removes the old test bait. WASD moves relative to the current boat heading, mouse sets heading and view pitch, X selects among five species. The second G casts along the selected horizontal heading. Pitch changes the view, not the landing distance. While reeling, coming within 1.2 m of `anchor_position - UP*0.65` automatically calls `cast_bait()` to enter boat setup. This check runs only after cast flight finishes; slack bait does not trigger it.
+
+| Controller field | Default | Effect |
+|---|---:|---|
+| `cast_distance` | 65 | Nominal cast range |
+| `cast_distance_variation` | 0.22 | Random range multiplier, about 51-79 m |
+| `cast_angle_variation` | 0.12 radians | Small variation around player aim |
+| `origin_move_speed` | 12 | Boat movement speed |
+| `orbit_distance` | 10.8 | Bait camera distance |
+
+The boat begins near an edge facing inward, but casts are no longer forced toward the center. A cast near a wall is shortened along the chosen ray to stay within +/-110 m. Boat movement is bounded to +/-105 m. `anchor_position` and boat position share one origin. `spawn_position` records the landing/reset point. `deployment_position()` puts squid directly below the boat before it can roam its 8.4 m radius.
+
+`BaitActor.launch_cast()` clears old actions and stores origin/destination. A 0.28 s windup (`cast_windup_duration`) moves backward by a sinusoidal 1.5 m, rising 0.4 m at its peak, then returns to the launch point. The flight uses gravity 14 and an analytically calculated launch velocity to reach the destination in 1.8 s (0.55 for a squid drop). It ignores terrain collision during this controlled flight inside the arena. Landing sets downward velocity 4 and a 0.35 s entry period. `entry_remaining` holds at least 2.5 downward speed briefly before ordinary sinking/retrieve takes over.
+
+`cast_windup`, `cast_remaining`, `cast_origin`, `cast_destination` and `cast_launch_velocity` hold that sequence. `clear_actions()` cancels it, escape and airborne state. Camera focus eases toward the moving bait at rate 5; it does not jump to the landing point. `boat_yaw/boat_pitch` describe boat view, `orbit_yaw/orbit_pitch` describe bait orbit, and `use_fish_camera` preserves C's third-person viewing preference. Squid orbit approaches vertical; other bait keep a shallower view range. Mouse sensitivity for these views is 0.004.
+
+## Birds, visuals and performance
+
+`Seagull` owns four phases: 0 level patrol, 1 prey dive, 2 water rest, 3 climb. `flight_height` is 10 m above the surface, `flight_speed` 11 m/s, and patrol vertical correction is capped at 2 m/s. It scans only for surface-near mullet every 0.8-1.2 s, predicts 0.45 s ahead, and begins diving within 14 horizontal metres. It keeps that target through the dive instead of losing it when it swims down.
+
+`dive_speed` is 14, acceleration 18 (ordinary flight 10). Dive prediction uses 0.2 s and `hunting_depth` caps pursuit at 7 m. `alarm_sent` ensures one response per attack when the bird is within 11 m: a surface mullet has a 50 percent chance of a 0.9-strength jump; otherwise it receives a 3-5 s dive. A jump aborts the bird's attack. A diving mullet remains its target until contact, five-second timeout or depth limit. At contact within 1.1 m, `catch_attempted` allows exactly one `catch_chance` roll (0.35). `caught_by_bird()` removes the prey from collision/edible sets, plays its normal swallow toward `mouth_position()`, and emits the normal respawn signal without player points. Another predator cannot claim the same bait twice.
+
+`climb()` targets 18 m forward and normal flight height for four seconds. After climbing, a 25 percent roll selects a floating rest of 4-8 s; otherwise patrol resumes. `remaining` is the phase timer, `prey` is a weak reference, and `scan_clock` limits searches. `BaitVisual.bird_pose` selects flight (0), swept/tucked dive wings (1), floating folded wings (2), or underwater recovery paddling (3). Wing angles ease at rate 10 rather than snapping. Body pitch follows velocity except while resting, when it stays level.
+
+`BaitVisual` builds species geometry and animates appendages from speed/action/twitch. `_phase` advances by `delta * (4 + speed * 6)`. Animation state does not steer or accelerate bait. Visual updates are spaced at 0.06 seconds beyond 30 m and 0.12 beyond 60 m; bodies hide beyond 100 m. `_animation_wait/_animation_delta` preserve elapsed animation time at those lower rates. Physics always continues. `FishVisual` similarly handles tail/mouth pose from swim/charge/bite state.
+
+`Geometry` shares low-resolution sphere geometry and immutable bait materials. Environment materials remain independent so water/rock changes cannot recolor bait. `FeedingBurst` is a short-lived, non-colliding bubble effect; `SurfaceFeedback` reuses a pool of 12 splash/ripple effects, detects crossings across a 0.12 m waterline band and returns effects to the pool after 1.3 seconds. These affect appearance only.
+
+`Reef` owns a 240 m wide, 32 m deep arena with 24 clustered rocks, 650 instanced pebbles and visual hoops/particles. Shadows are disabled. Sand ripples use world-space shading; water streaks animate without moving the physical crossing plane. Adjust shader uniforms for material colors/pattern spacing, not movement code.
+
+F9 saves bounded hitch records to `user://performance-hitches.csv` and prints the path. `PerformanceProbe` keeps at most 240 records over 50 ms, at most two per second, without file IO until requested. `-- --perf-check` runs a 75-second wall-clock benchmark; `--perf-tour` adds a moving camera. `--readability-preview` renders inspection screenshots beside the project. These diagnostics do not change the normal movement rules.
+
+## How to validate a tuning change
+
+Run `Launch.ps1 -Check` after changing script structure, then `Launch.ps1 -Test` for movement/collision checks. The suite checks physical trajectories, growth, live/fisherman bite routing, cast phases, roster, population, pod separation/reunion, squid floor/radius behavior, shrimp tail-first escape and gull dives. Retired-feature checks were removed together with their implementation. Use visual captures and actual play for feel; a passing test cannot establish whether pacing is enjoyable.
+
+Change one family of variables at a time. For a faster shrimp escape, adjust shared kick/glide exports rather than adding velocity in AI. For schools that regroup sooner, adjust scatter timing rather than teleporting members. For stronger early growth, change starting size or growth rate rather than independently scaling the visual. Keeping each physical effect in its owning motor prevents AI and player behavior from drifting apart.
