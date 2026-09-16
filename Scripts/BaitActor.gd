@@ -58,12 +58,30 @@ var floor_height: float = 0.0
 var _floor_scan: float = 0.0
 var cast_destination: Vector3
 var _visual_yaw: float = 0.0
+@export var ai_decision_interval: float = 1.0/15.0
+var _ai_wait: float = 0.0
+var _ai_elapsed: float = 0.0
+var _ai_command: BaitMotion.BaitCommand
+var neighborhood: BaitNeighborhood
 var driver: BaitMotion.IBaitDriver
 var claimed: bool = false
 var heading: Vector3 = Vector3.FORWARD
 var visual: BaitVisual
 var _eater
 var _swallow: float = 0.0
+
+func motion_command(delta: float) -> BaitMotion.BaitCommand:
+	if not driver is BaitMotion.LiveBaitDriver: return driver.sample(self,delta)
+	_ai_wait -= delta
+	_ai_elapsed += delta
+	if _ai_command == null or _ai_wait <= 0:
+		_ai_command = driver.sample(self,_ai_elapsed)
+		_ai_elapsed = 0
+		_ai_wait = ai_decision_interval
+	return _ai_command
+
+func nearby_fleeing() -> Array:
+	return neighborhood.nearby_fleeing(self) if neighborhood != null else get_tree().get_nodes_in_group("bait")
 
 func hit_radius() -> float:
 	return [0.28, 0.28, 0.42, 0.38, 0.34, 0.55][kind] * body_size
@@ -147,7 +165,9 @@ func _physics_process(delta: float) -> void:
 		forced_dive_remaining = maxf(0, forced_dive_remaining-delta)
 		# A real underwater retreat, not a momentary waterline contact, resets the chain.
 		if position.y < water_height-5 and forced_dive_remaining <= 0: jump_chain = 0
-	var command = driver.sample(self, delta)
+	var profile_start = Time.get_ticks_usec() if BaitProfile.enabled else 0
+	var command = motion_command(delta)
+	if BaitProfile.enabled: BaitProfile.add_sample("driver",profile_start)
 	if kind == BaitMotion.Kind.MULLET and forced_dive_remaining > 0:
 		command.descend = true
 		command.action = BaitMotion.Action.GLIDE
@@ -155,6 +175,7 @@ func _physics_process(delta: float) -> void:
 	flee_recovery = maxf(0.0, flee_recovery - delta)
 	if command.flee_fraction >= 0.0:
 		start_flee(command.flee_fraction, command.direction)
+		if driver is BaitMotion.LiveBaitDriver: command.flee_fraction = -1 # Consume cached escape once.
 	# Horizontal steering and vertical travel are independent. This same motor runs
 	# AI and player bait, so neither can invent a different retrieve silhouette.
 	var direction = BaitMotion.horizontal(command.direction)
@@ -231,7 +252,13 @@ func _physics_process(delta: float) -> void:
 				if radial_speed > 0: velocity -= outward * radial_speed
 				velocity -= outward * minf(3.0, maxf(0, radius - squid_roam_radius + 0.6) * 5.0)
 	flee_remaining = maxf(0.0, flee_remaining - delta)
+	# Remove downward settling velocity before sweeping a supported body. Otherwise
+	# every grounded crab repeatedly collides with the floor and resolves the same contact.
+	if bottom_kind or passive:
+		_apply_bottom_constraint(kind == BaitMotion.Kind.CRAB)
+	profile_start = Time.get_ticks_usec() if BaitProfile.enabled else 0
 	move_and_slide()
+	if BaitProfile.enabled: BaitProfile.add_sample("move_"+display_name(),profile_start)
 	if kind == BaitMotion.Kind.MULLET:
 		if global_position.y >= water_height: airborne = true
 		if velocity.y < 0 and global_position.y < water_height:
@@ -239,8 +266,7 @@ func _physics_process(delta: float) -> void:
 				forced_dive_remaining = 4.0
 			airborne = false
 			_breaching = false
-	if bottom_kind or passive:
-		_apply_bottom_constraint(kind == BaitMotion.Kind.CRAB)
+	profile_start = Time.get_ticks_usec() if BaitProfile.enabled else 0
 	var facing = FishInput.angles(heading)
 	if kind == BaitMotion.Kind.CRAB:
 		facing.x = 0.0
@@ -260,6 +286,7 @@ func _physics_process(delta: float) -> void:
 	visual.speed = velocity.length()
 	visual.twitch = maxf(clampf(command.twitch, 0.0, 1.0), 1.0 if flee_remaining > 0 else 0.0)
 	visual.action = command.action
+	if BaitProfile.enabled: BaitProfile.add_sample("pose",profile_start)
 
 func start_flee(fraction: float, away: Vector3) -> bool:
 	if flee_recovery > 0.0 or airborne or _breaching: return false

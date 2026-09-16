@@ -3,7 +3,7 @@ extends Node3D
 ## Eight sparse zones: open minnows, low shrimp, midwater squid, bottom crabs.
 
 @export var respawn_delay: float = 8.0
-@export var zone_population: int = 10
+@export var zone_population: int = 6
 @export var individual_spacing: float = 7.0
 @export var roam_radius: float = 45.0
 @export var arena_half_width: float = 132.0
@@ -13,9 +13,10 @@ var _rng = RandomNumberGenerator.new()
 var _respawns: Array = []
 var _entry_baits: Array = []
 var _entry_clock: float = 6.0
-@export var pod_population: int = 12
-@export var midwater_squid_count: int = 10
+@export var pod_population: int = 6
+@export var midwater_squid_count: int = 6
 var pods: Array[BaitPod] = []
+var neighborhood = BaitNeighborhood.new()
 @export var initial_spawn_interval: float = 0.10
 var _initial_queue: Array = []
 var _spawn_clock: float = 0.0
@@ -76,6 +77,7 @@ func _enqueue(kind: int, home: Vector3, seed_id: int, radius: float, pod: BaitPo
 func _spawn(kind: int, home: Vector3, behavior_seed: int, radius: float, pod: BaitPod = null, slot: Vector3 = Vector3.ZERO, initial: bool = false) -> BaitActor:
 	var bait = Seagull.new() if kind == BaitMotion.Kind.GULL else BaitActor.new()
 	bait.kind = kind
+	bait.neighborhood = neighborhood
 	bait.randomize_size(_rng)
 	bait.water_height = water_depth
 	bait.arena_half_width = arena_half_width

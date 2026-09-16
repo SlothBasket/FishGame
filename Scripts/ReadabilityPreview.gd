@@ -5,6 +5,7 @@ func _ready() -> void:
 	call_deferred("capture_views")
 
 func capture_views() -> void:
+	await get_tree().create_timer(16).timeout # Let the staggered population fill before inspection.
 	var camera = Camera3D.new()
 	get_parent().add_child(camera)
 	camera.make_current()

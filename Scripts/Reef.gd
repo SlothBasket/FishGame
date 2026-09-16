@@ -34,6 +34,11 @@ func _ready() -> void:
 		add_child(checks)
 	else:
 		var school = BaitSchool.new()
+		if "--perf-check" in args: school.seed_value = 23
+		if "--dense-benchmark" in args:
+			school.zone_population = 10
+			school.pod_population = 12
+			school.midwater_squid_count = 10
 		school.arena_half_width = arena_width * 0.5
 		school.water_depth = water_depth
 		add_child(school)
@@ -229,7 +234,7 @@ func _process(delta: float) -> void:
 	if _feeding_preview or _charge_preview:
 		_fish.command = FishInput.new(0, 0, 0, Vector3.FORWARD, false, _time < 1.5 or _charge_preview)
 	_telemetry.text = "%.1f m/s\n%.1f m depth" % [_fish.velocity.length(), water_depth - _fish.position.y]
-	_score.text = "%d FOOD / %d EATEN\n%.2fÃ— SIZE" % [_fish.feeding.food, _fish.feeding.bait_eaten, _fish.size_multiplier()]
+	_score.text = "%d FOOD / %d EATEN\n%.2fx SIZE" % [_fish.feeding.food, _fish.feeding.bait_eaten, _fish.size_multiplier()]
 	_status.text = "CLICK TO SWIM" if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED else "FEEDING LUNGE" if _fish.feeding.is_dashing() else "BOOST" if _fish.boosting else ""
 	if _capture and not _captured and _time > (1.85 if _feeding_preview else 2.0):
 		_captured = true

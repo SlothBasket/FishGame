@@ -201,7 +201,7 @@ class LiveBaitDriver:
 					_threat_direction = away.normalized()
 					break
 			if not _threat and _peer_recovery <= 0.0:
-				for peer in bait.get_tree().get_nodes_in_group("bait"):
+				for peer in bait.nearby_fleeing():
 					if peer == bait or peer.claimed or peer.flee_remaining <= 0: continue
 					if bait.global_position.distance_squared_to(peer.global_position) < peer_trigger_distance * peer_trigger_distance:
 						_escape_clock = minf(_escape_clock, 0.25)

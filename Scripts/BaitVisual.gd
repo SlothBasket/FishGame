@@ -86,6 +86,10 @@ func _ready() -> void:
 			Geometry.triangle(wing, Vector3(0, 0.1, -0.25), Vector3(side * 1.2, 0, 0.25), Vector3(0, 0.1, 0.35), white)
 			Geometry.triangle(wing, Vector3(side * 0.9, 0, 0.1), Vector3(side * 1.5, 0, 0.42), Vector3(side * 1.1, 0, 0.3), tips)
 
+	BaitMeshCache.combine(_body,str(kind)+":body")
+	for i in range(_appendages.size()):
+		BaitMeshCache.combine(_appendages[i],str(kind)+":"+str(i))
+
 func _eyes(mat: Material, x: float, y: float, z: float, radius: float) -> void:
 	for side in [-1, 1]:
 		Geometry.sphere(_body, "Eye", Vector3(side * x, y, z), Vector3.ONE * radius, mat)

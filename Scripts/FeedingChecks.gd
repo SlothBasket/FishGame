@@ -205,7 +205,7 @@ func _ready() -> void:
 	var population = get_tree().get_nodes_in_group("bait").size()
 	get_tree().get_nodes_in_group("bait")[0].try_bite(fish)
 	await frames(30)
-	check(population == 226 and get_tree().get_nodes_in_group("bait").size() == population, "Expanded bait and gull population replenishes")
+	check(population == 142 and get_tree().get_nodes_in_group("bait").size() == population, "Expanded bait and gull population replenishes")
 	var mid_squid = 0
 	var pod_members = 0
 	var only_minnows = true
@@ -214,8 +214,8 @@ func _ready() -> void:
 		if actor.driver is BaitMotion.LiveBaitDriver and actor.driver.pod != null:
 			pod_members += 1
 			only_minnows = only_minnows and actor.kind in [BaitMotion.Kind.MINNOW, BaitMotion.Kind.MULLET]
-	check(mid_squid >= 28, "Squid are dispersed through the middle and upper water")
-	check(pod_members == 112 and only_minnows, "Only minnows and mullet belong to the ten loose pods")
+	check(mid_squid >= 24, "Squid are dispersed through the middle and upper water")
+	check(pod_members == 64 and only_minnows, "Only minnows and mullet belong to the ten loose pods")
 	school.queue_free()
 	await frames(3)
 	await check_growth_and_casting()
@@ -224,6 +224,7 @@ func _ready() -> void:
 	await check_retained_motion_regressions()
 	await check_density_and_hunting()
 	await check_round_pacing()
+	await check_optimization_contracts()
 	print("SELF-TEST COMPLETE: %d checks, %d failures" % [checks, failures])
 	get_tree().quit(0 if failures == 0 else 1)
 
@@ -589,3 +590,32 @@ func check_round_pacing() -> void:
 	check(bird.try_bite(fish), "Later round growth unlocks birds")
 	fish.feeding.food = saved
 	fish.update_growth_collision()
+
+func check_optimization_contracts() -> void:
+	var left = bait(BaitMotion.Kind.MINNOW,Vector3(7.9,16,70))
+	var right = bait(BaitMotion.Kind.MINNOW,Vector3(8.1,16,70))
+	var distant = bait(BaitMotion.Kind.MINNOW,Vector3(80,16,70))
+	left.set_physics_process(false)
+	right.set_physics_process(false)
+	distant.set_physics_process(false)
+	right.flee_remaining = 1
+	distant.flee_remaining = 1
+	var lookup = BaitNeighborhood.new()
+	var near = lookup.nearby_fleeing(left)
+	check(right in near and not distant in near, "Spatial lookup includes escaping neighbors across cell boundaries but excludes distant bait")
+	right.queue_free()
+	await frames(2)
+	check(lookup.nearby_fleeing(left).is_empty(), "Spatial cache tolerates prey removed between rebuilds")
+	var meshes = left.visual._body.get_children().filter(func(node): return node is MeshInstance3D)
+	check(meshes.size() == 1 and meshes[0].mesh.get_surface_count() == 1 and left.visual._appendages.size() > 0, "Rigid bait body is one cached draw surface while animated joints remain separate")
+	var ai = BaitMotion.LiveBaitDriver.new(left.position,123)
+	ai._sense_time = 10
+	ai._threat = true
+	ai.minnow_sequence_chance = 0
+	left.driver = ai
+	left._physics_process(1.0/60)
+	var recovery = left.flee_recovery
+	left._physics_process(1.0/60)
+	check(left._ai_command.flee_fraction < 0 and left.flee_recovery < recovery, "Cached AI escape is consumed once between decision updates")
+	left.queue_free()
+	distant.queue_free()

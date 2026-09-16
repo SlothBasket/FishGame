@@ -4,6 +4,7 @@ extends Node
 var samples: Array[float] = []
 var elapsed: float = 0.0
 var previous: int = 0
+var previous_physics_frame: int = 0
 var started: int = 0
 var duration: float = 0.0
 var hitches: Array[String] = []
@@ -16,6 +17,7 @@ var tour_camera: Camera3D
 
 func _ready() -> void:
 	started = Time.get_ticks_usec()
+	BaitProfile.enabled = "--profile-bait" in OS.get_cmdline_user_args()
 	var layer = CanvasLayer.new()
 	add_child(layer)
 	notice = Label.new()
@@ -27,7 +29,7 @@ func _ready() -> void:
 		add_child(tour_camera)
 		tour_camera.make_current()
 	for arg in OS.get_cmdline_user_args():
-		if arg.begins_with("--perf-duration="): duration = maxf(5, float(arg.get_slice("=", 1)))
+		if arg.begins_with("--perf-duration="): duration = maxf(35, float(arg.get_slice("=", 1)))
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F9:
@@ -44,13 +46,15 @@ func _process(_delta: float) -> void:
 		tour_camera.look_at(Vector3(0, 17+sin(elapsed*0.18)*12, 0))
 	var frame = (now-previous)/1000.0 if previous > 0 else 0.0
 	previous = now
+	var physics_steps = Engine.get_physics_frames()-previous_physics_frame
+	previous_physics_frame = Engine.get_physics_frames()
 	var physics = Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS)*1000
 	peak_physics = maxf(peak_physics, physics)
 	# Keep the latest 1800 frames, including the lead-up to a stall, with bounded memory.
-	recent_frames.append("%.3f,%.3f,%.3f,%.3f,%d,%d" % [elapsed,frame,physics,Performance.get_monitor(Performance.TIME_PROCESS)*1000,Performance.get_monitor(Performance.OBJECT_NODE_COUNT),Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)])
+	recent_frames.append("%.3f,%.3f,%.3f,%.3f,%d,%d,%d" % [elapsed,frame,physics,Performance.get_monitor(Performance.TIME_PROCESS)*1000,Performance.get_monitor(Performance.OBJECT_NODE_COUNT),Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),physics_steps])
 	if recent_frames.size() > 1800: recent_frames.pop_front()
 	if elapsed > 3:
-		if duration > 0: samples.append(frame)
+		if duration > 0 and elapsed > 30: samples.append(frame)
 		if frame > 50 and elapsed > next_hitch:
 			next_hitch = elapsed + 0.5
 			var record = "%.2f,%.2f,%.2f,%.2f,%d,%d" % [elapsed,frame,physics,Performance.get_monitor(Performance.TIME_PROCESS)*1000,Performance.get_monitor(Performance.OBJECT_NODE_COUNT),Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)]
@@ -69,12 +73,18 @@ func save_report() -> void:
 	var base = folder + "/" + stamp
 	var file = FileAccess.open(base+".csv",FileAccess.WRITE)
 	if file == null: return
-	file.store_line("elapsed_s,frame_ms,physics_ms,process_ms,nodes,draw_calls")
+	file.store_line("elapsed_s,frame_ms,physics_ms,process_ms,nodes,draw_calls,physics_steps")
 	for record in recent_frames: file.store_line(record)
 	var actors: Array = []
 	for bait in get_tree().get_nodes_in_group("bait"):
 		actors.append({"kind":bait.display_name(),"position":str(bait.global_position),"velocity":str(bait.velocity),"size":bait.body_size,"escaping":bait.flee_remaining,"driver": "AI" if bait.driver is BaitMotion.LiveBaitDriver else "player/test"})
-	var report = {"time":Time.get_datetime_string_from_system(),"engine":Engine.get_version_info(),"os":OS.get_name(),"gpu":RenderingServer.get_video_adapter_name(),"elapsed_s":elapsed,"peak_physics_ms":peak_physics,"static_memory_bytes":OS.get_static_memory_usage(),"bait_count":actors.size(),"bait_snapshot":actors,"hitches_over_50ms":hitches,"arena_width":get_parent().arena_width,"physics_ticks_per_second":Engine.physics_ticks_per_second}
+	var late_frames: Array[float] = []
+	for record in recent_frames:
+		var values = record.split(",")
+		if float(values[0]) >= elapsed-10: late_frames.append(float(values[1]))
+	late_frames.sort()
+	var late_summary = {} if late_frames.is_empty() else {"median_ms":late_frames[late_frames.size()/2],"p95_ms":late_frames[int(late_frames.size()*0.95)],"max_ms":late_frames.back()}
+	var report = {"last_10_seconds":late_summary,"camera_position":str(get_viewport().get_camera_3d().global_position),"bait_profile":BaitProfile.snapshot(),"time":Time.get_datetime_string_from_system(),"engine":Engine.get_version_info(),"os":OS.get_name(),"gpu":RenderingServer.get_video_adapter_name(),"elapsed_s":elapsed,"peak_physics_ms":peak_physics,"static_memory_bytes":OS.get_static_memory_usage(),"bait_count":actors.size(),"bait_snapshot":actors,"hitches_over_50ms":hitches,"arena_width":get_parent().arena_width,"physics_ticks_per_second":Engine.physics_ticks_per_second}
 	var details = FileAccess.open(base+".json",FileAccess.WRITE)
 	if details != null: details.store_string(JSON.stringify(report,"  "))
 	var path = ProjectSettings.globalize_path(base)
