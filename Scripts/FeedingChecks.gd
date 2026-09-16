@@ -26,6 +26,7 @@ func reset() -> void:
 func bait(kind: int, where: Vector3, source: int = BaitMotion.Source.LIVE):
 	var actor = BaitActor.new()
 	actor.kind = kind
+	actor.minimum_eater_scale = 0 # Collision/reward tests isolate progression; gate tests are separate.
 	actor.position = where
 	actor.source = source
 	actor.driver = BaitMotion.ControlledBaitDriver.new()
@@ -137,7 +138,7 @@ func _ready() -> void:
 	var food_before = fish.feeding.food
 	await dash(90)
 	check(fish.feeding.bait_eaten == 3 and fish.feeding.food - food_before == 8, "One dash eats all three types with correct nutrition")
-	check(fish.size_multiplier() > 1, "Food grows fish")
+	check(fish.size_multiplier() > fish.starting_size, "Food grows fish")
 	await frames(20)
 	check(get_tree().get_nodes_in_group("bait").is_empty(), "Consumed bait leave edible set")
 	reset()
@@ -199,10 +200,12 @@ func _ready() -> void:
 	school.respawn_delay = 0.12
 	school.seed_value = 23
 	get_parent().add_child(school)
+	check(school.get_child_count() == 0, "Initial bait is queued, not built on the first frame")
+	while not school._initial_queue.is_empty(): school._process(0.11)
 	var population = get_tree().get_nodes_in_group("bait").size()
 	get_tree().get_nodes_in_group("bait")[0].try_bite(fish)
 	await frames(30)
-	check(population == 194 and get_tree().get_nodes_in_group("bait").size() == population, "Expanded bait and gull population replenishes")
+	check(population == 226 and get_tree().get_nodes_in_group("bait").size() == population, "Expanded bait and gull population replenishes")
 	var mid_squid = 0
 	var pod_members = 0
 	var only_minnows = true
@@ -212,7 +215,7 @@ func _ready() -> void:
 			pod_members += 1
 			only_minnows = only_minnows and actor.kind in [BaitMotion.Kind.MINNOW, BaitMotion.Kind.MULLET]
 	check(mid_squid >= 28, "Squid are dispersed through the middle and upper water")
-	check(pod_members == 96 and only_minnows, "Only minnows and mullet belong to the ten loose pods")
+	check(pod_members == 112 and only_minnows, "Only minnows and mullet belong to the ten loose pods")
 	school.queue_free()
 	await frames(3)
 	await check_growth_and_casting()
@@ -220,6 +223,7 @@ func _ready() -> void:
 	await check_free_squid_and_tail_shrimp()
 	await check_retained_motion_regressions()
 	await check_density_and_hunting()
+	await check_round_pacing()
 	print("SELF-TEST COMPLETE: %d checks, %d failures" % [checks, failures])
 	get_tree().quit(0 if failures == 0 else 1)
 
@@ -232,7 +236,7 @@ func check_growth_and_casting() -> void:
 	fish.feeding.food = 20
 	var twenty = fish.size_multiplier()
 	fish.feeding.food = 10000
-	check(small < 0.65 and ten > small*2, "Fish starts small and early meals visibly double its scale")
+	check(small < 0.65 and ten > small and ten < small*1.2, "Fish starts small and ten food adds less than twenty percent size")
 	check(twenty-ten < ten-small and fish.size_multiplier() <= fish.maximum_size, "Growth has diminishing gains and a finite cap")
 	fish.feeding.food = saved_food
 	fish.update_growth_collision()
@@ -366,7 +370,7 @@ func check_free_squid_and_tail_shrimp() -> void:
 	var response = prey_ai.sample(shrimp, 0.016)
 	shrimp.start_flee(response.flee_fraction, response.direction)
 	await frames(10)
-	check(shrimp.velocity.x > 1 and shrimp.velocity.y > 1, "Threatened shrimp kicks upward and horizontally away from the predator")
+	check(shrimp.velocity.z < -1 and shrimp.velocity.y > 1, "Threatened shrimp keeps its tail-first heading while kicking upward")
 	check(BaitMotion.horizontal(shrimp.visual.global_basis.z).dot(BaitMotion.horizontal(shrimp.velocity)) > 0.99, "Shrimp tail leads its escape while its nose trails behind")
 	check(shrimp.flee_cooldown >= 0.9 and shrimp.swim_speed < 3, "Bait pace and recovery are calmer than the previous pass")
 	shrimp.queue_free()
@@ -409,6 +413,7 @@ func check_retained_motion_regressions() -> void:
 	fish.limit_breach_velocity()
 	check(Vector2(fish.velocity.x, fish.velocity.z).length() <= 8.01 and fish.velocity.y <= 9.51, "Player breach velocity is capped horizontally and vertically")
 	var bird = Seagull.new()
+	bird.minimum_eater_scale = 0
 	bird.position = Vector3(0, 33, 0)
 	get_parent().add_child(bird)
 	bird.phase = 2
@@ -480,12 +485,14 @@ func check_density_and_hunting() -> void:
 	var school = BaitSchool.new()
 	school.seed_value = 77
 	get_parent().add_child(school)
+	check(school.get_child_count() == 0, "Initial bait is queued, not built on the first frame")
+	while not school._initial_queue.is_empty(): school._process(0.11)
 	var bottom_entries = 0
 	var sizes = {}
 	for actor in school.get_children():
 		sizes[snappedf(actor.body_size,0.01)] = true
 		if actor.kind in [BaitMotion.Kind.SHRIMP,BaitMotion.Kind.CRAB] and actor.position.y > 30 and actor.velocity.y < 0: bottom_entries += 1
-	check(bottom_entries == 32 and sizes.size() > 10, "Bottom bait enters from the surface and population sizes vary")
+	check(bottom_entries < 20 and sizes.size() > 10, "Initial bottom bait is spread through the column and sizes vary")
 	school.queue_free()
 	await frames(2)
 	var minnow = bait(BaitMotion.Kind.MINNOW,Vector3(80,16,0))
@@ -514,6 +521,7 @@ func check_density_and_hunting() -> void:
 	var mullet = bait(BaitMotion.Kind.MULLET,Vector3(70,30,0))
 	mullet.set_physics_process(false)
 	var bird = Seagull.new()
+	bird.minimum_eater_scale = 0
 	bird.position = Vector3(70,30.4,0)
 	get_parent().add_child(bird)
 	bird.set_physics_process(false)
@@ -534,3 +542,50 @@ func check_density_and_hunting() -> void:
 	check(bird.phase == 3 and not jumper.claimed, "Jumping mullet breaks off the bird dive")
 	jumper.queue_free()
 	bird.queue_free()
+
+func check_round_pacing() -> void:
+	reset()
+	var prey = bait(BaitMotion.Kind.MINNOW,Vector3(80,16,0))
+	prey.set_physics_process(false)
+	var ai = BaitMotion.LiveBaitDriver.new(prey.position,67)
+	ai._sense_time = 10
+	ai._threat = true
+	ai._threat_direction = Vector3.RIGHT
+	ai.minnow_sequence_chance = 0
+	var escape = ai.sample(prey,0.016)
+	check(escape.direction.dot(prey.heading) > 0.99, "Side threats do not make bait turn away from its travel axis")
+	ai._threat_direction = -prey.heading
+	var oncoming = ai.sample(prey,0.016)
+	check(oncoming.direction.dot(prey.heading) >= cos(deg_to_rad(45)) and oncoming.direction.dot(prey.heading) < 0.99, "Head-on threats use a bounded turn instead of reversing")
+	prey.queue_free()
+	var mullet = bait(BaitMotion.Kind.MULLET,Vector3(80,31.8,0))
+	mullet.set_physics_process(false)
+	var three = true
+	for i in range(3):
+		mullet.airborne = false
+		mullet._breaching = false
+		mullet.flee_recovery = 0
+		three = three and mullet.start_flee(0.7,Vector3.FORWARD)
+	mullet.airborne = true
+	mullet.velocity = Vector3.DOWN*2
+	mullet._physics_process(0.016)
+	check(three and mullet.jump_chain == 3 and mullet.forced_dive_remaining > 0 and not mullet.start_flee(1,Vector3.FORWARD), "Third mullet landing forces a dive and rejects another jump")
+	mullet.driver.command = BaitMotion.gliding(Vector3.FORWARD)
+	mullet.set_physics_process(true)
+	await frames(280)
+	check(mullet.position.y < 27 and mullet.jump_chain == 0, "Jump chain resets only after a sustained deep retreat")
+	mullet.queue_free()
+	var saved = fish.feeding.food
+	fish.feeding.food = 0
+	var crab = bait(BaitMotion.Kind.CRAB,Vector3(80,2,0))
+	crab.minimum_eater_scale = 0.72
+	check(not crab.try_bite(fish) and not crab.claimed, "Starting fish cannot eat size-gated crab")
+	fish.feeding.food = 50
+	check(crab.try_bite(fish), "Accumulated round growth unlocks crab")
+	var bird = bait(BaitMotion.Kind.GULL,Vector3(80,35,0))
+	bird.minimum_eater_scale = 1.05
+	check(not bird.try_bite(fish), "Bird remains gated beyond early crab unlock")
+	fish.feeding.food = 100
+	check(bird.try_bite(fish), "Later round growth unlocks birds")
+	fish.feeding.food = saved
+	fish.update_growth_collision()

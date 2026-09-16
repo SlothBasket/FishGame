@@ -10,6 +10,11 @@ signal bitten(bait, eater)
 @export var acceleration: float = 0.0
 @export var turn_rate: float = 0.0 # degrees/sec, applies to both AI and controlled bait
 @export var body_size: float = 0.8
+@export var arena_half_width: float = 132.0
+@export var minimum_eater_scale: float = -1.0 # -1 selects species progression; zero disables gating.
+@export var maximum_jump_chain: int = 3
+var jump_chain: int = 0
+var forced_dive_remaining: float = 0.0
 @export var sink_speed: float = 1.0
 @export var bottom_clearance: float = 0.32
 @export_group("Escape and depth")
@@ -68,7 +73,7 @@ func nutrition() -> int:
 
 func randomize_size(random: RandomNumberGenerator) -> void:
 	# Set before _ready so mesh, collision and bite reach agree. No score randomness.
-	body_size = (0.64 if kind == BaitMotion.Kind.MINNOW else 0.8) * random.randf_range(0.85, 1.15)
+	body_size = 0.8 * random.randf_range(0.8, 1.2)
 
 func caught_by_bird(bird) -> bool:
 	if claimed: return false
@@ -86,6 +91,7 @@ func display_name() -> String:
 	return ["Minnow", "Shrimp", "Squid", "Crab", "Mullet", "Seagull"][kind]
 
 func _ready() -> void:
+	if minimum_eater_scale < 0: minimum_eater_scale = [0.0, 0.0, 0.0, 0.72, 0.0, 1.05][kind]
 	collision_layer = 4
 	collision_mask = 1 if kind in [BaitMotion.Kind.MULLET, BaitMotion.Kind.GULL] else 1 | 8
 	motion_mode = MOTION_MODE_FLOATING
@@ -137,7 +143,15 @@ func _physics_process(delta: float) -> void:
 		var hit = get_world_3d().direct_space_state.intersect_ray(ray)
 		floor_height = hit.position.y if not hit.is_empty() else 0.0
 	_motion_age += delta
+	if kind == BaitMotion.Kind.MULLET:
+		forced_dive_remaining = maxf(0, forced_dive_remaining-delta)
+		# A real underwater retreat, not a momentary waterline contact, resets the chain.
+		if position.y < water_height-5 and forced_dive_remaining <= 0: jump_chain = 0
 	var command = driver.sample(self, delta)
+	if kind == BaitMotion.Kind.MULLET and forced_dive_remaining > 0:
+		command.descend = true
+		command.action = BaitMotion.Action.GLIDE
+		command.flee_fraction = -1
 	flee_recovery = maxf(0.0, flee_recovery - delta)
 	if command.flee_fraction >= 0.0:
 		start_flee(command.flee_fraction, command.direction)
@@ -221,6 +235,8 @@ func _physics_process(delta: float) -> void:
 	if kind == BaitMotion.Kind.MULLET:
 		if global_position.y >= water_height: airborne = true
 		if velocity.y < 0 and global_position.y < water_height:
+			if (airborne or _breaching) and jump_chain >= maximum_jump_chain:
+				forced_dive_remaining = 4.0
 			airborne = false
 			_breaching = false
 	if bottom_kind or passive:
@@ -247,6 +263,12 @@ func _physics_process(delta: float) -> void:
 
 func start_flee(fraction: float, away: Vector3) -> bool:
 	if flee_recovery > 0.0 or airborne or _breaching: return false
+	if kind == BaitMotion.Kind.MULLET:
+		if forced_dive_remaining > 0: return false
+		if jump_chain >= maximum_jump_chain:
+			forced_dive_remaining = 4.0
+			return false
+		jump_chain += 1
 	var strength = lerpf(minimum_flee_strength, maximum_flee_strength, clampf(fraction, 0, 1))
 	_escape_strength = strength
 	flee_recovery = flee_cooldown
@@ -279,6 +301,8 @@ func start_flee(fraction: float, away: Vector3) -> bool:
 	return true
 
 func clear_actions() -> void:
+	jump_chain = 0
+	forced_dive_remaining = 0
 	flee_remaining = 0.0
 	flee_recovery = 0.0
 	airborne = false
@@ -298,6 +322,10 @@ func _apply_bottom_constraint(stick_to_bottom: bool) -> void:
 		velocity.y = 0.0
 
 func try_bite(eater) -> bool:
+	if not claimed and eater.size_multiplier() < minimum_eater_scale:
+		eater.feeding.last_meal = "%s needs %.2fx size" % [display_name(), minimum_eater_scale]
+		eater.feeding.meal_notice_time = 1.8
+		return false
 	if claimed:
 		return false
 	claimed = true

@@ -23,6 +23,7 @@ var camera_focus: Vector3
 var use_fish_camera: bool = false
 var orbit_yaw: float = 0.93
 var orbit_pitch: float = 0.38
+var arena_half_width: float = 132.0
 var boat_yaw: float = 0.0
 var boat_pitch: float = -0.12
 
@@ -30,6 +31,7 @@ func setup(owner_fish, parent: Node3D, anchor: Vector3) -> void:
 	fish = owner_fish
 	fish.add_to_group("fish_predators")
 	bait_parent = parent
+	arena_half_width = parent.arena_width*0.5
 	anchor_position = Vector3(90, anchor.y + 1, 75)
 	spawn_position = fish.global_position + Vector3(0,2,-8)
 	boat_yaw = FishInput.angles(BaitMotion.horizontal(-anchor_position)).y
@@ -111,6 +113,7 @@ func _spawn_lure(kind: int) -> void:
 	lure = BaitActor.new()
 	lure.name = "FishermanTestBait"
 	lure.kind = kind
+	lure.arena_half_width = arena_half_width
 	var size_rng = RandomNumberGenerator.new()
 	size_rng.randomize()
 	lure.randomize_size(size_rng)
@@ -155,7 +158,7 @@ func cast_bait() -> void:
 	# Shorten a cast at the walls without rotating it away from the player's aim.
 	for axis in [0,2]:
 		if absf(direction[axis]) > 0.001:
-			var edge = 110.0 if direction[axis] > 0 else -110.0
+			var edge = arena_half_width-10 if direction[axis] > 0 else -arena_half_width+10
 			distance = minf(distance,maxf(0,(edge-anchor_position[axis])/direction[axis]))
 	spawn_position = anchor_position + direction * distance
 	spawn_position.y -= 0.45
@@ -186,8 +189,8 @@ func _physics_process(delta: float) -> void:
 
 func move_origin(direction: Vector3, delta: float) -> void:
 	anchor_position += Vector3(direction.x,0,direction.z).limit_length()*origin_move_speed*delta
-	anchor_position.x = clampf(anchor_position.x,-105,105)
-	anchor_position.z = clampf(anchor_position.z,-105,105)
+	anchor_position.x = clampf(anchor_position.x,-arena_half_width+15,arena_half_width-15)
+	anchor_position.z = clampf(anchor_position.z,-arena_half_width+15,arena_half_width-15)
 	boat.position = anchor_position
 	if live_driver != null: live_driver.anchor_position = anchor_position
 

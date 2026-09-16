@@ -36,7 +36,7 @@ extends CharacterBody3D
 var airborne: bool = false
 @export_group("Growth")
 @export var starting_size: float = 0.58
-@export var growth_rate: float = 0.055
+@export var growth_rate: float = 0.006
 @export var maximum_size: float = 2.1
 
 var heading: Vector3 = Vector3.FORWARD

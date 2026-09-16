@@ -37,7 +37,7 @@ func alarm_mullet(mullet) -> void:
 	if mullet.driver is BaitMotion.LiveBaitDriver:
 		mullet.driver.scatter_remaining = rng.randf_range(5, 9)
 		if rng.randf() < 0.5 and mullet.position.y > water_height-2:
-			mullet.start_flee(0.9, BaitMotion.horizontal(mullet.position-position))
+			mullet.start_flee(0.9, BaitMotion.horizontal(mullet.heading))
 		else:
 			mullet.driver._mullet_dive = rng.randf_range(3, 5)
 			mullet.driver._mullet_dive_wait = rng.randf_range(12, 22)

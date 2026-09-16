@@ -1,7 +1,7 @@
 extends Node3D
 ## Prototype level + HUD. Arena dimensions below drive seabed, surface, bounds and zones.
 
-@export var arena_width: float = 240.0
+@export var arena_width: float = 264.0
 @export var water_depth: float = 32.0
 @export var rock_count: int = 24
 var _fish
@@ -211,7 +211,7 @@ func build_hud() -> void:
 	top.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	var hint = hud_text(root, "Hold LMB. Line it up. Release.", 24, cream, Vector2.ZERO)
 	anchor(hint, Control.PRESET_BOTTOM_LEFT, Rect2(40, -125, 520, 40))
-	var controls = hud_text(root, "W forward / S reverse    A/D steer    MOUSE look    SHIFT boost\nSPACE / CTRL rise / dive    R reset    ESC release cursor", 15, muted, Vector2.ZERO)
+	var controls = hud_text(root, "W forward / S reverse    A/D steer    MOUSE look    SHIFT boost   F9 hitch report\nSPACE / CTRL rise / dive    R reset    ESC release cursor", 15, muted, Vector2.ZERO)
 	anchor(controls, Control.PRESET_BOTTOM_LEFT, Rect2(40, -83, 740, 58))
 	_telemetry = hud_text(root, "", 20, cream, Vector2.ZERO)
 	anchor(_telemetry, Control.PRESET_BOTTOM_RIGHT, Rect2(-260, -103, 220, 60))
@@ -229,7 +229,7 @@ func _process(delta: float) -> void:
 	if _feeding_preview or _charge_preview:
 		_fish.command = FishInput.new(0, 0, 0, Vector3.FORWARD, false, _time < 1.5 or _charge_preview)
 	_telemetry.text = "%.1f m/s\n%.1f m depth" % [_fish.velocity.length(), water_depth - _fish.position.y]
-	_score.text = "%d FOOD / %d EATEN\n%.2f× SIZE" % [_fish.feeding.food, _fish.feeding.bait_eaten, _fish.size_multiplier()]
+	_score.text = "%d FOOD / %d EATEN\n%.2fÃ— SIZE" % [_fish.feeding.food, _fish.feeding.bait_eaten, _fish.size_multiplier()]
 	_status.text = "CLICK TO SWIM" if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED else "FEEDING LUNGE" if _fish.feeding.is_dashing() else "BOOST" if _fish.boosting else ""
 	if _capture and not _captured and _time > (1.85 if _feeding_preview else 2.0):
 		_captured = true

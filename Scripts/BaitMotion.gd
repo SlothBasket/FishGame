@@ -234,7 +234,7 @@ class LiveBaitDriver:
 				cmd.descend = false
 			elif offset.y < -1.8: cmd.descend = true
 		var to_home: Vector3 = home - bait.global_position
-		if Vector2(to_home.x, to_home.z).length() > roam_radius or absf(bait.position.x) > 105 or absf(bait.position.z) > 105:
+		if Vector2(to_home.x, to_home.z).length() > roam_radius or absf(bait.position.x) > bait.arena_half_width-15 or absf(bait.position.z) > bait.arena_half_width-15:
 			cmd.direction = BaitMotion.horizontal(to_home)
 		if bait.kind == Kind.SQUID:
 			if bait.position.y < maxf(bait.floor_height + squid_floor_clearance, preferred_y - depth_band):
@@ -249,9 +249,18 @@ class LiveBaitDriver:
 				cmd.action = Action.GLIDE
 				cmd.descend = true
 		var threat = _threat
-		if bait.kind == Kind.SHRIMP and threat:
-			cmd.direction = BaitMotion.horizontal(_threat_direction)
-		var escape_direction = _threat_direction if threat else BaitMotion.horizontal(bait.heading)
+		var escape_direction = BaitMotion.horizontal(bait.heading)
+		if threat:
+			# Keep the travel axis, as a lure on a line would. Only an oncoming fish
+			# warrants a bounded side turn plus depth change, never a panic U-turn.
+			cmd.direction = escape_direction
+			var toward = -BaitMotion.horizontal(_threat_direction)
+			if escape_direction.dot(toward) > 0.7:
+				var side = 1.0 if escape_direction.cross(toward).y < 0 else -1.0
+				escape_direction = escape_direction.rotated(Vector3.UP,side*deg_to_rad(35))
+				cmd.direction = escape_direction
+				cmd.descend = bait.position.y > bait.water_height*0.5
+				if not cmd.descend: cmd.action = Action.RISE
 		if bait.flee_recovery <= 0 and not bait.airborne and _mullet_dive <= 0:
 			if threat:
 				cmd.flee_fraction = rng.randf_range(0.5, ai_charge_max)
@@ -274,7 +283,7 @@ class LiveBaitDriver:
 						_burst_side *= -1
 						_burst_pending = false
 					else:
-						_burst_axis = BaitMotion.horizontal(_threat_direction) if bait.kind == Kind.SHRIMP and threat else BaitMotion.horizontal(bait.heading)
+						_burst_axis = BaitMotion.horizontal(bait.heading)
 						_burst_side = -1.0 if rng.randf() < 0.5 else 1.0
 						_burst_pending = rng.randf() < (minnow_sequence_chance if bait.kind == Kind.MINNOW else sequence_chance)
 						_burst_strength = rng.randf_range(0.35, 0.6)
