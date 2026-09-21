@@ -26,7 +26,8 @@ var line_mesh: MeshInstance3D
 var rod_material: StandardMaterial3D
 var label: Label
 var drag_value: Label
-var hook_caption: Label
+var hook_panel: PanelContainer
+var fight_panel: PanelContainer
 var previous_phase: int = -1
 var impact_age: float = 0
 
@@ -49,15 +50,32 @@ func _ready() -> void:
 	camera.make_current()
 	var canvas = CanvasLayer.new()
 	add_child(canvas)
-	label = Label.new()
-	label.position = Vector2(40,190)
-	label.add_theme_font_size_override("font_size",16)
-	canvas.add_child(label)
+	var root = Control.new()
+	canvas.add_child(root)
+	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	fight_panel = PanelContainer.new()
+	root.add_child(fight_panel)
+	fight_panel.anchor_left = 0.71
+	fight_panel.anchor_right = 0.98
+	fight_panel.anchor_top = 0.04
+	fight_panel.anchor_bottom = 0.96
+	var margin = MarginContainer.new()
+	for edge in ["left","right","top","bottom"]: margin.add_theme_constant_override("margin_"+edge,12)
+	fight_panel.add_child(margin)
+	var scroll = ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	margin.add_child(scroll)
 	var box = VBoxContainer.new()
-	box.position = Vector2(40,310)
-	box.custom_minimum_size.x = 390
-	canvas.add_child(box)
+	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	box.add_theme_constant_override("separation",6)
+	scroll.add_child(box)
+	label = Label.new()
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.add_theme_font_size_override("font_size",16)
+	box.add_child(label)
 	readings = Label.new()
+	readings.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	box.add_child(readings)
 	var drag_caption = Label.new()
 	drag_caption.text = "DRAG"
@@ -67,20 +85,37 @@ func _ready() -> void:
 	drag_slider.max_value = 100
 	drag_slider.step = 5
 	drag_slider.value = 40
-	drag_slider.custom_minimum_size = Vector2(390,22)
+	drag_slider.custom_minimum_size.y = 22
 	drag_slider.value_changed.connect(func(value): drag_setting = value/100.0)
 	box.add_child(drag_slider)
 	drag_value = Label.new()
 	box.add_child(drag_value)
-	for title in ["Tension","Line condition","Retrieve","Power stamina","Focus","Hook meter"]:
+	for title in ["Tension","Line condition","Retrieve","Power stamina","Focus"]:
 		var caption = Label.new()
 		caption.text = title.to_upper()
-		if title == "Hook meter": hook_caption = caption
 		box.add_child(caption)
 		var bar = ProgressBar.new()
-		bar.custom_minimum_size = Vector2(390,14)
+		bar.custom_minimum_size.y = 22
 		box.add_child(bar)
 		bars[title] = bar
+	# Hook timing owns its own centered area, outside the scrolling fight panel.
+	hook_panel = PanelContainer.new()
+	root.add_child(hook_panel)
+	hook_panel.anchor_left = 0.32
+	hook_panel.anchor_right = 0.68
+	hook_panel.anchor_top = 0.44
+	hook_panel.anchor_bottom = 0.56
+	var hook_box = VBoxContainer.new()
+	hook_panel.add_child(hook_box)
+	var hook_caption = Label.new()
+	hook_caption.text = "HOOK SET — release near 75%"
+	hook_caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hook_box.add_child(hook_caption)
+	var hook_bar = ProgressBar.new()
+	hook_bar.custom_minimum_size.y = 30
+	hook_box.add_child(hook_bar)
+	bars["Hook meter"] = hook_bar
+	hook_panel.hide()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
@@ -121,7 +156,7 @@ func sample() -> FisherIntent:
 	return intent
 
 func _process(delta: float) -> void:
-	if data.size() != 48: return
+	if data.size() != 50: return
 	apply_look(GameControls.look()*rod_stick_response*delta)
 	var origin = Vector3(data[0],data[1],data[2])
 	boat.position = origin
@@ -170,20 +205,20 @@ func _process(delta: float) -> void:
 	label.text = "FISHER — %s\nG cast/setup | X species | W/RT retrieve | Wheel/D-pad up/down reel\nMouse/right stick: rod during fight | [ ] / D-pad left/right: drag\nQ/RB hook/jerk | Shift/LB Power | V/LS Focus | C/RS bait view" % phase_name
 	if not fighting and data[27] > 0: label.text += "\n"+FightSession.Outcome.keys()[roundi(data[27])]
 	var pressure = "SLACK — REEL!" if data[31] > 0.5 else "CRITICAL" if data[13] > data[45] else "HEAVY" if data[13] > data[45]*0.7 else "DRAG" if data[38] > 0 else "WORKING" if data[13] > data[45]*0.2 else "LIGHT"
-	readings.text = "LINE OUT %.1fm | Distance %.1fm | Slack %.1fm\n%s %+.1f m/s | %s\nDrag %d%% / %.0f load | Requested %.0f | Tension %.0f\nSaved reel %d%% | %s" % [data[12],data[30],data[31],"↑" if data[35] > 0 else "↓",data[35],pressure,roundi(data[32]*100),data[33],data[34],data[13],roundi(data[7]*5),"POWER" if data[15] > 0 else "Normal retrieve"]
+	var pull_direction = "LEFT" if data[49] < -0.3 else "RIGHT" if data[49] > 0.3 else "AWAY"
+	readings.text = "LINE %.1f / %.0f m\n%s | %s\nSlack %.1f m | Line rate %+.1f m/s\nTension %.0f | Drag limit %.0f\nSaved retrieve %d%% | %s" % [data[12],data[48],pressure,pull_direction if fighting else "READY",data[31],data[35],data[13],data[33],roundi(data[7]*5),"POWER" if data[15] > 0 else "NORMAL"]
 	bars["Tension"].max_value = data[45]
 	bars["Tension"].value = data[13]
 	bars["Line condition"].value = data[14]*100
 	bars["Retrieve"].value = data[37]*100
 	bars["Power stamina"].value = data[8]
 	bars["Focus"].value = data[9]
-	bars["Hook meter"].visible = fighting and phase == FightSession.Phase.METER
+	hook_panel.visible = fighting and phase == FightSession.Phase.METER
 	bars["Hook meter"].value = data[11]*100
-	hook_caption.visible = bars["Hook meter"].visible
 	drag_value.text = "%d%%" % roundi(drag_setting*100)
 
 func apply_look(movement: Vector2) -> void:
-	if data.size() == 48 and roundi(data[4]) == FisherActor.State.FIGHT:
+	if data.size() == 50 and roundi(data[4]) == FisherActor.State.FIGHT:
 		if data[16] <= 0:
 			rod_horizontal = clampf(rod_horizontal+movement.x,-1,1)
 			rod_vertical = clampf(rod_vertical-movement.y,-1,1)
@@ -207,3 +242,7 @@ func draw_line(node: MeshInstance3D, points: Array, material: Material) -> void:
 	for point in points: mesh.surface_add_vertex(point)
 	mesh.surface_end()
 	node.mesh = mesh
+
+func layout_fits() -> bool:
+	var viewport_rect = get_viewport().get_visible_rect()
+	return viewport_rect.encloses(fight_panel.get_global_rect()) and viewport_rect.encloses(hook_panel.get_global_rect()) and hook_panel.get_global_rect().get_center().distance_to(viewport_rect.get_center()) < 2 and not fight_panel.get_global_rect().intersects(session.status.get_global_rect())

@@ -18,12 +18,48 @@ static func run(fight: FightSession) -> bool:
 	ok = verify(line.condition < 1,"Loaded power/reversal wears line") and ok
 	var cruise = FightLine.new()
 	cruise.line_out = 40
+	cruise.fish_load = 35
 	cruise.step(0.1,40,0,35,0.5,0.4,false)
 	ok = verify(is_equal_approx(cruise.drag_threshold,44) and not cruise.slipping and cruise.line_rate < 0 and cruise.requested_load > 35,"40% drag = 44; reel pressure gains line without fish payout") and ok
 	cruise.step(0.1,40,0,35,1,0.4,false)
 	ok = verify(not cruise.slipping and cruise.requested_load > 44 and cruise.line_rate < 0,"Hard retrieve may reach drag without falsely classifying fish-driven slip") and ok
-	cruise.step(0.1,41,6,60,0,0.4,false)
+	cruise.step(0.4,41,6,60,0,0.4,false)
 	ok = verify(cruise.slipping and cruise.payout > 0,"Sprint output takes line") and ok
+	var pulls: Array[float] = []
+	for amount in [0.0,0.5,1.0]:
+		var pump = FightLine.new()
+		pump.line_out = 40
+		pump.fish_load = 35
+		pump.step(1,40,0,35,0,0.4,false,0,amount)
+		pulls.append(pump.tension)
+	ok = verify(pulls[0] < pulls[1] and pulls[1] < pulls[2],"Center / half / full rod gives increasing pressure") and ok
+	var pump = FightLine.new()
+	pump.line_out = 40
+	pump.fish_load = 50
+	pump.step(1,40,0,50,0,0.4,false,0,1)
+	ok = verify(pump.tension > pump.drag_threshold and not pump.slipping and pump.line_out == 40,"Rod holds modest pressure above drag without spool payout") and ok
+	var raised = pump.tension
+	pump.step(1,41,1,50,0,0.4,false,0,0)
+	ok = verify(pump.tension < raised and pump.slipping,"Lowered rod reduces holding pressure and permits payout") and ok
+	pump.line_out = 40
+	pump.step(0.1,38,0,0,0,0.4,false,0,0)
+	ok = verify(pump.slack >= 2 and pump.line_out == 40,"Lowering without reel gives back pump gain as slack") and ok
+	pump.step(0.2,38,0,0,1,0.4,false,0,0)
+	ok = verify(pump.line_out < 40 and pump.slack < 2,"Reeling while lowered permanently recovers gained line") and ok
+	var ramp = FightLine.new()
+	ramp.line_out = 40
+	ramp.step(0.016,40,0,60,0,0.4,false)
+	ok = verify(ramp.fish_load > 0 and ramp.fish_load < 15,"Ordinary load ramps instead of snapping") and ok
+	ramp.step(0.016,40,0,60,1,0.4,true,35)
+	ok = verify(ramp.fish_load == 60,"Power and shock retain sharp load response") and ok
+	var spooled = FightSession.new()
+	spooled.spool = FightLine.new()
+	spooled.spool.line_out = spooled.spool.maximum_line_out-0.01
+	spooled.spool.fish_load = 100
+	spooled.spool.step(0.2,110,8,100,0,0.2,false)
+	ok = verify(spooled.spool.line_out == spooled.spool.maximum_line_out and spooled.check_spooled() and spooled.phase == FightSession.Phase.FINISHED,"Capacity clamps payout and spool-out ends encounter") and ok
+	if fight.fisher.session.fisher_view != null:
+		ok = verify(fight.fisher.session.fisher_view.layout_fits(),"Fight HUD inside viewport, hook centered, network text separate") and ok
 	var risk = FightLine.new()
 	risk.tension = 86
 	var fresh_threshold = risk.break_threshold()

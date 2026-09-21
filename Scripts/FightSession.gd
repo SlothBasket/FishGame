@@ -2,7 +2,7 @@ class_name FightSession
 extends Node
 ## Server-only encounter. Drivers supply intent; this node owns outcomes and forces.
 enum Phase { CANDIDATE, METER, IMPACT, OPENING, FIGHT, FINISHED }
-enum Outcome { NONE, MISSED, LINE_BROKE, THROWN, LANDED, DISCONNECT }
+enum Outcome { NONE, MISSED, LINE_BROKE, THROWN, LANDED, DISCONNECT, SPOOLED }
 @export var opportunity_window: float = 5
 @export var meter_duration: float = 1.2
 @export var meter_target: float = 0.75
@@ -31,6 +31,8 @@ var rod_horizontal: float = 0
 var rod_vertical: float = 0
 var rod_tip: Vector3
 var rod_hand: Vector3
+var neutral_tip: Vector3
+var rod_pull: float = 0
 var _previous_heading: Vector3 = Vector3.FORWARD
 var power_exhausted: bool = false
 @export var power_drain: float = 24
@@ -76,7 +78,7 @@ func _ready() -> void:
 	rng.randomize()
 	spool = spool.duplicate()
 	update_rod(0.016)
-	line_length = fish.position.distance_to(rod_tip)
+	line_length = fish.position.distance_to(neutral_tip)
 	fish.endurance = fish.stamina_capacity
 	fish.fight_regen_scale = 1
 	_previous_heading = fish.heading
@@ -158,7 +160,8 @@ func _physics_process(delta: float) -> void:
 		spike = jerk_spike*(1.4 if dive_counter else 1)
 		if spool.slack < slack_tolerance:
 			fish.stamina = maxf(0,fish.stamina-jerk_damage*(1.4 if dive_counter else resistance))
-	spool.step(delta,fish.position.distance_to(rod_tip),radial_speed,movement_load,input.retrieve,fisher.drag_setting,power_active,spike)
+	spool.step(delta,fish.position.distance_to(neutral_tip),radial_speed,movement_load,input.retrieve,fisher.drag_setting,power_active,spike,rod_pull)
+	if check_spooled(): return
 	tension = spool.tension
 	condition = spool.condition
 	var contact = clampf(1-spool.slack/slack_tolerance,0,1)
@@ -202,6 +205,9 @@ func update_rod(delta: float) -> void:
 	var pitch = deg_to_rad(rod_up_degrees if rod_vertical >= 0 else rod_down_degrees)*rod_vertical
 	rod_direction = FishInput.from_angles(pitch,yaw)
 	rod_hand = fisher.position+Vector3.UP*1.3
+	neutral_tip = rod_hand+forward*rod_length
+	# Lowering below center releases upward pressure; left/right still load the rod.
+	rod_pull = minf(1,Vector2(rod_horizontal,maxf(0,rod_vertical)).length())
 	var unloaded_tip = rod_hand+rod_direction*rod_length
 	rod_tip = unloaded_tip+(fish.position-unloaded_tip).normalized()*rod_bend*clampf(tension/spool.strength,0,1)
 
@@ -227,3 +233,8 @@ func finish(result: int) -> void:
 		fisher.vision_active = false
 		fisher.return_to_setup()
 	queue_free()
+
+func check_spooled() -> bool:
+	if spool.line_out < spool.maximum_line_out: return false
+	finish(Outcome.SPOOLED)
+	return true

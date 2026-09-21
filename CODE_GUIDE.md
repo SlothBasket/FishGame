@@ -1,3 +1,5 @@
+> Rod pumping update: [FIGHT_GUIDE.md](FIGHT_GUIDE.md) documents temporary 2 m take-up, 15-force rod buffer, 100 m spool, ordinary-load smoothing, 50-float fisherman snapshots, and anchored 1920 × 1080 HUD layout.
+
 > Current fight loop: see [FIGHT_GUIDE.md](FIGHT_GUIDE.md) for linear drag, reel pressure, heading leverage, endurance, line-risk formulas and manual checks. Fish snapshots now contain 23 floats including endurance; procedural fight sound is removed.
 
 # FishGame: movement and tuning guide

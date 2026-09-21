@@ -72,9 +72,16 @@ func start(level: Node3D, fish: FishPlayer, args: PackedStringArray) -> void:
 	var layer = CanvasLayer.new()
 	add_child(layer)
 	status = Label.new()
-	status.position = Vector2(40,145)
+
 	status.add_theme_font_size_override("font_size",16)
 	layer.add_child(status)
+	status.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+	status.offset_left = 24
+	status.offset_top = 160
+	status.offset_right = 600
+	status.offset_bottom = 220
+	status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	status.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	if port < 1024 or port > 65535 or not address.is_valid_ip_address():
 		disconnect_session("Invalid IP or port")
 		return
@@ -256,7 +263,7 @@ func _physics_process(delta: float) -> void:
 			if fight_smoke:
 				input.species = BaitMotion.Kind.SQUID
 				input.cast_serial = 1
-				if fisher_view.data.size() == 48:
+				if fisher_view.data.size() == 50:
 					input.jerk = roundi(fisher_view.data[10]) == FightSession.Phase.CANDIDATE or (roundi(fisher_view.data[10]) == FightSession.Phase.METER and fisher_view.data[11] < 0.72)
 			if hosting: players[owned_id].entity.command = input
 			elif input_clock <= 0:
@@ -506,11 +513,13 @@ func fisher_state(actor: FisherActor) -> PackedFloat32Array:
 			if players[id].entity == f.fish: fish_peer = id
 	return PackedFloat32Array([actor.position.x,actor.position.y,actor.position.z,actor.boat_yaw,actor.state,actor.kind,actor.lure.network_id if is_instance_valid(actor.lure) else 0,actor.reel.selected_tier,actor.stamina,actor.focus,f.phase if has_fight else -1,f.meter if has_fight else 0,f.line_length if has_fight else 0,f.tension if has_fight else 0,f.condition if has_fight else 1,int(f.power_active) if has_fight else 0,int(actor.vision_active),rod.x,rod.y,rod.z,fish_peer,p.x,p.y,p.z,v.x,v.y,v.z,actor.outcome,f.quality if has_fight else 0,f.phase_time if has_fight else 0,
 		f.spool.distance if has_fight else 0,f.spool.slack if has_fight else 0,actor.drag_setting,f.spool.drag_threshold if has_fight else 0,f.spool.requested_load if has_fight else 0,f.spool.line_rate if has_fight else 0,f.spool.payout if has_fight else 0,1.0 if has_fight and f.power_active else actor.command.retrieve,int(f.spool.slipping) if has_fight else 0,
-		f.rod_tip.x if has_fight else 0,f.rod_tip.y if has_fight else 0,f.rod_tip.z if has_fight else 0,f.rod_hand.x if has_fight else 0,f.rod_hand.y if has_fight else 0,f.rod_hand.z if has_fight else 0,f.spool.strength if has_fight else 110,f.rod_horizontal if has_fight else 0,f.rod_vertical if has_fight else 0])
+		f.rod_tip.x if has_fight else 0,f.rod_tip.y if has_fight else 0,f.rod_tip.z if has_fight else 0,f.rod_hand.x if has_fight else 0,f.rod_hand.y if has_fight else 0,f.rod_hand.z if has_fight else 0,f.spool.strength if has_fight else 110,f.rod_horizontal if has_fight else 0,f.rod_vertical if has_fight else 0,
+		f.spool.maximum_line_out if has_fight else FightLine.DEFAULT_CAPACITY,
+		v.normalized().dot(BaitMotion.horizontal(p-actor.position).cross(Vector3.UP)) if has_fight and v.length() > 0.3 else 0])
 
 @rpc("authority","call_remote","unreliable_ordered",2)
 func fisher_snapshot(peer: int, state: PackedFloat32Array) -> void:
-	if hosting or closed or state.size() != 48 or not players.has(peer) or players[peer].role != ROLE_FISHER: return
+	if hosting or closed or state.size() != 50 or not players.has(peer) or players[peer].role != ROLE_FISHER: return
 	players[peer].entity.position = Vector3(state[0],state[1],state[2])
 	if peer == multiplayer.get_unique_id() and fisher_view != null:
 		if fight_smoke and (fisher_view.data.is_empty() or fisher_view.data[10] != state[10]): print("CLIENT FIGHT PHASE ",state[10]," fields=",state.size())
@@ -560,7 +569,7 @@ func fight_smoke_tick() -> void:
 			smoke_connected = clock
 		if smoke_stage == 4 and clock-smoke_connected > 0.4: get_tree().quit(0)
 	else:
-		if fisher_view != null and fisher_view.data.size() == 48:
+		if fisher_view != null and fisher_view.data.size() == 50:
 			if roundi(fisher_view.data[10]) == FightSession.Phase.FIGHT and not smoke_saw_two:
 				smoke_saw_two = true
 				print("FIGHT SMOKE PASS replicated fight/HUD state")

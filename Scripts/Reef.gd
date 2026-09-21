@@ -217,7 +217,9 @@ func build_hud() -> void:
 	hud_text(root, "P E L A G I C", 30, cream, Vector2(38, 30))
 	hud_text(root, "03  /  THE HUNTING GROUNDS", 13, Color("e7c184"), Vector2(40, 75))
 	hud_text(root, "MINNOW +1 / SHRIMP +4 / SQUID +3 / CRAB +5 / MULLET +3 / GULL +5", 13, muted, Vector2(40, 102))
-	_energy = hud_text(root, "", 18, cream, Vector2(40,145))
+	_energy = hud_text(root, "", 18, cream, Vector2.ZERO)
+	anchor(_energy, Control.PRESET_TOP_RIGHT, Rect2(-310,180,272,64))
+	_energy.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_score = hud_text(root, "", 20, cream, Vector2.ZERO)
 	anchor(_score, Control.PRESET_TOP_RIGHT, Rect2(-300, 92, 262, 63))
 	_score.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT

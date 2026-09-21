@@ -1,6 +1,11 @@
 class_name FightLine
 extends Resource
 ## Spool accounting in metres; force values are prototype Newton-like units.
+const DEFAULT_CAPACITY: float = 100
+@export var maximum_line_out: float = DEFAULT_CAPACITY
+@export var maximum_rod_take_up: float = 2.0
+@export var maximum_rod_buffer: float = 15.0
+@export var ordinary_response_time: float = 0.25
 @export var strength: float = 110
 @export var elasticity: float = 22
 @export var maximum_retrieve: float = 4.5
@@ -39,39 +44,52 @@ var payout: float = 0
 var slipping: bool = false
 var shock: float = 0
 var condition: float = 1
+var rod_take_up: float = 0
+var holding_threshold: float = 0
+var _previous_outward_speed: float = 0
 var _previous_load: float = 0
 
-func step(delta: float, required_distance: float, outward_speed: float, movement_load: float, retrieve: float, drag: float, power: bool, transient_load: float = 0) -> void:
+func step(delta: float, required_distance: float, outward_speed: float, movement_load: float, retrieve: float, drag: float, power: bool, transient_load: float = 0, rod_pull: float = 0) -> void:
 	distance = maxf(0,required_distance)
 	drag_threshold = strength*pow(clampf(drag,0,1),drag_curve)
+	rod_take_up = maximum_rod_take_up*clampf(rod_pull,0,1)
+	holding_threshold = drag_threshold+maximum_rod_buffer*clampf(rod_pull,0,1)
+	# Temporary rod take-up changes working span, never spool accounting. Use a
+	# neutral-tip distance from FightSession so rod geometry is not counted twice.
+	var loaded_distance = distance+rod_take_up
 	var before = line_out
-	var old_slack = maxf(0,line_out-distance)
-	fish_load = maxf(0,movement_load+maxf(0,outward_speed)*0.7)
+	var old_slack = slack
+	var new_contact = loaded_distance >= line_out-contact_tolerance
+	var sharp = power or transient_load > 0 or (old_slack > contact_tolerance and new_contact) or (outward_speed-_previous_outward_speed > 4)
+	_previous_outward_speed = outward_speed
+	var load_target = maxf(0,movement_load+maxf(0,outward_speed)*0.7)
+	fish_load = load_target if sharp else lerpf(fish_load,load_target,1-exp(-delta/maxf(0.01,ordinary_response_time)))
 	var recovery = (power_retrieve if power else maximum_retrieve*clampf(retrieve,0,1))
 	if old_slack < contact_tolerance and not power:
-		recovery *= lerpf(1,0.15,clampf(fish_load/maxf(1,drag_threshold),0,1))
+		recovery *= lerpf(1,0.15,clampf(fish_load/maxf(1,holding_threshold),0,1))
 	line_out = maxf(0.2,line_out-recovery*delta)
-	var extension = maxf(0,distance-line_out)
-	var contact = clampf(1-maxf(0,line_out-distance)/contact_tolerance,0,1)
+	var extension = maxf(0,loaded_distance-line_out)
+	var contact = clampf(1-maxf(0,line_out-loaded_distance)/contact_tolerance,0,1)
 	requested_load = maxf(0,extension*elasticity+fish_load+reel_pressure*(1.5 if power else retrieve)+transient_load)*contact
 	# Load derivative catches real slack-to-taut reversals without a scripted combo.
 	shock = maxf(0,requested_load-_previous_load)
 	_previous_load = requested_load
-	slipping = not power and fish_load > drag_threshold+0.5 and contact > 0
+	slipping = not power and fish_load > holding_threshold+0.5 and contact > 0
 	var payout_target = 0.0
 	if slipping:
-		payout_target = minf(maximum_payout,maxf(0,outward_speed)+recovery+maxf(0,extension-drag_threshold/elasticity)*payout_response)
+		payout_target = minf(maximum_payout,maxf(0,outward_speed)+recovery+maxf(0,extension-holding_threshold/elasticity)*payout_response)
 	payout = lerpf(payout,payout_target,1-exp(-payout_response*delta)) if slipping else 0.0
 	# Only release line actually demanded by separation; never manufacture slack
 	# ahead of the fish using a predicted velocity. Power mode never pays out.
-	var released_line = minf(payout*delta,maxf(0,distance-line_out))
-	line_out += released_line
+	var released_line = minf(payout*delta,maxf(0,loaded_distance-line_out))
+	line_out = minf(maximum_line_out,line_out+released_line)
 	payout = released_line/maxf(0.0001,delta)
-	slack = maxf(0,line_out-distance)
+	slack = maxf(0,line_out-loaded_distance)
 	line_rate = (line_out-before)/maxf(0.0001,delta)
-	var target_tension = requested_load if power else minf(requested_load,drag_threshold+shock*shock_retention)
+	var target_tension = requested_load if power else minf(requested_load,holding_threshold+shock*shock_retention)
 	if slack > contact_tolerance: target_tension = 0
-	tension = lerpf(tension,target_tension,1-exp(-tension_response*delta))
+	var response = tension_response if sharp else 1/maxf(0.01,ordinary_response_time)
+	tension = lerpf(tension,target_tension,1-exp(-response*delta))
 	var stress = maxf(0,tension/strength-wear_start)
 	var wear = load_wear*stress*stress
 	if slipping and payout > 0.05: wear += slipping_reel_wear*retrieve*retrieve*(tension/strength)
