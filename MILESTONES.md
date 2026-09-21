@@ -1,5 +1,7 @@
 # Local development milestones
 
+- Core fight milestone (subject: `Make rod pressure, spool drag, slack and landing coherent`) — explicit spool accounting, continuous retrieve, bounded rod, fish-centered camera, distinct rod/line and standard HUD, drag/Power wear, slack hook security, outward-biased AI and full-stamina landing. See FIGHT_GUIDE.md for scoped validation and deferred bait work. Prior local editor settings preserved in `d6fa7e7`; argument-free F5 restored to sandbox.
+
 - Multiplayer foundation milestone (subject: `Add authoritative ENet fish sessions and interpolated ecosystem replicas`) — Fish + Fish ownership, validated intent-only RPC, reliable lifecycle/catalog events, 20 Hz fish and 10 Hz bait snapshots, local cameras, host/join launch options and F10 disconnect. Import passed; one approximately four-second two-process localhost check confirmed both fish movement, matching 26-bait staged population, and host survival after client departure. No performance tours or fight implementation. Fish + Fisher remains deferred.
 
 Each milestone is a Git commit, not a duplicate copy of the project. Remote pushing is optional for switching locally, but provides a separate backup. A future devlog launcher can list these commits and build a selected revision in a temporary checkout. Preserve this repository and its .git directory.

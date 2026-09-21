@@ -1,6 +1,16 @@
 class_name FisherView
 extends Node3D
 ## Owner-only camera, rod/line art, audio and HUD. Never moves a gameplay actor.
+@export var rod_mouse_response: float = 0.0035
+@export var rod_stick_response: float = 1.2
+@export var fight_camera_response: float = 5
+var rod_horizontal: float = 0
+var rod_vertical: float = 0
+var drag_setting: float = 0.4
+var centered_focus: Vector3
+var bars: Dictionary = {}
+var drag_slider: HSlider
+var readings: Label
 var session
 var data = PackedFloat32Array()
 var reel = ReelSpeed.new()
@@ -27,7 +37,9 @@ func _ready() -> void:
 	rod_material = Geometry.material("d8cda0")
 	rod_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	rod_mesh = MeshInstance3D.new()
+	rod_mesh.mesh = ImmediateMesh.new()
 	line_mesh = MeshInstance3D.new()
+	line_mesh.mesh = ImmediateMesh.new()
 	add_child(rod_mesh)
 	add_child(line_mesh)
 	camera = Camera3D.new()
@@ -37,9 +49,31 @@ func _ready() -> void:
 	var canvas = CanvasLayer.new()
 	add_child(canvas)
 	label = Label.new()
-	label.position = Vector2(40,205)
+	label.position = Vector2(40,190)
 	label.add_theme_font_size_override("font_size",16)
 	canvas.add_child(label)
+	var box = VBoxContainer.new()
+	box.position = Vector2(40,310)
+	box.custom_minimum_size.x = 390
+	canvas.add_child(box)
+	readings = Label.new()
+	box.add_child(readings)
+	for title in ["Tension","Line condition","Retrieve","Power stamina","Focus","Hook meter"]:
+		var caption = Label.new()
+		caption.text = title
+		box.add_child(caption)
+		var bar = ProgressBar.new()
+		bar.custom_minimum_size = Vector2(390,14)
+		box.add_child(bar)
+		bars[title] = bar
+	drag_slider = HSlider.new()
+	drag_slider.min_value = 0
+	drag_slider.max_value = 100
+	drag_slider.step = 5
+	drag_slider.value = 40
+	drag_slider.custom_minimum_size = Vector2(390,22)
+	drag_slider.value_changed.connect(func(value): drag_setting = value/100.0)
+	box.add_child(drag_slider)
 	hiss = AudioStreamPlayer.new()
 	add_child(hiss)
 	var sound = AudioStreamWAV.new()
@@ -51,6 +85,8 @@ func _ready() -> void:
 	noise.seed = 812
 	for i in range(samples.size()): samples[i] = clampi(128+roundi(noise.randf_range(-32,32)*(1-float(i)/samples.size())),0,255)
 	sound.data = samples
+	sound.loop_mode = AudioStreamWAV.LOOP_FORWARD
+	sound.loop_end = samples.size()
 	hiss.stream = sound
 	hiss.volume_db = -18
 
@@ -59,14 +95,16 @@ func _unhandled_input(event: InputEvent) -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED else Input.MOUSE_MODE_CAPTURED
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT: Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		yaw -= event.relative.x*0.004
-		pitch = clampf(pitch-event.relative.y*0.004,-1.5,1.5)
+		apply_look(event.relative*rod_mouse_response)
 	if event.is_echo(): return
 	if event.is_action_pressed("cast"): cast_serial = mini(1000000,cast_serial+1)
 	if event.is_action_pressed("bait_species"): species = (species+1)%5
 	if event.is_action_pressed("reel_up"): reel.step(1)
 	if event.is_action_pressed("reel_down"): reel.step(-1)
 	if event.is_action_pressed("bait_camera"): alternate_view = not alternate_view
+	if event.is_action_pressed("drag_up"): drag_setting = minf(1,drag_setting+0.05)
+	if event.is_action_pressed("drag_down"): drag_setting = maxf(0,drag_setting-0.05)
+	drag_slider.set_value_no_signal(drag_setting*100)
 
 func sample() -> FisherIntent:
 	var intent = FisherIntent.new()
@@ -74,7 +112,9 @@ func sample() -> FisherIntent:
 	intent.species = species
 	intent.cast_serial = cast_serial
 	intent.aim = FishInput.from_angles(pitch,yaw)
-	intent.rod = intent.aim
+	intent.rod_horizontal = rod_horizontal
+	intent.rod_vertical = rod_vertical
+	intent.drag = drag_setting
 	if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED: return intent
 	intent.move_forward = Input.get_axis("back","forward")
 	intent.move_side = Input.get_axis("left","right")
@@ -89,10 +129,8 @@ func sample() -> FisherIntent:
 	return intent
 
 func _process(delta: float) -> void:
-	if data.size() != 30: return
-	var look = GameControls.look()*2.2*delta
-	yaw -= look.x
-	pitch = clampf(pitch-look.y,-1.5,1.5)
+	if data.size() != 48: return
+	apply_look(GameControls.look()*rod_stick_response*delta)
 	var origin = Vector3(data[0],data[1],data[2])
 	boat.position = origin
 	boat.rotation.y = data[3]
@@ -107,9 +145,11 @@ func _process(delta: float) -> void:
 	impact_age += delta
 	previous_phase = phase
 	var underwater = roundi(data[4]) == FisherActor.State.BAIT or (fighting and phase <= FightSession.Phase.METER) or data[16] > 0
-	var direction = FishInput.from_angles(pitch,yaw)
-	var boat_camera = origin+Vector3.UP*2.1-Vector3.FORWARD.rotated(Vector3.UP,data[3])*2
-	var desired = focus-direction*(6 if alternate_view else 10.8) if underwater else boat_camera
+	centered_focus = centered_focus.lerp(focus,1-exp(-fight_camera_response*delta))
+	var direction = BaitMotion.horizontal(centered_focus-origin) if fighting else FishInput.from_angles(pitch,yaw)
+	if fighting: focus = centered_focus
+	var boat_camera = origin+Vector3.UP*2.8-direction*3.5
+	var desired = focus-direction*(6 if alternate_view else 10.8)+Vector3.UP*(2 if fighting else 0) if underwater else boat_camera
 	# Impact remains underwater briefly, then blends into the boat view during the yank.
 	if fighting and phase == FightSession.Phase.IMPACT:
 		desired = (focus-direction*8).lerp(boat_camera,clampf((impact_age-0.15)/0.5,0,1))
@@ -118,21 +158,64 @@ func _process(delta: float) -> void:
 	if camera.position.distance_to(target) > 0.1: camera.look_at(target,Vector3.UP)
 	camera.rotation.z = sin(impact_age*22)*0.025*maxf(0,1-impact_age/0.5) if fighting else 0
 	var rod = Vector3(data[17],data[18],data[19])
-	var tip = origin+Vector3.UP*2+rod*3
-	var load = clampf(data[13]/110,0,1)
-	draw_line(rod_mesh,[origin+Vector3.UP,origin+Vector3.UP*2+rod*1.2,tip+(focus-tip).normalized()*load*0.7],rod_material)
-	draw_line(line_mesh,[tip,focus],rod_material)
-	rod_mesh.visible = fighting or not underwater
+	var hand = Vector3(data[42],data[43],data[44])
+	var tip = Vector3(data[39],data[40],data[41])
+	if not fighting: hand = origin+Vector3.UP*1.3; tip = hand+rod*3
+	var rod_points: Array = []
+	var control = hand+rod*1.5
+	for i in range(7):
+		var t = i/6.0
+		rod_points.append(hand*(1-t)*(1-t)+control*2*t*(1-t)+tip*t*t)
+	draw_rod(rod_points)
+	var line_points: Array = []
+	var line_end = Vector3(data[21],data[22],data[23]) if fighting else focus
+	for i in range(9):
+		var t = i/8.0
+		line_points.append(tip.lerp(line_end,t)+Vector3.DOWN*sin(PI*t)*minf(6,data[31]*0.45))
+	draw_line(line_mesh,line_points,rod_material)
+	rod_mesh.visible = not underwater or fighting
 	line_mesh.visible = fighting or roundi(data[4]) == FisherActor.State.BAIT
-	var species_name: String = BaitMotion.Kind.keys()[roundi(data[5])]
-	label.text = "FISHER %s | Reel %d%% | Line %.1fm | Tension %.0f | Condition %d%%\nPower stamina %d | Focus %d\nG cast/setup | X species | W/RT reel | LMB/RB bait escape | Q/RB hook/jerk\nShift/LB Power Reel | V/LS Focus | Mouse/right stick rod/look | C/RS view" % [species_name,roundi(data[7]*20),data[12],data[13],roundi(data[14]*100),roundi(data[8]),roundi(data[9])]
-	if fighting:
-		label.text += "\n"+["BAIT TAKEN — choose when to hold Q / RB","HOOK SET: release near 75%","HOOK IMPACT","OPENING RUN — Power Reel locked","FIGHT"][clampi(phase,0,4)]
-		if phase == FightSession.Phase.METER: label.text += "  %d%%" % roundi(data[11]*100)
-	elif data[27] > 0: label.text += "\n"+FightSession.Outcome.keys()[roundi(data[27])]
+	var phase_name = ["BAIT TAKEN — hold Q / RB when ready","HOOK: release near 75%","HOOK IMPACT","OPENING RUN — Power locked","FIGHT"][clampi(phase,0,4)] if fighting else BaitMotion.Kind.keys()[roundi(data[5])]
+	label.text = "FISHER — %s\nG cast/setup | X species | W/RT retrieve | Wheel/D-pad up/down reel\nMouse/right stick: rod during fight | [ ] / D-pad left/right: drag\nQ/RB hook/jerk | Shift/LB Power | V/LS Focus | C/RS bait view" % phase_name
+	if not fighting and data[27] > 0: label.text += "\n"+FightSession.Outcome.keys()[roundi(data[27])]
+	var pressure = "SLACK — REEL!" if data[31] > 0.5 else "CRITICAL" if data[13] > data[45] else "HEAVY" if data[13] > data[45]*0.7 else "DRAG" if data[38] > 0 else "WORKING" if data[13] > data[45]*0.2 else "LIGHT"
+	readings.text = "LINE OUT %.1fm | Distance %.1fm | Slack %.1fm\n%s %+.1f m/s | %s\nDrag %d%% / %.0f load | Requested %.0f | Tension %.0f\nSaved reel %d%% | %s" % [data[12],data[30],data[31],"↑" if data[35] > 0 else "↓",data[35],pressure,roundi(data[32]*100),data[33],data[34],data[13],roundi(data[7]*5),"POWER" if data[15] > 0 else "Normal retrieve"]
+	bars["Tension"].max_value = data[45]
+	bars["Tension"].value = data[13]
+	bars["Line condition"].value = data[14]*100
+	bars["Retrieve"].value = data[37]*100
+	bars["Power stamina"].value = data[8]
+	bars["Focus"].value = data[9]
+	bars["Hook meter"].visible = fighting and phase == FightSession.Phase.METER
+	bars["Hook meter"].value = data[11]*100
+	var audible = fighting and (data[36] > 0.1 or data[13] > data[33]*0.85 or phase == FightSession.Phase.IMPACT)
+	if audible:
+		if not hiss.playing: hiss.play()
+		hiss.volume_db = lerpf(-30,-12,clampf(maxf(data[36]/12,data[13]/maxf(1,data[45])),0,1))
+		hiss.pitch_scale = 0.8+clampf(data[36]/12,0,1.4)
+	elif hiss.playing: hiss.stop()
+
+func apply_look(movement: Vector2) -> void:
+	if data.size() == 48 and roundi(data[4]) == FisherActor.State.FIGHT:
+		if data[16] <= 0:
+			rod_horizontal = clampf(rod_horizontal+movement.x,-1,1)
+			rod_vertical = clampf(rod_vertical-movement.y,-1,1)
+	else:
+		yaw -= movement.x
+		pitch = clampf(pitch-movement.y,-1.5,1.5)
+
+func draw_rod(points: Array) -> void:
+	var mesh: ImmediateMesh = rod_mesh.mesh
+	mesh.clear_surfaces()
+	mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES,rod_material)
+	var width = camera.global_basis.x*0.035
+	for i in range(points.size()-1):
+		for point in [points[i]-width,points[i]+width,points[i+1]+width,points[i]-width,points[i+1]+width,points[i+1]-width]: mesh.surface_add_vertex(point)
+	mesh.surface_end()
 
 func draw_line(node: MeshInstance3D, points: Array, material: Material) -> void:
-	var mesh = ImmediateMesh.new()
+	var mesh: ImmediateMesh = node.mesh
+	mesh.clear_surfaces()
 	mesh.surface_begin(Mesh.PRIMITIVE_LINE_STRIP,material)
 	for point in points: mesh.surface_add_vertex(point)
 	mesh.surface_end()

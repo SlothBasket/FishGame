@@ -5,6 +5,7 @@ extends Node3D
 @export var water_depth: float = 32.0
 @export var rock_count: int = 24
 var _fish
+var _fish_hud: Control
 var network_session: NetworkSession
 var _telemetry: Label
 var _status: Label
@@ -206,6 +207,7 @@ func build_hud() -> void:
 	var layer = CanvasLayer.new()
 	add_child(layer)
 	var root = Control.new()
+	_fish_hud = root
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	layer.add_child(root)
 	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -236,6 +238,7 @@ func build_hud() -> void:
 	feeding_hud.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
 func _process(delta: float) -> void:
+	_fish_hud.visible = network_session == null or network_session.fisher_view == null
 	_time += delta
 	if _feeding_preview or _charge_preview:
 		_fish.command = FishInput.new(0, 0, 0, Vector3.FORWARD, false, _time < 1.5 or _charge_preview)

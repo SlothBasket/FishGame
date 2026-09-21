@@ -1,5 +1,7 @@
 # Local multiplayer foundation
 
+**Current protocol:** [FIGHT_GUIDE.md](FIGHT_GUIDE.md) documents the implemented Fish + Fisher role, launch controls, fight authority and updated 48-field fisherman snapshots. Its role/input details supersede the original Fish + Fish-only milestone notes below. Fisher intent now carries continuous retrieve, constrained rod offsets and drag; it uses reliable delivery with unchanged sender/role/rate validation. No object decoding was enabled.
+
 Single-player still starts with `Launch.ps1` or `Play.cmd`. Multiplayer starts a separate session; it does not convert an in-progress single-player world.
 
 From PowerShell in this folder:

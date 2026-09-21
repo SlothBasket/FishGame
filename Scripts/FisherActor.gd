@@ -11,6 +11,9 @@ enum State { SETUP, BAIT, FIGHT }
 @export var focus_capacity: float = 100
 @export var focus_drain: float = 22
 @export var focus_regen: float = 8
+@export var default_drag: float = 0.4
+var drag_setting: float = 0.4
+var focus_exhausted: bool = false
 var stamina: float = 100
 var focus: float = 100
 var vision_active: bool = false
@@ -29,14 +32,19 @@ var outcome: int = 0
 var rng = RandomNumberGenerator.new()
 
 func _ready() -> void:
+	drag_setting = default_drag
+	command.drag = default_drag
 	rng.randomize()
 	position = Vector3(90,session.world.water_depth,75)
 	boat_yaw = FishInput.angles(BaitMotion.horizontal(-position)).y
 
 func _physics_process(delta: float) -> void:
 	stamina = minf(stamina_capacity,stamina+stamina_regen*delta)
-	vision_active = state == State.FIGHT and command.vision and focus > 0
+	if not command.vision: focus_exhausted = false
+	if focus <= 0: focus_exhausted = true
+	vision_active = state == State.FIGHT and command.vision and not focus_exhausted
 	focus = clampf(focus+(-focus_drain if vision_active else focus_regen)*delta,0,focus_capacity)
+	drag_setting = clampf(command.drag,0,1)
 	reel.selected_tier = command.tier
 	cast_cooldown = maxf(0,cast_cooldown-delta)
 	if state == State.FIGHT: return

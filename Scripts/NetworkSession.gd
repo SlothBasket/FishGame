@@ -244,6 +244,7 @@ func _physics_process(delta: float) -> void:
 		get_tree().quit(1)
 		return
 	if closed:
+		if fight_smoke: get_tree().quit(0 if smoke_saw_two else 1)
 		if smoke: get_tree().quit(0 if smoke_saw_two else 1)
 		return
 	if not connected: return
@@ -255,7 +256,7 @@ func _physics_process(delta: float) -> void:
 			if fight_smoke:
 				input.species = BaitMotion.Kind.SQUID
 				input.cast_serial = 1
-				if fisher_view.data.size() == 30:
+				if fisher_view.data.size() == 48:
 					input.jerk = roundi(fisher_view.data[10]) == FightSession.Phase.CANDIDATE or (roundi(fisher_view.data[10]) == FightSession.Phase.METER and fisher_view.data[11] < 0.72)
 			if hosting: players[owned_id].entity.command = input
 			elif input_clock <= 0:
@@ -280,7 +281,7 @@ func _physics_process(delta: float) -> void:
 			var record: Dictionary = players[id]
 			if record.ai != null:
 				record.entity.command = record.ai.fish_input(record.entity,self,delta) if record.role == ROLE_FISH else record.ai.fisher_input(record.entity,delta)
-			elif id != 1 and clock-record.received > input_timeout:
+			elif id != 1 and clock-record.received > (1.25 if record.role == ROLE_FISHER else input_timeout):
 				if record.role == ROLE_FISH:
 					var neutral = FishInput.new()
 					neutral.cancel_bite = true
@@ -290,6 +291,7 @@ func _physics_process(delta: float) -> void:
 					neutral.cast_serial = record.entity.last_cast
 					neutral.species = record.entity.kind
 					neutral.tier = record.entity.reel.selected_tier
+					neutral.drag = record.entity.drag_setting
 					record.entity.command = neutral
 					if is_instance_valid(record.entity.fight) and record.entity.fight.phase <= FightSession.Phase.METER: record.entity.fight.finish(FightSession.Outcome.DISCONNECT)
 
@@ -470,7 +472,7 @@ func smoke_tick() -> void:
 		push_error("NETWORK SMOKE connection timeout")
 		get_tree().quit(1)
 
-@rpc("any_peer","call_remote","unreliable_ordered",1)
+@rpc("any_peer","call_remote","reliable",1)
 func fisher_intent(sequence: int, values: PackedFloat32Array, flags: int) -> void:
 	var sender = multiplayer.get_remote_sender_id()
 	if not hosting or closed or sender <= 1 or not players.has(sender): return
@@ -481,8 +483,12 @@ func fisher_intent(sequence: int, values: PackedFloat32Array, flags: int) -> voi
 	if record.tokens < 1: return
 	record.tokens -= 1
 	var intent = FisherIntent.decode(values,flags)
-	if intent == null: return
-	if intent.cast_serial < record.entity.last_cast: return
+	if intent == null:
+		if fight_smoke: print("REJECT FISHER ",values," flags=",flags)
+		return
+	if intent.cast_serial < record.entity.last_cast:
+		if fight_smoke: print("REJECT CAST ",intent.cast_serial," last=",record.entity.last_cast)
+		return
 	record.sequence = sequence
 	record.received = clock
 	record.entity.command = intent
@@ -497,13 +503,17 @@ func fisher_state(actor: FisherActor) -> PackedFloat32Array:
 	if has_fight:
 		for id in players:
 			if players[id].entity == f.fish: fish_peer = id
-	return PackedFloat32Array([actor.position.x,actor.position.y,actor.position.z,actor.boat_yaw,actor.state,actor.kind,actor.lure.network_id if is_instance_valid(actor.lure) else 0,actor.reel.selected_tier,actor.stamina,actor.focus,f.phase if has_fight else -1,f.meter if has_fight else 0,f.line_length if has_fight else 0,f.tension if has_fight else 0,f.condition if has_fight else 1,int(f.power_active) if has_fight else 0,int(actor.vision_active),rod.x,rod.y,rod.z,fish_peer,p.x,p.y,p.z,v.x,v.y,v.z,actor.outcome,f.quality if has_fight else 0,f.phase_time if has_fight else 0])
+	return PackedFloat32Array([actor.position.x,actor.position.y,actor.position.z,actor.boat_yaw,actor.state,actor.kind,actor.lure.network_id if is_instance_valid(actor.lure) else 0,actor.reel.selected_tier,actor.stamina,actor.focus,f.phase if has_fight else -1,f.meter if has_fight else 0,f.line_length if has_fight else 0,f.tension if has_fight else 0,f.condition if has_fight else 1,int(f.power_active) if has_fight else 0,int(actor.vision_active),rod.x,rod.y,rod.z,fish_peer,p.x,p.y,p.z,v.x,v.y,v.z,actor.outcome,f.quality if has_fight else 0,f.phase_time if has_fight else 0,
+		f.spool.distance if has_fight else 0,f.spool.slack if has_fight else 0,actor.drag_setting,f.spool.drag_threshold if has_fight else 0,f.spool.requested_load if has_fight else 0,f.spool.line_rate if has_fight else 0,f.spool.payout if has_fight else 0,1.0 if has_fight and f.power_active else actor.command.retrieve,int(f.spool.slipping) if has_fight else 0,
+		f.rod_tip.x if has_fight else 0,f.rod_tip.y if has_fight else 0,f.rod_tip.z if has_fight else 0,f.rod_hand.x if has_fight else 0,f.rod_hand.y if has_fight else 0,f.rod_hand.z if has_fight else 0,f.spool.strength if has_fight else 110,f.rod_horizontal if has_fight else 0,f.rod_vertical if has_fight else 0])
 
 @rpc("authority","call_remote","unreliable_ordered",2)
 func fisher_snapshot(peer: int, state: PackedFloat32Array) -> void:
-	if hosting or closed or state.size() != 30 or not players.has(peer) or players[peer].role != ROLE_FISHER: return
+	if hosting or closed or state.size() != 48 or not players.has(peer) or players[peer].role != ROLE_FISHER: return
 	players[peer].entity.position = Vector3(state[0],state[1],state[2])
-	if peer == multiplayer.get_unique_id() and fisher_view != null: fisher_view.data = state
+	if peer == multiplayer.get_unique_id() and fisher_view != null:
+		if fight_smoke and (fisher_view.data.is_empty() or fisher_view.data[10] != state[10]): print("CLIENT FIGHT PHASE ",state[10]," fields=",state.size())
+		fisher_view.data = state
 
 @rpc("authority","call_remote","reliable",0)
 func blood_event(where: Vector3) -> void:
@@ -513,7 +523,7 @@ func blood_event(where: Vector3) -> void:
 	world.add_child(effect)
 
 func fight_smoke_tick() -> void:
-	# Local test arrangement only, unreachable by RPC. Ends on one established fight.
+	# One bounded encounter plus deterministic line contracts; no balance simulation.
 	if hosting:
 		var fisher: FisherActor
 		var fish: FishPlayer
@@ -525,15 +535,34 @@ func fight_smoke_tick() -> void:
 			fish.feeding.grace_remaining = 0.2
 			fish.feeding.sweep_bite(fish.position,fisher.lure.position)
 			smoke_stage = 1
-			print("FIGHT SMOKE candidate=",is_instance_valid(fisher.fight)," bait=",fisher.lure.network_id)
-		if fisher != null and is_instance_valid(fisher.fight) and fisher.fight.phase == FightSession.Phase.FIGHT:
-			print("FIGHT SMOKE PASS authoritative normal fight")
-			if smoke_stage < 2: smoke_stage = 2; smoke_connected = clock
-			if clock-smoke_connected > 0.4: get_tree().quit(0)
+			print("FIGHT SMOKE candidate=",is_instance_valid(fisher.fight))
+		if fisher != null and is_instance_valid(fisher.fight) and fisher.fight.phase == FightSession.Phase.FIGHT and smoke_stage == 1:
+			if not FightCoreChecks.run(fisher.fight): get_tree().quit(1); return
+			print("FIGHT SMOKE PASS authoritative fight and core line contracts")
+			smoke_stage = 2
+			smoke_connected = clock
+		if smoke_stage == 2 and clock-smoke_connected > 0.3:
+			fish.position = fisher.position-Vector3.UP
+			fish.velocity = Vector3.ZERO
+			fish.stamina = fish.stamina_capacity
+			fish.set_physics_process(false)
+			fisher.fight.line_length = 3
+			smoke_stage = 3
+		if smoke_stage == 3 and fisher.state == FisherActor.State.SETUP:
+			if fisher.outcome != FightSession.Outcome.LANDED or is_instance_valid(fish.fight):
+				push_error("FIGHT SMOKE landing/reset failed"); get_tree().quit(1); return
+			print("FIGHT SMOKE PASS full-stamina landing and reset")
+			smoke_stage = 4
+			smoke_connected = clock
+		if smoke_stage == 4 and clock-smoke_connected > 0.4: get_tree().quit(0)
 	else:
-		if fisher_view != null and fisher_view.data.size() == 30 and roundi(fisher_view.data[10]) == FightSession.Phase.FIGHT:
-			print("FIGHT SMOKE PASS replicated normal fight")
-			get_tree().quit(0)
+		if fisher_view != null and fisher_view.data.size() == 48:
+			if roundi(fisher_view.data[10]) == FightSession.Phase.FIGHT and not smoke_saw_two:
+				smoke_saw_two = true
+				print("FIGHT SMOKE PASS replicated fight/HUD state")
+			if smoke_saw_two and roundi(fisher_view.data[27]) == FightSession.Outcome.LANDED:
+				print("FIGHT SMOKE PASS replicated landing")
+				get_tree().quit(0)
 	if clock > 14:
 		push_error("FIGHT SMOKE timeout")
 		get_tree().quit(1)

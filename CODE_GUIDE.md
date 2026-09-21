@@ -1,5 +1,7 @@
 # FishGame: movement and tuning guide
 
+**Current fight/input behavior:** see [FIGHT_GUIDE.md](FIGHT_GUIDE.md). It supersedes older six-tier retrieve, Fish + Fisher deferral and abstract-line notes below. Human retrieve is continuous (keyboard preference changes by 5%), fisherman roles are available, and fights now use bounded rod intent, spool line-out, drag, slack/security and stamina-independent landing. The full bait propulsion/line-force rework remains deferred.
+
 Multiplayer entry points, ownership, RPC security and replication are documented in [NETWORKING.md](NETWORKING.md). Normal launch remains single-player. `NetworkSession` owns network sessions; `FishPlayer.replica` and `BaitActor.network_replica` prevent clients from independently simulating shared actors. The existing motors below remain authoritative on the host. Network Fish + Fisher is deliberately deferred until the test controller's local camera/input is split from server boat/spawn operations.
 
 This is the current implementation, not a history of earlier experiments. All gameplay is GDScript. The sand and water materials use Godot's shader language only for drawing. Distances are metres, speeds are metres/second, timers are seconds, and `delta` is the elapsed time for a simulation or render tick. Y points upward; a model's nose normally points along local -Z. Shrimp deliberately face the other way so their tail leads motion.

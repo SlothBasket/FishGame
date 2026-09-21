@@ -39,6 +39,13 @@ static func install() -> void:
 		var event = InputEventJoypadButton.new()
 		event.button_index = {"power_reel":JOY_BUTTON_LEFT_SHOULDER,"rod_jerk":JOY_BUTTON_RIGHT_SHOULDER,"fish_vision":JOY_BUTTON_LEFT_STICK}[action]
 		bind(action,event)
+	for action in {"drag_down":KEY_BRACKETLEFT,"drag_up":KEY_BRACKETRIGHT}:
+		var key = InputEventKey.new()
+		key.physical_keycode = KEY_BRACKETLEFT if action == "drag_down" else KEY_BRACKETRIGHT
+		bind(action,key)
+		var button = InputEventJoypadButton.new()
+		button.button_index = JOY_BUTTON_DPAD_LEFT if action == "drag_down" else JOY_BUTTON_DPAD_RIGHT
+		bind(action,button)
 	# Retrieve is distinct from boat/fish forward movement; the stick only steers bait.
 	var retrieve = InputEventKey.new()
 	retrieve.physical_keycode = KEY_W

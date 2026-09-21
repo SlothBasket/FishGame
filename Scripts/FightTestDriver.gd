@@ -7,7 +7,13 @@ var wait: float = 0
 var mode: int = 0
 var cast_serial: int = 0
 var cast_sent: bool = false
-var held: bool = false
+var outward_bias: float = 0.7
+var inward_charge_chance: float = 0.06
+var inward_charge_duration: float = 1.5
+var side_change_min: float = 3
+var side_change_max: float = 5
+var side: float = 1
+var reversal: bool = false
 
 func _init() -> void:
 	rng.randomize()
@@ -15,15 +21,20 @@ func _init() -> void:
 func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 	clock += delta
 	wait -= delta
-	if wait <= 0: mode = rng.randi_range(0,5); wait = rng.randf_range(1.5,3.5)
+	if wait <= 0:
+		var roll = rng.randf()
+		mode = 1 if reversal else 5 if roll < inward_charge_chance else 0 if roll < outward_bias else 2 if roll < 0.84 else 3 if roll < 0.93 else 4
+		reversal = mode == 5
+		if rng.randf() < 0.55: side *= -1
+		wait = inward_charge_duration if mode == 5 else rng.randf_range(side_change_min,side_change_max)
 	var aim = fish.heading
 	var bite = false
 	var vertical = 0.0
 	if is_instance_valid(fish.fight):
 		var toward = (fish.fight.fisher.position-fish.position).normalized()
-		aim = toward if mode == 0 else -toward if mode <= 2 else BaitMotion.horizontal(toward).rotated(Vector3.UP,PI*0.5)
+		aim = toward if mode == 5 else BaitMotion.horizontal(-toward).rotated(Vector3.UP,side*(0.6 if mode == 2 else 0.15))
 		vertical = -1 if mode == 3 else 1 if mode == 4 else 0
-		bite = fmod(clock,2.5) < 0.6
+		bite = mode in [1,4] and fmod(clock,4.5) < 0.45
 	else:
 		var nearest: BaitActor
 		var distance: float = INF
@@ -40,9 +51,8 @@ func fisher_input(actor: FisherActor, delta: float) -> FisherIntent:
 	clock += delta
 	var input = FisherIntent.new()
 	input.species = BaitMotion.Kind.SQUID
-	input.tier = 3
+	input.tier = 12
 	input.aim = Vector3.FORWARD.rotated(Vector3.UP,actor.boat_yaw)
-	input.rod = input.aim
 	if actor.state == FisherActor.State.SETUP:
 		if not cast_sent: cast_serial += 1; cast_sent = true
 	else: cast_sent = false
@@ -52,13 +62,14 @@ func fisher_input(actor: FisherActor, delta: float) -> FisherIntent:
 		if fight.phase == FightSession.Phase.CANDIDATE: input.jerk = fight.phase_time > 0.7
 		elif fight.phase == FightSession.Phase.METER: input.jerk = fight.meter < 0.72
 		else:
-			var right = Vector3.RIGHT.rotated(Vector3.UP,actor.boat_yaw)
-			var side = (fight.fish.position-actor.position).dot(right)
-			input.rod = (input.aim-right*signf(side)*0.8).normalized()
-			if fight.fish.airborne: input.rod.y = -0.7
-			elif fight.fish.velocity.y < -2: input.rod.y = 0.7
-			input.retrieve = 0.2 if fight.tension > fight.stressed_load else 0.6
-			input.power = fmod(clock,7) < 1.4 and fight.tension < fight.stressed_load
-			input.jerk = fmod(clock,3.2) < 0.15
-			if fmod(clock,11) < 1: input.rod = -input.rod # Occasional readable mistake.
+			var forward = BaitMotion.horizontal(fight.fish.position-actor.position)
+			var right = forward.cross(Vector3.UP)
+			input.rod_horizontal = -signf(fight.fish.velocity.dot(right))*0.75
+			input.rod_vertical = -0.7 if fight.fish.airborne else 0.8 if fight.fish.velocity.y < -2 else 0.05
+			input.drag = 0.3 if fight.spool.condition < 0.6 else 0.4
+			input.retrieve = 0.95 if fight.spool.slack > 1 else 0.1 if fight.spool.slipping else 0.6
+			input.power = fmod(clock,9) < 1 and not fight.spool.slipping and fight.spool.slack < 0.5
+			input.jerk = fmod(clock,4.2) < 0.15 and fight.spool.slack < 0.5
+			if fmod(clock,17) < 0.7: input.rod_horizontal *= -1
+
 	return input
