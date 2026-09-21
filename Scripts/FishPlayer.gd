@@ -43,6 +43,9 @@ var airborne: bool = false
 @export var growth_rate: float = 0.006
 @export var maximum_size: float = 2.1
 
+var networked: bool = false
+var locally_owned: bool = true
+var replica: bool = false
 var heading: Vector3 = Vector3.FORWARD
 var external_input: bool = false
 var command: FishInput = FishInput.new()
@@ -71,10 +74,12 @@ func _ready() -> void:
 	var clearance = SphereShape3D.new()
 	clearance.radius = camera_clearance
 	$CameraPivot/SpringArm3D.shape = clearance
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	if locally_owned: Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	else: camera.current = false
 	pivot.rotation = Vector3(_camera_pitch, _camera_yaw, 0.0)
 
 func _unhandled_input(event: InputEvent) -> void:
+	if not locally_owned: return
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE:
 		cancel_attack()
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED else Input.MOUSE_MODE_CAPTURED
@@ -86,7 +91,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		_camera_yaw -= event.relative.x * mouse_sensitivity
 		_camera_pitch = clampf(_camera_pitch - event.relative.y * mouse_sensitivity, -1.35, 1.35)
 		pivot.rotation = Vector3(_camera_pitch, _camera_yaw, 0.0)
-	if event.is_action_pressed("reset"):
+	if not networked and event.is_action_pressed("reset"):
 		reset_fish()
 
 func read_local_input() -> FishInput:
@@ -119,6 +124,7 @@ func _physics_process(delta: float) -> void:
 		_camera_yaw -= look.x
 		_camera_pitch = clampf(_camera_pitch-look.y,-1.35,1.35)
 		pivot.rotation = Vector3(_camera_pitch,_camera_yaw,0)
+	if replica: return # NetworkSession interpolates state; no client feeding or movement.
 	var intent = command if external_input else read_local_input()
 	var bite_start = global_position
 	feeding.update_attack(intent, delta)
@@ -163,7 +169,7 @@ func update_growth_collision() -> void:
 	$CollisionShape3D.shape.radius = _body_radius * size_multiplier()
 
 func cancel_attack() -> void:
-	if feeding != null:
+	if feeding != null and not replica:
 		feeding.cancel_attack()
 	suppress_bite_until_release = true
 
@@ -180,7 +186,7 @@ func reset_fish() -> void:
 	pivot.rotation = Vector3(_camera_pitch, _camera_yaw, 0.0)
 
 func _notification(what: int) -> void:
-	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+	if locally_owned and what == NOTIFICATION_APPLICATION_FOCUS_OUT:
 		cancel_attack()
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 

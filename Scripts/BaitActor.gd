@@ -2,6 +2,7 @@ class_name BaitActor
 extends CharacterBody3D
 ## Both drivers obey this motor. The renderer never sees source (live/fisherman).
 
+var network_replica: bool = false
 signal bitten(bait, eater)
 enum Lifecycle { ALIVE, DEAD_SINKING, DEAD_SETTLED, CLAIMED }
 var lifecycle: Lifecycle = Lifecycle.ALIVE
@@ -147,6 +148,10 @@ func _ready() -> void:
 	add_child(visual)
 	visual.scale = Vector3.ONE * body_size
 	add_to_group("bait")
+	if network_replica:
+		set_physics_process(false)
+		set_process(false)
+		return
 	if driver == null:
 		driver = BaitMotion.LiveBaitDriver.new(global_position)
 
@@ -390,6 +395,7 @@ func _apply_bottom_constraint(stick_to_bottom: bool) -> void:
 		velocity.y = 0.0
 
 func try_bite(eater) -> bool:
+	if network_replica: return false
 	if not claimed and eater.size_multiplier() < minimum_eater_scale:
 		eater.feeding.last_meal = "%s needs %.2fx size" % [display_name(), minimum_eater_scale]
 		eater.feeding.meal_notice_time = 1.8

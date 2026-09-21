@@ -1,4 +1,4 @@
-param([switch]$Editor, [switch]$Test, [switch]$Check)
+param([switch]$Editor, [switch]$Test, [switch]$Check, [switch]$HostGame, [string]$JoinIP, [ValidateRange(1024,65535)][int]$Port = 24567)
 $ErrorActionPreference = 'Stop'
 $projectPath = $PSScriptRoot
 $workspacePath = Split-Path (Split-Path $projectPath -Parent) -Parent
@@ -27,4 +27,11 @@ if ($Test) {
 }
 $launchArgs = @('--path', ('"' + $projectPath + '"'))
 if ($Editor) { $launchArgs += '--editor' }
-Start-Process -FilePath $enginePath -ArgumentList $launchArgs
+if ($HostGame -and $JoinIP) { throw 'Choose HostGame or JoinIP, not both.' }
+if ($HostGame) { $launchArgs += @('--','--host',"--port=$Port") }
+if ($JoinIP) {
+    $parsedIP = $null
+    if (-not [Net.IPAddress]::TryParse($JoinIP,[ref]$parsedIP)) { throw 'JoinIP must be an IP address (localhost is 127.0.0.1).' }
+    $launchArgs += @('--',"--join=$JoinIP","--port=$Port")
+}
+Start-Process -FilePath $enginePath -ArgumentList $launchArgs -WindowStyle Hidden

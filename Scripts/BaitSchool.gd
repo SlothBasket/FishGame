@@ -1,5 +1,6 @@
 class_name BaitSchool
 extends Node3D
+signal actor_spawned(actor: BaitActor)
 ## Eight sparse zones: open minnows, low shrimp, midwater squid, bottom crabs.
 
 @export var replenishment_interval: float = 3.0
@@ -141,6 +142,7 @@ func _spawn(kind: int, home: Vector3, behavior_seed: int, radius: float, pod: Ba
 		bait.velocity = Vector3.DOWN*2.5
 		bait.entry_remaining = 0.5
 
+	actor_spawned.emit(bait)
 	return bait
 
 func _physics_process(delta: float) -> void:

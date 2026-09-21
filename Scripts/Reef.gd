@@ -5,6 +5,7 @@ extends Node3D
 @export var water_depth: float = 32.0
 @export var rock_count: int = 24
 var _fish
+var network_session: NetworkSession
 var _telemetry: Label
 var _status: Label
 var _score: Label
@@ -32,6 +33,11 @@ func _ready() -> void:
 		var checks = FeedingChecks.new()
 		checks.fish = _fish
 		add_child(checks)
+	elif NetworkSession.requested(args):
+		network_session = NetworkSession.new()
+		network_session.name = "NetworkSession"
+		add_child(network_session)
+		network_session.start(self,_fish,args)
 	else:
 		var school = BaitSchool.new()
 		if "--perf-check" in args: school.seed_value = 23
