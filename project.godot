@@ -22,6 +22,10 @@ window/size/window_width_override=1280
 window/size/window_height_override=800
 window/stretch/mode="canvas_items"
 
+[editor]
+
+run/main_run_args="-- --host --role=fisher --ai=fish --port=24567"
+
 [rendering]
 
 renderer/rendering_method="gl_compatibility"
