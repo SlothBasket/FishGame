@@ -218,7 +218,7 @@ func build_hud() -> void:
 	hud_text(root, "03  /  THE HUNTING GROUNDS", 13, Color("e7c184"), Vector2(40, 75))
 	hud_text(root, "MINNOW +1 / SHRIMP +4 / SQUID +3 / CRAB +5 / MULLET +3 / GULL +5", 13, muted, Vector2(40, 102))
 	_energy = hud_text(root, "", 18, cream, Vector2.ZERO)
-	anchor(_energy, Control.PRESET_TOP_RIGHT, Rect2(-310,180,272,64))
+	anchor(_energy, Control.PRESET_TOP_RIGHT, Rect2(-390,180,352,160))
 	_energy.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_score = hud_text(root, "", 20, cream, Vector2.ZERO)
 	anchor(_score, Control.PRESET_TOP_RIGHT, Rect2(-300, 92, 262, 63))
@@ -244,6 +244,13 @@ func build_hud() -> void:
 func _process(delta: float) -> void:
 	_fish_hud.visible = network_session == null or network_session.fisher_view == null
 	_energy.text = "STAMINA %.0f / %.0f\nENDURANCE %.0f%%" % [_fish.stamina,_fish.endurance,100*_fish.endurance/_fish.stamina_capacity]
+	if _fish.fight_active:
+		var pressure = "CRITICAL" if _fish.fight_pressure > 1 else "HIGH" if _fish.fight_pressure > 0.75 else "WORKING" if _fish.fight_pressure > 0.2 else "LIGHT"
+		_energy.text += "\n"+("SLACK" if _fish.fight_slack else pressure+" PRESSURE")
+		_energy.text += "\n"+("GAINING LINE" if _fish.fight_gain > 0.15 else "LOSING LINE" if _fish.fight_gain < -0.15 else "HOLDING DISTANCE")
+		_energy.text += "\n"+("STRONG OUTWARD LEVERAGE" if _fish.fight_leverage > 0.75 else "LOW OUTWARD LEVERAGE")
+		if _fish.fight_counter > 0.2: _energy.text += "\nUNDER ROD PRESSURE"
+		if _fish.fight_pressure > 0.75: _energy.text += "\nHIGH TENSION !" if sin(_time*9) > 0 else "\nHIGH TENSION"
 	_time += delta
 	if _feeding_preview or _charge_preview:
 		_fish.command = FishInput.new(0, 0, 0, Vector3.FORWARD, false, _time < 1.5 or _charge_preview)

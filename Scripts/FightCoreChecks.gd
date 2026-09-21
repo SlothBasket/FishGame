@@ -13,7 +13,7 @@ static func run(fight: FightSession) -> bool:
 	for i in range(12): line.step(0.05,40+(i+1)*0.3,6,60,0,0.4,false)
 	ok = verify(line.line_out > 40 and line.payout > 0 and line.tension < line.drag_threshold*1.1,"Normal drag pays out and limits sustained tension") and ok
 	var before = line.line_out
-	for i in range(6): line.step(0.05,45,8,80,1,0.4,true)
+	for i in range(6): line.step(0.05,before-1,8,80,1,0.4,true)
 	ok = verify(line.line_out < before and line.payout == 0 and line.tension > line.drag_threshold,"Power recovers line above drag without payout") and ok
 	ok = verify(line.condition < 1,"Loaded power/reversal wears line") and ok
 	var cruise = FightLine.new()
@@ -56,10 +56,32 @@ static func run(fight: FightSession) -> bool:
 	spooled.spool = FightLine.new()
 	spooled.spool.line_out = spooled.spool.maximum_line_out-0.01
 	spooled.spool.fish_load = 100
-	spooled.spool.step(0.2,110,8,100,0,0.2,false)
+	spooled.spool.step(0.2,spooled.spool.maximum_line_out+10,8,100,0,0.2,false)
 	ok = verify(spooled.spool.line_out == spooled.spool.maximum_line_out and spooled.check_spooled() and spooled.phase == FightSession.Phase.FINISHED,"Capacity clamps payout and spool-out ends encounter") and ok
 	if fight.fisher.session.fisher_view != null:
 		ok = verify(fight.fisher.session.fisher_view.layout_fits(),"Fight HUD inside viewport, hook centered, network text separate") and ok
+	var tether = FightLine.new()
+	tether.line_out = 5
+	tether.step(0.016,50,0,0,1,0.4,true)
+	ok = verify(tether.line_out >= 50-tether.maximum_extension,"Impossible initial span pays line immediately, including Power") and ok
+	var legal = tether.constrain_motion(Vector3(50,0,0),Vector3(1,0.1,0))
+	ok = verify((Vector3(50,0,0)+legal).length() <= 50.001 and legal.x > -0.01,"Taut guard limits outward motion without an inward teleport") and ok
+	tether.step(1,50,0,0,1,0.4,true)
+	ok = verify(tether.line_out >= 50-tether.maximum_extension,"Blocked Power retrieval cannot shrink line below physical span") and ok
+	var force = fight.controlled_force(Vector3(100,100,100))
+	ok = verify(force.length() <= fight.maximum_line_acceleration+0.001 and force.y <= fight.maximum_vertical_acceleration,"Line acceleration and upward pressure are bounded") and ok
+	var old_position = fight.fish.position
+	var old_line = fight.line_length
+	var old_slack = fight.spool.slack
+	fight.fish.position = fight.fisher.position+Vector3(1,-2,0)
+	fight.line_length = 3
+	fight.spool.slack = 0
+	ok = verify(fight.landing_ready(),"Fish physically in boat landing zone qualifies") and ok
+	fight.fish.position += Vector3(30,0,0)
+	ok = verify(not fight.landing_ready(),"Short numerical line cannot land a distant fish") and ok
+	fight.fish.position = old_position
+	fight.line_length = old_line
+	fight.spool.slack = old_slack
 	var risk = FightLine.new()
 	risk.tension = 86
 	var fresh_threshold = risk.break_threshold()

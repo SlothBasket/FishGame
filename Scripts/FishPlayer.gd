@@ -38,6 +38,14 @@ extends CharacterBody3D
 @export var max_breach_horizontal_speed: float = 8.0
 @export var max_breach_vertical_speed: float = 9.5
 var airborne: bool = false
+var natural_breach: bool = false
+var breach_intent_time: float = 0
+var fight_active: bool = false
+var fight_pressure: float = 0
+var fight_gain: float = 0
+var fight_leverage: float = 0
+var fight_counter: float = 0
+var fight_slack: bool = false
 @export_group("Growth")
 @export var starting_size: float = 0.58
 @export var growth_rate: float = 0.006
@@ -48,7 +56,7 @@ var airborne: bool = false
 @export var sprint_drain: float = 18
 @export var dash_cost: float = 14
 @export var stamina_regen: float = 12
-@export var fight_regen_multiplier: float = 0.3
+@export var fight_regen_multiplier: float = 0.5
 @export var swim_growth_bonus: float = 0.20
 @export var dash_growth_bonus: float = 0.25
 @export var max_tension_camera_roll: float = 0.08
@@ -149,6 +157,7 @@ func _physics_process(delta: float) -> void:
 		_camera_yaw -= look.x
 		_camera_pitch = clampf(_camera_pitch-look.y,-1.35,1.35)
 		pivot.rotation = Vector3(_camera_pitch,_camera_yaw,0)
+	breach_intent_time = maxf(0,breach_intent_time-delta)
 	if replica: return # NetworkSession interpolates state; no client feeding or movement.
 	var intent = command if external_input else read_local_input()
 	var in_fight = is_instance_valid(fight)
@@ -165,8 +174,9 @@ func _physics_process(delta: float) -> void:
 	if feeding.is_dashing():
 		feeding.advance_dash(delta)
 	elif airborne:
-		velocity += line_force*delta
+		apply_line_force(delta)
 		velocity.y -= air_gravity * delta
+		if in_fight: fight.constrain_velocity(delta)
 		move_and_slide()
 		if velocity.length() > 0.1:
 			heading = FishInput.turn_toward(heading, velocity.normalized(), deg_to_rad(pitch_turn_rate) * delta)
@@ -178,10 +188,15 @@ func _physics_process(delta: float) -> void:
 		var response = charge_response_multiplier if feeding.is_charging else 1.0
 		velocity = FishInput.next_velocity(velocity, heading, swim, speed, fight_boost_multiplier(),
 			reverse_speed_multiplier, acceleration * response * (fight_boost_multiplier() if in_fight and boosting else 1.0), reverse_acceleration * response, water_drag * response, vertical_speed_multiplier, delta)
-		velocity += line_force*delta
+		apply_line_force(delta)
+		if in_fight: fight.constrain_velocity(delta)
 		move_and_slide()
-	if global_position.y > water_height and not airborne: limit_breach_velocity()
+	if global_position.y > water_height and not airborne:
+		natural_breach = breach_intent_time > 0
+		limit_breach_velocity()
 	airborne = global_position.y > water_height
+	if not airborne: natural_breach = false
+	if is_instance_valid(fight): fight.after_fish_move(delta)
 	if feeding.grace_remaining > 0.0 and not feeding.is_dashing():
 		feeding.sweep_bite(bite_start, global_position)
 	# Heading, not velocity, owns facing. Backpedaling cannot flip the model.
@@ -252,3 +267,15 @@ func fatigue(amount: float) -> void:
 func fight_boost_multiplier() -> float:
 	# Only fight sprint output fades; ordinary swim speed and turns remain available.
 	return lerpf(1.25,boost_multiplier,endurance/stamina_capacity) if is_instance_valid(fight) else boost_multiplier
+
+func apply_line_force(delta: float) -> void:
+	# Measure fish-driven upward intent before adding any line acceleration.
+	if velocity.y > 2 and (command.vertical > 0 or command.aim_direction.y > 0.2): breach_intent_time = 0.25
+	if not is_instance_valid(fight):
+		velocity += line_force*delta
+		return
+	var inward = BaitMotion.horizontal(fight.fisher.position-position)
+	var before = velocity.dot(inward)
+	velocity += line_force*delta
+	var added_excess = maxf(0,velocity.dot(inward)-maxf(before,fight.maximum_pull_speed))
+	velocity -= inward*added_excess

@@ -156,7 +156,7 @@ func sample() -> FisherIntent:
 	return intent
 
 func _process(delta: float) -> void:
-	if data.size() != 50: return
+	if data.size() != 52: return
 	apply_look(GameControls.look()*rod_stick_response*delta)
 	var origin = Vector3(data[0],data[1],data[2])
 	boat.position = origin
@@ -207,6 +207,10 @@ func _process(delta: float) -> void:
 	var pressure = "SLACK — REEL!" if data[31] > 0.5 else "CRITICAL" if data[13] > data[45] else "HEAVY" if data[13] > data[45]*0.7 else "DRAG" if data[38] > 0 else "WORKING" if data[13] > data[45]*0.2 else "LIGHT"
 	var pull_direction = "LEFT" if data[49] < -0.3 else "RIGHT" if data[49] > 0.3 else "AWAY"
 	readings.text = "LINE %.1f / %.0f m\n%s | %s\nSlack %.1f m | Line rate %+.1f m/s\nTension %.0f | Drag limit %.0f\nSaved retrieve %d%% | %s" % [data[12],data[48],pressure,pull_direction if fighting else "READY",data[31],data[35],data[13],data[33],roundi(data[7]*5),"POWER" if data[15] > 0 else "NORMAL"]
+	if fighting:
+		readings.text += "\n"+("FISH TAKING LINE" if data[35] > 0.15 else "GAINING LINE" if data[35] < -0.15 else "HOLDING")
+		if data[51] > 0.2: readings.text += " | ROD COUNTERING"
+		if data[50] > 0.9: readings.text += "\nHIGH TENSION !" if sin(Time.get_ticks_msec()*0.009) > 0 else "\nHIGH TENSION"
 	bars["Tension"].max_value = data[45]
 	bars["Tension"].value = data[13]
 	bars["Line condition"].value = data[14]*100
@@ -218,7 +222,7 @@ func _process(delta: float) -> void:
 	drag_value.text = "%d%%" % roundi(drag_setting*100)
 
 func apply_look(movement: Vector2) -> void:
-	if data.size() == 50 and roundi(data[4]) == FisherActor.State.FIGHT:
+	if data.size() == 52 and roundi(data[4]) == FisherActor.State.FIGHT:
 		if data[16] <= 0:
 			rod_horizontal = clampf(rod_horizontal+movement.x,-1,1)
 			rod_vertical = clampf(rod_vertical-movement.y,-1,1)

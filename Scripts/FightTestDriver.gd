@@ -46,7 +46,17 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 			if d < distance: nearest = candidate; distance = d
 		if nearest != null:
 			aim = (nearest.position-fish.position).normalized()
-			bite = distance < 9 and fmod(clock,1.5) < 0.5
+			var aligned = fish.heading.dot(aim) > 0.92
+			var attack = FishInput.new(0.55 if distance < 6 else 1,0,0,aim,false,false)
+			if fish.feeding.is_charging:
+				attack.cancel_bite = not aligned or distance > 10
+				attack.bite_held = not attack.cancel_bite and distance > 3.0 and fish.feeding._charge_time < 0.3
+			else: attack.bite_held = aligned and distance < 7 and distance > 1
+			return attack
+		if fish.feeding.is_charging:
+			var cancel = FishInput.new()
+			cancel.cancel_bite = true
+			return cancel
 	if is_instance_valid(fish.fight):
 		if fish.stamina < fish.endurance*0.2: resting = true; sprinting = false
 		if fish.stamina > fish.endurance*0.75: resting = false
@@ -61,7 +71,7 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 func fisher_input(actor: FisherActor, delta: float) -> FisherIntent:
 	clock += delta
 	var input = FisherIntent.new()
-	input.species = BaitMotion.Kind.SQUID
+	input.species = BaitMotion.Kind.MINNOW
 	input.tier = 12
 	input.aim = Vector3.FORWARD.rotated(Vector3.UP,actor.boat_yaw)
 	if actor.state == FisherActor.State.SETUP:

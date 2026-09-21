@@ -20,3 +20,5 @@ Validation for the pacing milestone: 97 checks passed. Standalone 75-second grap
 - **Make fights tire fish through rod leverage and compounding line risk** — linear drag, distinct reel/fish load, endurance and fish HUD, heading-aware AI, condition/exposure break hazard, clearer silent fisherman HUD. Local editor setting preserved in `95a3b46`.
 
 - **Add rod pumping, finite spool and anchored fight HUD** — temporary take-up/buffer layered on existing drag, 100 m spool-out, ordinary load smoothing, subtle direction feedback, centered hook timing and separate fish/network status.
+
+- **Keep fight span consistent and cap pull forces** — 250 m spool, span-limited recovery and movement, post-move landing, controlled horizontal acceleration, breach-intent filtering, non-sprint recovery, fight feedback and minnow test markers/attack timing.

@@ -74,7 +74,8 @@ func advance_dash(delta: float) -> void:
 		else:
 			fish.velocity.y -= fish.air_gravity * dt
 			fish.heading = fish.velocity.normalized()
-		fish.velocity += fish.line_force*dt
+		fish.apply_line_force(dt)
+		if is_instance_valid(fish.fight): fish.fight.constrain_velocity(dt)
 		var step = maxf(0.1, fish.velocity.length()) * dt
 		var collision = fish.move_and_collide(fish.velocity * dt)
 		if start.y <= fish.water_height and fish.global_position.y > fish.water_height:

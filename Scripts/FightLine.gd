@@ -1,7 +1,8 @@
 class_name FightLine
 extends Resource
 ## Spool accounting in metres; force values are prototype Newton-like units.
-const DEFAULT_CAPACITY: float = 100
+const DEFAULT_CAPACITY: float = 250
+@export var maximum_extension: float = 2.5
 @export var maximum_line_out: float = DEFAULT_CAPACITY
 @export var maximum_rod_take_up: float = 2.0
 @export var maximum_rod_buffer: float = 15.0
@@ -67,14 +68,15 @@ func step(delta: float, required_distance: float, outward_speed: float, movement
 	var recovery = (power_retrieve if power else maximum_retrieve*clampf(retrieve,0,1))
 	if old_slack < contact_tolerance and not power:
 		recovery *= lerpf(1,0.15,clampf(fish_load/maxf(1,holding_threshold),0,1))
-	line_out = maxf(0.2,line_out-recovery*delta)
+	# A blocked fish cannot be reeled into a numerically short, infinitely stretched line.
+	line_out = maxf(minf(line_out,maxf(0.2,loaded_distance-maximum_extension)),line_out-recovery*delta)
 	var extension = maxf(0,loaded_distance-line_out)
 	var contact = clampf(1-maxf(0,line_out-loaded_distance)/contact_tolerance,0,1)
 	requested_load = maxf(0,extension*elasticity+fish_load+reel_pressure*(1.5 if power else retrieve)+transient_load)*contact
 	# Load derivative catches real slack-to-taut reversals without a scripted combo.
 	shock = maxf(0,requested_load-_previous_load)
 	_previous_load = requested_load
-	slipping = not power and fish_load > holding_threshold+0.5 and contact > 0
+	slipping = not power and (fish_load > holding_threshold+0.5 or extension*elasticity > holding_threshold) and contact > 0
 	var payout_target = 0.0
 	if slipping:
 		payout_target = minf(maximum_payout,maxf(0,outward_speed)+recovery+maxf(0,extension-holding_threshold/elasticity)*payout_response)
@@ -82,6 +84,9 @@ func step(delta: float, required_distance: float, outward_speed: float, movement
 	# Only release line actually demanded by separation; never manufacture slack
 	# ahead of the fish using a predicted velocity. Power mode never pays out.
 	var released_line = minf(payout*delta,maxf(0,loaded_distance-line_out))
+	# Resolve unexpected initial/moving-anchor separation by paying real line now,
+	# even under Power; never store impossible extension for a future snap.
+	released_line = maxf(released_line,loaded_distance-line_out-maximum_extension)
 	line_out = minf(maximum_line_out,line_out+released_line)
 	payout = released_line/maxf(0.0001,delta)
 	slack = maxf(0,line_out-loaded_distance)
@@ -106,3 +111,21 @@ func break_threshold() -> float:
 func break_hazard() -> float:
 	var excess = maxf(0,(tension-break_threshold())/maxf(1,strength-break_threshold()))
 	return base_break_hazard*excess*excess*(1+damage_hazard_multiplier*pow(1-condition,2))*(1+minf(12,high_load_exposure)*exposure_multiplier)
+
+func sync_distance(required_distance: float, delta: float) -> void:
+	# Post-move safety reconciliation pays line, never teleports the fish. Usually
+	# the pre-move constraint already keeps this within the elastic allowance.
+	distance = maxf(0,required_distance)
+	var needed = maxf(0.2,distance+rod_take_up-maximum_extension)
+	var released = maxf(0,minf(maximum_line_out,needed)-line_out)
+	line_out = minf(maximum_line_out,line_out+released)
+	payout += released/maxf(0.0001,delta)
+	line_rate += released/maxf(0.0001,delta)
+	slack = maxf(0,line_out-distance-rod_take_up)
+
+func constrain_motion(offset: Vector3, motion: Vector3) -> Vector3:
+	# Unilateral velocity constraint at maximum elastic stretch. Keep tangential
+	# movement and never generate a large inward correction for an existing error.
+	var radius = maxf(offset.length(),maxf(0.2,line_out-rod_take_up+maximum_extension))
+	var target = offset+motion
+	return target.limit_length(radius)-offset if target.length() > radius else motion
