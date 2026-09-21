@@ -31,7 +31,7 @@ extends CharacterBody3D
 @export var lunge_acceleration: float = 65.0
 @export var camera_clearance: float = 0.35
 @export var gamepad_look_speed: float = 2.2
-@export var bite_radius: float = 0.9
+@export var bite_radius: float = 1.08
 @export_group("Air and surface")
 @export var water_height: float = 32.0
 @export var air_gravity: float = 12.0
@@ -43,6 +43,22 @@ var airborne: bool = false
 @export var growth_rate: float = 0.006
 @export var maximum_size: float = 2.1
 
+@export_group("Stamina and size speed")
+@export var stamina_capacity: float = 100
+@export var sprint_drain: float = 18
+@export var dash_cost: float = 14
+@export var stamina_regen: float = 12
+@export var fight_regen_multiplier: float = 0.3
+@export var swim_growth_bonus: float = 0.20
+@export var dash_growth_bonus: float = 0.25
+@export var max_tension_camera_roll: float = 0.08
+@export var tension_camera_smoothing: float = 5
+var stamina: float = 100
+var fight
+var line_force: Vector3 = Vector3.ZERO
+var sprint_locked: bool = false
+var free_bursts: bool = false
+var camera_roll: float = 0
 var networked: bool = false
 var locally_owned: bool = true
 var replica: bool = false
@@ -91,7 +107,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		_camera_yaw -= event.relative.x * mouse_sensitivity
 		_camera_pitch = clampf(_camera_pitch - event.relative.y * mouse_sensitivity, -1.35, 1.35)
 		pivot.rotation = Vector3(_camera_pitch, _camera_yaw, 0.0)
-	if not networked and event.is_action_pressed("reset"):
+	if not networked and not is_instance_valid(fight) and event.is_action_pressed("reset"):
 		reset_fish()
 
 func read_local_input() -> FishInput:
@@ -120,18 +136,24 @@ func aim_through_crosshair() -> Vector3:
 
 func _physics_process(delta: float) -> void:
 	if camera.current:
+		var roll_target = clampf(-line_force.dot(pivot.global_basis.x)/45,-1,1)*max_tension_camera_roll
+		camera_roll = lerpf(camera_roll,roll_target,1-exp(-tension_camera_smoothing*delta))
+		camera.rotation.z = camera_roll
 		var look = GameControls.look() * gamepad_look_speed * delta
 		_camera_yaw -= look.x
 		_camera_pitch = clampf(_camera_pitch-look.y,-1.35,1.35)
 		pivot.rotation = Vector3(_camera_pitch,_camera_yaw,0)
 	if replica: return # NetworkSession interpolates state; no client feeding or movement.
 	var intent = command if external_input else read_local_input()
+	if not free_bursts and (stamina < 1 or sprint_locked): intent.boost = false
+	stamina = clampf(stamina+(-sprint_drain if intent.boost and intent.throttle > 0 and not free_bursts else stamina_regen*(fight_regen_multiplier if is_instance_valid(fight) else 1.0))*delta,0,stamina_capacity)
 	var bite_start = global_position
 	feeding.update_attack(intent, delta)
 	boosting = intent.boost and intent.throttle > 0.0 and not feeding.is_charging and not feeding.is_dashing()
 	if feeding.is_dashing():
 		feeding.advance_dash(delta)
 	elif airborne:
+		velocity += line_force*delta
 		velocity.y -= air_gravity * delta
 		move_and_slide()
 		if velocity.length() > 0.1:
@@ -140,10 +162,11 @@ func _physics_process(delta: float) -> void:
 		heading = FishInput.steer_heading(heading, intent, forward_turn_rate, pitch_turn_rate,
 			manual_steering_strength, idle_pivot_multiplier, delta)
 		var swim = FishInput.new(intent.throttle, intent.steering, intent.vertical, intent.aim_direction, boosting)
-		var speed = swim_speed * (charge_swim_multiplier if feeding.is_charging else 1.0)
+		var speed = effective_swim_speed() * (charge_swim_multiplier if feeding.is_charging else 1.0)
 		var response = charge_response_multiplier if feeding.is_charging else 1.0
 		velocity = FishInput.next_velocity(velocity, heading, swim, speed, boost_multiplier,
 			reverse_speed_multiplier, acceleration * response, reverse_acceleration * response, water_drag * response, vertical_speed_multiplier, delta)
+		velocity += line_force*delta
 		move_and_slide()
 	if global_position.y > water_height and not airborne: limit_breach_velocity()
 	airborne = global_position.y > water_height
@@ -193,3 +216,18 @@ func _notification(what: int) -> void:
 func limit_breach_velocity() -> void:
 	var flat = Vector3(velocity.x, 0, velocity.z).limit_length(max_breach_horizontal_speed)
 	velocity = flat + Vector3.UP * minf(velocity.y, max_breach_vertical_speed)
+
+func effective_swim_speed() -> float:
+	return swim_speed*(1+swim_growth_bonus*growth_fraction())
+
+func effective_dash_speed() -> float:
+	return lunge_speed*(1+dash_growth_bonus*growth_fraction())
+
+func growth_fraction() -> float:
+	return clampf((size_multiplier()-starting_size)/maxf(0.01,maximum_size-starting_size),0,1)
+
+func spend_dash_stamina() -> bool:
+	if free_bursts: return true
+	if stamina < dash_cost: return false
+	stamina -= dash_cost
+	return true

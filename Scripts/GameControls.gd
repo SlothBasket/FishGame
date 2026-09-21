@@ -31,6 +31,14 @@ static func install() -> void:
 		var event = InputEventMouseButton.new()
 		event.button_index = {"bite":MOUSE_BUTTON_LEFT,"reel_up":MOUSE_BUTTON_WHEEL_UP,"reel_down":MOUSE_BUTTON_WHEEL_DOWN}[action]
 		bind(action,event)
+	for action in {"power_reel":KEY_SHIFT,"rod_jerk":KEY_Q,"fish_vision":KEY_V}:
+		var event = InputEventKey.new()
+		event.physical_keycode = {"power_reel":KEY_SHIFT,"rod_jerk":KEY_Q,"fish_vision":KEY_V}[action]
+		bind(action,event)
+	for action in {"power_reel":JOY_BUTTON_LEFT_SHOULDER,"rod_jerk":JOY_BUTTON_RIGHT_SHOULDER,"fish_vision":JOY_BUTTON_LEFT_STICK}:
+		var event = InputEventJoypadButton.new()
+		event.button_index = {"power_reel":JOY_BUTTON_LEFT_SHOULDER,"rod_jerk":JOY_BUTTON_RIGHT_SHOULDER,"fish_vision":JOY_BUTTON_LEFT_STICK}[action]
+		bind(action,event)
 	# Retrieve is distinct from boat/fish forward movement; the stick only steers bait.
 	var retrieve = InputEventKey.new()
 	retrieve.physical_keycode = KEY_W

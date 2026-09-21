@@ -2,6 +2,9 @@ class_name BaitActor
 extends CharacterBody3D
 ## Both drivers obey this motor. The renderer never sees source (live/fisherman).
 
+var fisher_owner
+var hook_held: bool = false
+var network_id: int = 0
 var network_replica: bool = false
 signal bitten(bait, eater)
 enum Lifecycle { ALIVE, DEAD_SINKING, DEAD_SETTLED, CLAIMED }
@@ -396,6 +399,18 @@ func _apply_bottom_constraint(stick_to_bottom: bool) -> void:
 
 func try_bite(eater) -> bool:
 	if network_replica: return false
+	if not claimed and is_instance_valid(fisher_owner):
+		if not fisher_owner.take_bait(eater): return false
+		claimed = true
+		lifecycle = Lifecycle.CLAIMED
+		hook_held = true
+		_eater = eater
+		collision_layer = 0
+		collision_mask = 0
+		remove_from_group("bait")
+		set_physics_process(false)
+		bitten.emit(self,eater)
+		return true
 	if not claimed and eater.size_multiplier() < minimum_eater_scale:
 		eater.feeding.last_meal = "%s needs %.2fx size" % [display_name(), minimum_eater_scale]
 		eater.feeding.meal_notice_time = 1.8
@@ -417,6 +432,9 @@ func try_bite(eater) -> bool:
 
 func _process(delta: float) -> void:
 	if not claimed:
+		return
+	if hook_held:
+		if is_instance_valid(_eater): global_position = _eater.mouth_position()
 		return
 	if _bird_carry > 0:
 		_bird_carry -= delta

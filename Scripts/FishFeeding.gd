@@ -3,6 +3,7 @@ extends RefCounted
 ## FishPlayer calls this component once per physics tick. It never reads the camera.
 
 signal ate_bait(bait)
+var sweep_bite_disabled: bool = false
 var fish # Owning CharacterBody3D (a Node, so this does not form a RefCounted cycle).
 var is_charging: bool = false
 var cooldown_remaining: float = 0.0
@@ -44,6 +45,11 @@ func update_attack(intent: FishInput, delta: float) -> void:
 		if intent.bite_held:
 			_charge_time = minf(maxf(0.01, fish.full_charge_time), _charge_time + delta)
 		else:
+			if not fish.spend_dash_stamina():
+				is_charging = false
+				_charge_time = 0
+				_was_held = false
+				return
 			last_lunge_distance = lerpf(fish.minimum_lunge_distance, fish.maximum_lunge_distance, charge_fraction())
 			_dash_remaining = maxf(0.1, last_lunge_distance)
 			release_heading = fish.heading
@@ -60,14 +66,15 @@ func advance_dash(delta: float) -> void:
 	var time_left = delta
 	while time_left > 0.000001 and is_dashing():
 		var dt = minf(time_left, 1.0 / 120.0)
-		dt = minf(dt, _dash_remaining / maxf(1.0, fish.lunge_speed))
+		dt = minf(dt, _dash_remaining / maxf(1.0, fish.effective_dash_speed()))
 		var start: Vector3 = fish.global_position
 		if fish.global_position.y <= fish.water_height:
 			fish.heading = FishInput.turn_toward(fish.heading, dash_target, deg_to_rad(fish.lunge_turn_rate) * dt)
-			fish.velocity = fish.velocity.move_toward(fish.heading * maxf(1.0, fish.lunge_speed), fish.lunge_acceleration * dt)
+			fish.velocity = fish.velocity.move_toward(fish.heading * maxf(1.0, fish.effective_dash_speed()), fish.lunge_acceleration * dt)
 		else:
 			fish.velocity.y -= fish.air_gravity * dt
 			fish.heading = fish.velocity.normalized()
+		fish.velocity += fish.line_force*dt
 		var step = maxf(0.1, fish.velocity.length()) * dt
 		var collision = fish.move_and_collide(fish.velocity * dt)
 		if start.y <= fish.water_height and fish.global_position.y > fish.water_height:
@@ -76,7 +83,7 @@ func advance_dash(delta: float) -> void:
 		# Skim along floor slopes; a frontal wall still ends the attack.
 		if collision != null and collision.get_normal().y > 0.55:
 			var tangent: Vector3 = fish.velocity.slide(collision.get_normal())
-			if tangent.length() > fish.lunge_speed * 0.15:
+			if tangent.length() > fish.effective_dash_speed() * 0.15:
 				var skim_start: Vector3 = fish.global_position
 				fish.heading = tangent.normalized()
 				dash_target = FishInput.turn_toward(dash_target, fish.heading, PI)
@@ -94,12 +101,13 @@ func advance_dash(delta: float) -> void:
 			cooldown_remaining = fish.bite_cooldown
 			grace_remaining = fish.bite_grace_duration
 			if collision != null:
-				fish.velocity = fish.velocity.slide(collision.get_normal()).limit_length(fish.swim_speed)
+				fish.velocity = fish.velocity.slide(collision.get_normal()).limit_length(fish.effective_swim_speed())
 			elif fish.global_position.y <= fish.water_height:
-				fish.velocity = fish.velocity.limit_length(fish.swim_speed * 1.5)
+				fish.velocity = fish.velocity.limit_length(fish.effective_swim_speed() * 1.5)
 			bite_flash = 0.16
 
 func sweep_bite(from: Vector3, to: Vector3) -> int:
+	if sweep_bite_disabled: return 0
 	if not is_dashing() and grace_remaining <= 0:
 		return 0
 	var count = 0
@@ -116,6 +124,7 @@ func sweep_bite(from: Vector3, to: Vector3) -> int:
 			continue
 		if bait.try_bite(fish):
 			count += 1
+			if sweep_bite_disabled: break
 	return count
 
 static func closest_point(from: Vector3, to: Vector3, point: Vector3) -> Vector3:
@@ -125,6 +134,9 @@ static func closest_point(from: Vector3, to: Vector3, point: Vector3) -> Vector3
 	return from + segment * clampf((point - from).dot(segment) / segment.length_squared(), 0.0, 1.0)
 
 func award_food(bait) -> void:
+	var cloud = BloodCloud.new()
+	cloud.position = bait.global_position
+	fish.get_parent().add_child(cloud)
 	food += bait.nutrition()
 	bait_eaten += 1
 	last_meal = "%s  +%d" % [bait.display_name().to_upper(), bait.nutrition()]

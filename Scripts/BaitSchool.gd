@@ -8,7 +8,8 @@ signal actor_spawned(actor: BaitActor)
 @export var natural_lifetime_min: float = 240.0
 @export var natural_lifetime_max: float = 720.0
 @export var carcass_lifetime: float = 150.0
-@export var maximum_carcasses: int = 20
+@export var maximum_carcasses: int = 8
+@export var settled_corpse_lifetime: float = 20
 @export var anchor_migration_speed: float = 0.65
 var anchors: Array[BaitPod] = []
 var habitats: Dictionary = {}
@@ -136,7 +137,7 @@ func _spawn(kind: int, home: Vector3, behavior_seed: int, radius: float, pod: Ba
 		anchors.append(anchor)
 	bait.driver.anchor = anchor
 	add_child(bait)
-	_population.append({"actor":weakref(bait),"life":_rng.randf_range(natural_lifetime_min,natural_lifetime_max),"dead_age":0.0})
+	_population.append({"actor":weakref(bait),"life":_rng.randf_range(natural_lifetime_min,natural_lifetime_max),"dead_age":0.0,"settled_age":0.0})
 	if not initial and kind == BaitMotion.Kind.MINNOW:
 		bait.position.y = water_depth-0.45
 		bait.velocity = Vector3.DOWN*2.5
@@ -173,8 +174,9 @@ func _physics_process(delta: float) -> void:
 			else: live[actor.kind] = live.get(actor.kind,0)+1
 		if actor.lifecycle in [BaitActor.Lifecycle.DEAD_SINKING,BaitActor.Lifecycle.DEAD_SETTLED]:
 			record.dead_age += elapsed
+			if actor.lifecycle == BaitActor.Lifecycle.DEAD_SETTLED: record.settled_age += elapsed
 			dead.append(record)
-			if record.dead_age >= carcass_lifetime: actor.queue_free()
+			if record.dead_age >= carcass_lifetime or record.settled_age >= settled_corpse_lifetime: actor.queue_free()
 	dead.sort_custom(func(a,b): return a.dead_age > b.dead_age)
 	for i in range(maxi(0,dead.size()-maximum_carcasses)):
 		dead[i].actor.get_ref().queue_free()

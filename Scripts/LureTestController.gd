@@ -153,15 +153,7 @@ func cast_bait() -> void:
 		_update_label()
 		return
 	var aim = Vector3.FORWARD.rotated(Vector3.UP,boat_yaw)
-	var direction = aim.rotated(Vector3.UP,randf_range(-cast_angle_variation,cast_angle_variation))
-	var distance = cast_distance * randf_range(1-cast_distance_variation,1+cast_distance_variation)
-	# Shorten a cast at the walls without rotating it away from the player's aim.
-	for axis in [0,2]:
-		if absf(direction[axis]) > 0.001:
-			var edge = arena_half_width-10 if direction[axis] > 0 else -arena_half_width+10
-			distance = minf(distance,maxf(0,(edge-anchor_position[axis])/direction[axis]))
-	spawn_position = anchor_position + direction * distance
-	spawn_position.y -= 0.45
+	spawn_position = BaitCasting.destination(anchor_position,aim,arena_half_width,cast_distance*randf_range(1-cast_distance_variation,1+cast_distance_variation),randf_range(-cast_angle_variation,cast_angle_variation))
 	boat_aiming = false
 	_spawn_lure(selected_kind)
 	lure.launch_cast(anchor_position + Vector3.UP*0.7,deployment_position(),0.55 if selected_kind == BaitMotion.Kind.SQUID else 1.8)
