@@ -1,6 +1,6 @@
 class_name FisherView
 extends Node3D
-## Owner-only camera, rod/line art, audio and HUD. Never moves a gameplay actor.
+## Owner-only camera, rod/line art and HUD. Never moves a gameplay actor.
 @export var rod_mouse_response: float = 0.0035
 @export var rod_stick_response: float = 1.2
 @export var fight_camera_response: float = 5
@@ -25,7 +25,8 @@ var rod_mesh: MeshInstance3D
 var line_mesh: MeshInstance3D
 var rod_material: StandardMaterial3D
 var label: Label
-var hiss: AudioStreamPlayer
+var drag_value: Label
+var hook_caption: Label
 var previous_phase: int = -1
 var impact_age: float = 0
 
@@ -58,14 +59,9 @@ func _ready() -> void:
 	canvas.add_child(box)
 	readings = Label.new()
 	box.add_child(readings)
-	for title in ["Tension","Line condition","Retrieve","Power stamina","Focus","Hook meter"]:
-		var caption = Label.new()
-		caption.text = title
-		box.add_child(caption)
-		var bar = ProgressBar.new()
-		bar.custom_minimum_size = Vector2(390,14)
-		box.add_child(bar)
-		bars[title] = bar
+	var drag_caption = Label.new()
+	drag_caption.text = "DRAG"
+	box.add_child(drag_caption)
 	drag_slider = HSlider.new()
 	drag_slider.min_value = 0
 	drag_slider.max_value = 100
@@ -74,21 +70,17 @@ func _ready() -> void:
 	drag_slider.custom_minimum_size = Vector2(390,22)
 	drag_slider.value_changed.connect(func(value): drag_setting = value/100.0)
 	box.add_child(drag_slider)
-	hiss = AudioStreamPlayer.new()
-	add_child(hiss)
-	var sound = AudioStreamWAV.new()
-	sound.format = AudioStreamWAV.FORMAT_8_BITS
-	sound.mix_rate = 22050
-	var samples = PackedByteArray()
-	samples.resize(6615)
-	var noise = RandomNumberGenerator.new()
-	noise.seed = 812
-	for i in range(samples.size()): samples[i] = clampi(128+roundi(noise.randf_range(-32,32)*(1-float(i)/samples.size())),0,255)
-	sound.data = samples
-	sound.loop_mode = AudioStreamWAV.LOOP_FORWARD
-	sound.loop_end = samples.size()
-	hiss.stream = sound
-	hiss.volume_db = -18
+	drag_value = Label.new()
+	box.add_child(drag_value)
+	for title in ["Tension","Line condition","Retrieve","Power stamina","Focus","Hook meter"]:
+		var caption = Label.new()
+		caption.text = title.to_upper()
+		if title == "Hook meter": hook_caption = caption
+		box.add_child(caption)
+		var bar = ProgressBar.new()
+		bar.custom_minimum_size = Vector2(390,14)
+		box.add_child(bar)
+		bars[title] = bar
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
@@ -141,7 +133,6 @@ func _process(delta: float) -> void:
 	if not fighting and session.baits.has(bait_id): focus = session.baits[bait_id].position
 	if phase == FightSession.Phase.IMPACT and previous_phase != phase:
 		impact_age = 0
-		hiss.play()
 	impact_age += delta
 	previous_phase = phase
 	var underwater = roundi(data[4]) == FisherActor.State.BAIT or (fighting and phase <= FightSession.Phase.METER) or data[16] > 0
@@ -188,12 +179,8 @@ func _process(delta: float) -> void:
 	bars["Focus"].value = data[9]
 	bars["Hook meter"].visible = fighting and phase == FightSession.Phase.METER
 	bars["Hook meter"].value = data[11]*100
-	var audible = fighting and (data[36] > 0.1 or data[13] > data[33]*0.85 or phase == FightSession.Phase.IMPACT)
-	if audible:
-		if not hiss.playing: hiss.play()
-		hiss.volume_db = lerpf(-30,-12,clampf(maxf(data[36]/12,data[13]/maxf(1,data[45])),0,1))
-		hiss.pitch_scale = 0.8+clampf(data[36]/12,0,1.4)
-	elif hiss.playing: hiss.stop()
+	hook_caption.visible = bars["Hook meter"].visible
+	drag_value.text = "%d%%" % roundi(drag_setting*100)
 
 func apply_look(movement: Vector2) -> void:
 	if data.size() == 48 and roundi(data[4]) == FisherActor.State.FIGHT:

@@ -1,3 +1,5 @@
+> Current fight loop: see [FIGHT_GUIDE.md](FIGHT_GUIDE.md) for linear drag, reel pressure, heading leverage, endurance, line-risk formulas and manual checks. Fish snapshots now contain 23 floats including endurance; procedural fight sound is removed.
+
 # FishGame: movement and tuning guide
 
 **Current fight/input behavior:** see [FIGHT_GUIDE.md](FIGHT_GUIDE.md). It supersedes older six-tier retrieve, Fish + Fisher deferral and abstract-line notes below. Human retrieve is continuous (keyboard preference changes by 5%), fisherman roles are available, and fights now use bounded rod intent, spool line-out, drag, slack/security and stamina-independent landing. The full bait propulsion/line-force rework remains deferred.

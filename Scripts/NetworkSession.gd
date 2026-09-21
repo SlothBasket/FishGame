@@ -316,11 +316,11 @@ func fish_state(actor: FishPlayer) -> PackedFloat32Array:
 	var h = actor.heading
 	var v = actor.velocity
 	var f = actor.feeding
-	return PackedFloat32Array([p.x,p.y,p.z,h.x,h.y,h.z,v.x,v.y,v.z,f.food,f.bait_eaten,f._charge_time,f._dash_remaining,int(actor.airborne),int(actor.boosting),f.cooldown_remaining,f.bite_flash,f.grace_remaining,actor.stamina,actor.line_force.x,actor.line_force.y,actor.line_force.z])
+	return PackedFloat32Array([p.x,p.y,p.z,h.x,h.y,h.z,v.x,v.y,v.z,f.food,f.bait_eaten,f._charge_time,f._dash_remaining,int(actor.airborne),int(actor.boosting),f.cooldown_remaining,f.bite_flash,f.grace_remaining,actor.stamina,actor.line_force.x,actor.line_force.y,actor.line_force.z,actor.endurance])
 
 @rpc("authority","call_remote","unreliable_ordered",2)
 func fish_snapshot(peer: int, state: PackedFloat32Array) -> void:
-	if hosting or closed or not players.has(peer) or state.size() != 22: return
+	if hosting or closed or not players.has(peer) or state.size() != 23: return
 	var actor: FishPlayer = players[peer].entity
 	track("f%d" % peer,actor,Vector3(state[0],state[1],state[2]),FishInput.angles(Vector3(state[3],state[4],state[5])),1.0/fish_snapshot_hz)
 	actor.heading = Vector3(state[3],state[4],state[5])
@@ -340,6 +340,7 @@ func fish_snapshot(peer: int, state: PackedFloat32Array) -> void:
 	actor.visual.charge_intensity = actor.feeding.charge_fraction()
 	actor.visual.biting = actor.feeding.is_dashing() or state[16] > 0
 	actor.stamina = state[18]
+	actor.endurance = state[22]
 	actor.line_force = Vector3(state[19],state[20],state[21])
 	actor.update_growth_collision()
 
@@ -541,7 +542,10 @@ func fight_smoke_tick() -> void:
 			print("FIGHT SMOKE PASS authoritative fight and core line contracts")
 			smoke_stage = 2
 			smoke_connected = clock
-		if smoke_stage == 2 and clock-smoke_connected > 0.3:
+		if smoke_stage == 2 and clock-smoke_connected > 4.0:
+			if not is_instance_valid(fisher.fight): push_error("Fight ended before bounded movement check"); get_tree().quit(1); return
+			print("FIGHT SMOKE AI stamina=",fish.stamina," endurance=",fish.endurance," tension=",fisher.fight.tension," payout=",fisher.fight.spool.payout)
+			if fish.endurance >= fish.stamina_capacity: push_error("Fight exertion did not reduce endurance"); get_tree().quit(1); return
 			fish.position = fisher.position-Vector3.UP
 			fish.velocity = Vector3.ZERO
 			fish.stamina = fish.stamina_capacity

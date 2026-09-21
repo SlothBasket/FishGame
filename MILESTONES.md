@@ -16,3 +16,5 @@ Validation for the pacing milestone: 97 checks passed. Standalone 75-second grap
 - Optimization milestone (subject: `Reduce prey crowding and profile sustained physics slowdown`) - 142 default bait, cached rigid meshes, shared neighbor lookup, 15 Hz AI decisions with 60 Hz motion, stronger recent-window diagnostics. 101 checks pass. Default benchmark is smooth; 226-bait stress case remains an explicitly documented investigation target in PERFORMANCE_NOTES.md.
 
 - Pre-multiplayer polish milestone (subject: `Polish shared bait controls, migrating ecosystem and local presentation`) — shared reel tiers/gamepad actions, momentum-preserving charge, minnow preparation, lateral crab escapes, soft squid tether, moving habitats, bounded mortality/replenishment, terrain camera clearance and readable gull hunting. No multiplayer/fights. Validation scoped to import plus short deterministic polish checks.
+
+- **Make fights tire fish through rod leverage and compounding line risk** — linear drag, distinct reel/fish load, endurance and fish HUD, heading-aware AI, condition/exposure break hazard, clearer silent fisherman HUD. Local editor setting preserved in `95a3b46`.

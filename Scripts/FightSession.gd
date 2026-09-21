@@ -34,15 +34,14 @@ var rod_hand: Vector3
 var _previous_heading: Vector3 = Vector3.FORWARD
 var power_exhausted: bool = false
 @export var power_drain: float = 24
-@export var lateral_force: float = 12
+@export var lateral_force: float = 30
+@export var propulsion_load_scale: float = 0.85
+@export var pressure_endurance_drain: float = 0.18
+@export var leverage_endurance_drain: float = 0.65
 @export var yield_bonus: float = 2
-@export var resistance_fatigue: float = 8
+@export var resistance_fatigue: float = 13
 @export var safe_load: float = 35
-@export var stressed_load: float = 70
 @export var critical_load: float = 110
-@export var condition_damage_rate: float = 0.012
-@export var healthy_break_rate: float = 0.00015
-@export var damaged_break_rate: float = 0.035
 @export var jerk_damage: float = 15
 @export var jerk_spike: float = 35
 @export var jerk_cooldown: float = 1.2
@@ -78,6 +77,8 @@ func _ready() -> void:
 	spool = spool.duplicate()
 	update_rod(0.016)
 	line_length = fish.position.distance_to(rod_tip)
+	fish.endurance = fish.stamina_capacity
+	fish.fight_regen_scale = 1
 	_previous_heading = fish.heading
 	rod_direction = Vector3.FORWARD.rotated(Vector3.UP,fisher.boat_yaw)
 	_jerk_held = fisher.command.jerk # Require a fresh deliberate press after the bite.
@@ -132,18 +133,24 @@ func _physics_process(delta: float) -> void:
 	var outward = (fish.position-rod_tip).normalized()
 	var view_forward = BaitMotion.horizontal(fish.position-fisher.position)
 	var right = view_forward.cross(Vector3.UP)
-	var mass = 4.0*(1+0.35*fish.growth_fraction())
+	var mass = 3.2*(1+0.35*fish.growth_fraction())
 	var radial_speed = fish.velocity.dot(outward)
 	var effort = maxf(0,fish.command.throttle)
-	var drive = maxf(0,fish.heading.dot(outward))*effort*fish.acceleration*mass
-	# Actual velocity contributes lateral leverage; heading/throttle contribute propulsion.
-	var lateral_velocity = fish.velocity.dot(right)
-	var counter = maxf(0,-signf(lateral_velocity)*rod_horizontal)
-	var movement_load = drive+absf(lateral_velocity)*counter*2
+	# Heading projects propulsion onto the line: sideways swimming keeps its speed,
+	# but supplies little outward pull and exposes the flank to counter pressure.
+	var alignment = maxf(0,fish.heading.dot(outward))
+	var drive = alignment*effort*fish.acceleration*mass*propulsion_load_scale
+	if fish.boosting: drive *= fish.fight_boost_multiplier()
+	var side_heading = fish.heading.dot(right)
+	var counter = maxf(0,-side_heading*rod_horizontal)
+	var vertical_counter = maxf(0,-fish.heading.y*rod_vertical)
+	var broadside = 1-absf(fish.heading.dot(outward))
+	var leverage = counter*(0.35+0.65*broadside)+vertical_counter*0.7
+	var movement_load = drive
 	jerk_wait = maxf(0,jerk_wait-delta)
 	spike = maxf(0,spike-jerk_spike*delta*3)
 	var diving = fish.velocity.y < -2 and fish.command.vertical < 0
-	var resistance = maxf(0,-fish.heading.dot(right*rod_horizontal+Vector3.UP*rod_vertical))*effort
+	var resistance = leverage*effort
 	if pressed and not fisher.vision_active and jerk_wait <= 0 and fisher.stamina >= jerk_cost:
 		jerk_wait = jerk_cooldown
 		fisher.stamina -= jerk_cost
@@ -151,16 +158,21 @@ func _physics_process(delta: float) -> void:
 		spike = jerk_spike*(1.4 if dive_counter else 1)
 		if spool.slack < slack_tolerance:
 			fish.stamina = maxf(0,fish.stamina-jerk_damage*(1.4 if dive_counter else resistance))
-	spool.step(delta,fish.position.distance_to(rod_tip),radial_speed,movement_load+spike,input.retrieve,fisher.drag_setting,power_active)
+	spool.step(delta,fish.position.distance_to(rod_tip),radial_speed,movement_load,input.retrieve,fisher.drag_setting,power_active,spike)
 	tension = spool.tension
 	condition = spool.condition
 	var contact = clampf(1-spool.slack/slack_tolerance,0,1)
-	var lateral = right*rod_horizontal*lateral_force+Vector3.UP*rod_vertical*lateral_force*0.7
-	var force_direction = (-outward*maxf(8,tension)+lateral*contact).normalized()
-	fish.line_force = force_direction*minf(tension,critical_load*2)/mass
-	var yielding = maxf(0,fish.heading.dot(lateral.normalized()))*effort
-	fish.line_force += lateral.normalized()*yielding*yield_bonus*contact
-	fish.stamina = maxf(0,fish.stamina-resistance_fatigue*(resistance+maxf(0,radial_speed)/fish.effective_swim_speed()*0.35)*contact*(tension/spool.strength)*delta)
+	var pressure = clampf(tension/spool.strength,0,1.5)*contact
+	# Counter pressure adds physical acceleration; it never rewrites heading or aim.
+	var lateral = (right*rod_horizontal*counter+Vector3.UP*rod_vertical*vertical_counter*0.7)*lateral_force*(0.35+0.65*broadside)*pressure
+	fish.line_force = -outward*minf(tension,critical_load*2)/mass+lateral
+	var yielding = maxf(0,-fish.heading.dot(outward))*effort
+	fish.line_force += -outward*yielding*yield_bonus*contact
+	var exertion = alignment*effort
+	fish.fight_regen_scale = clampf(1-(resistance*3+exertion)*pressure*2,0,1)
+	fish.stamina = maxf(0,fish.stamina-resistance_fatigue*(resistance+exertion*0.12)*pressure*delta)
+	if phase == Phase.FIGHT:
+		fish.fatigue((pressure_endurance_drain*exertion+leverage_endurance_drain*resistance)*pressure*delta)
 	var turn_activity = fish.heading.angle_to(_previous_heading)/maxf(0.001,delta)
 	_previous_heading = fish.heading
 	if spool.slack > slack_tolerance:
@@ -175,9 +187,7 @@ func _physics_process(delta: float) -> void:
 		hook_hazard += jump_throw_rate*(lowered_rod_reduction if lowered else 1)*(1+1-hook_security)
 		if not lowered: spool.condition = maxf(0.02,spool.condition-0.008*delta*tension/spool.strength)
 	if rng.randf() < 1-exp(-hook_hazard*delta): finish(Outcome.THROWN); return
-	var stress = maxf(0,(tension-safe_load)/maxf(1,spool.strength-safe_load))
-	var hazard = healthy_break_rate*pow(stress,3)+damaged_break_rate*pow(1-spool.condition,2)*stress
-	if rng.randf() < 1-exp(-hazard*delta): finish(Outcome.LINE_BROKE); return
+	if rng.randf() < 1-exp(-spool.break_hazard()*delta): finish(Outcome.LINE_BROKE); return
 	if phase == Phase.FIGHT and fish.position.distance_to(fisher.position) < landing_distance and line_length < rod_length+landing_distance:
 		landing_time += delta
 		if landing_time >= landing_confirmation: finish(Outcome.LANDED)
@@ -200,6 +210,9 @@ func finish(result: int) -> void:
 	if phase == Phase.FINISHED: return
 	phase = Phase.FINISHED
 	if is_instance_valid(fish):
+		fish.endurance = fish.stamina_capacity
+		fish.fight_regen_scale = 1
+		fish.sprint_exhausted = false
 		fish.line_force = Vector3.ZERO
 		fish.free_bursts = false
 		fish.sprint_locked = false

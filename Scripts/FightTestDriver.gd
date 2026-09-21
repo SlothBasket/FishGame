@@ -14,6 +14,8 @@ var side_change_min: float = 3
 var side_change_max: float = 5
 var side: float = 1
 var reversal: bool = false
+var resting: bool = false
+var sprinting: bool = false
 
 func _init() -> void:
 	rng.randomize()
@@ -45,6 +47,15 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 		if nearest != null:
 			aim = (nearest.position-fish.position).normalized()
 			bite = distance < 9 and fmod(clock,1.5) < 0.5
+	if is_instance_valid(fish.fight):
+		if fish.stamina < fish.endurance*0.2: resting = true; sprinting = false
+		if fish.stamina > fish.endurance*0.75: resting = false
+		if not resting and fish.stamina > fish.endurance*0.7 and mode != 5: sprinting = true
+		if fish.stamina < fish.endurance*0.25: sprinting = false
+		if resting:
+			aim = (fish.fight.fisher.position-fish.position).normalized()
+			return FishInput.new(0.2,0,0,aim,false,false)
+		return FishInput.new(1,0,vertical,aim,sprinting,bite and fish.stamina > fish.dash_cost*1.5)
 	return FishInput.new(1,0,vertical,aim,mode == 1 or mode == 4,bite)
 
 func fisher_input(actor: FisherActor, delta: float) -> FisherIntent:
@@ -64,11 +75,11 @@ func fisher_input(actor: FisherActor, delta: float) -> FisherIntent:
 		else:
 			var forward = BaitMotion.horizontal(fight.fish.position-actor.position)
 			var right = forward.cross(Vector3.UP)
-			input.rod_horizontal = -signf(fight.fish.velocity.dot(right))*0.75
+			input.rod_horizontal = clampf(-fight.fish.heading.dot(right)*1.5,-1,1)
 			input.rod_vertical = -0.7 if fight.fish.airborne else 0.8 if fight.fish.velocity.y < -2 else 0.05
 			input.drag = 0.3 if fight.spool.condition < 0.6 else 0.4
-			input.retrieve = 0.95 if fight.spool.slack > 1 else 0.1 if fight.spool.slipping else 0.6
-			input.power = fmod(clock,9) < 1 and not fight.spool.slipping and fight.spool.slack < 0.5
+			input.retrieve = 0.95 if fight.spool.slack > 1 else 0.0 if fight.spool.slipping or fight.spool.fish_load > fight.spool.drag_threshold else 0.6
+			input.power = fmod(clock,9) < 1 and not fight.spool.slipping and fight.spool.slack < 0.5 and fight.fish.stamina < fight.fish.endurance*0.5
 			input.jerk = fmod(clock,4.2) < 0.15 and fight.spool.slack < 0.5
 			if fmod(clock,17) < 0.7: input.rod_horizontal *= -1
 

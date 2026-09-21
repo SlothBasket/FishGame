@@ -53,6 +53,12 @@ var airborne: bool = false
 @export var dash_growth_bonus: float = 0.25
 @export var max_tension_camera_roll: float = 0.08
 @export var tension_camera_smoothing: float = 5
+@export var endurance_floor: float = 0.30
+@export var sprint_endurance_drain: float = 0.55
+@export var dash_endurance_cost: float = 0.8
+var endurance: float = 100
+var fight_regen_scale: float = 1
+var sprint_exhausted: bool = false
 var stamina: float = 100
 var fight
 var line_force: Vector3 = Vector3.ZERO
@@ -145,8 +151,14 @@ func _physics_process(delta: float) -> void:
 		pivot.rotation = Vector3(_camera_pitch,_camera_yaw,0)
 	if replica: return # NetworkSession interpolates state; no client feeding or movement.
 	var intent = command if external_input else read_local_input()
-	if not free_bursts and (stamina < 1 or sprint_locked): intent.boost = false
-	stamina = clampf(stamina+(-sprint_drain if intent.boost and intent.throttle > 0 and not free_bursts else stamina_regen*(fight_regen_multiplier if is_instance_valid(fight) else 1.0))*delta,0,stamina_capacity)
+	var in_fight = is_instance_valid(fight)
+	if not intent.boost: sprint_exhausted = false
+	if stamina < 1: sprint_exhausted = true
+	if not free_bursts and (sprint_exhausted or sprint_locked): intent.boost = false
+	var sprinting = intent.boost and intent.throttle > 0 and not free_bursts
+	if in_fight and sprinting: fatigue(sprint_endurance_drain*delta)
+	var regeneration = stamina_regen*(fight_regen_multiplier*fight_regen_scale if in_fight else 1.0)
+	stamina = clampf(stamina+(-sprint_drain if sprinting else regeneration)*delta,0,endurance if in_fight else stamina_capacity)
 	var bite_start = global_position
 	feeding.update_attack(intent, delta)
 	boosting = intent.boost and intent.throttle > 0.0 and not feeding.is_charging and not feeding.is_dashing()
@@ -164,8 +176,8 @@ func _physics_process(delta: float) -> void:
 		var swim = FishInput.new(intent.throttle, intent.steering, intent.vertical, intent.aim_direction, boosting)
 		var speed = effective_swim_speed() * (charge_swim_multiplier if feeding.is_charging else 1.0)
 		var response = charge_response_multiplier if feeding.is_charging else 1.0
-		velocity = FishInput.next_velocity(velocity, heading, swim, speed, boost_multiplier,
-			reverse_speed_multiplier, acceleration * response, reverse_acceleration * response, water_drag * response, vertical_speed_multiplier, delta)
+		velocity = FishInput.next_velocity(velocity, heading, swim, speed, fight_boost_multiplier(),
+			reverse_speed_multiplier, acceleration * response * (fight_boost_multiplier() if in_fight and boosting else 1.0), reverse_acceleration * response, water_drag * response, vertical_speed_multiplier, delta)
 		velocity += line_force*delta
 		move_and_slide()
 	if global_position.y > water_height and not airborne: limit_breach_velocity()
@@ -230,4 +242,13 @@ func spend_dash_stamina() -> bool:
 	if free_bursts: return true
 	if stamina < dash_cost: return false
 	stamina -= dash_cost
+	if is_instance_valid(fight): fatigue(dash_endurance_cost)
 	return true
+
+func fatigue(amount: float) -> void:
+	endurance = maxf(stamina_capacity*endurance_floor,endurance-maxf(0,amount))
+	stamina = minf(stamina,endurance)
+
+func fight_boost_multiplier() -> float:
+	# Only fight sprint output fades; ordinary swim speed and turns remain available.
+	return lerpf(1.25,boost_multiplier,endurance/stamina_capacity) if is_instance_valid(fight) else boost_multiplier
