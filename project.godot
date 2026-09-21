@@ -22,6 +22,10 @@ window/size/window_width_override=1280
 window/size/window_height_override=800
 window/stretch/mode="canvas_items"
 
+[editor]
+
+run/main_run_args=".\\Launch.ps1 -HostGame -Role fisher -AI fish"
+
 [rendering]
 
 renderer/rendering_method="gl_compatibility"
