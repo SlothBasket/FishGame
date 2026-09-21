@@ -4,6 +4,8 @@ extends Node3D
 
 var kind: BaitMotion.Kind = BaitMotion.Kind.MINNOW
 var bird_pose: int = 0 # 0 flight, 1 tucked dive, 2 floating, 3 underwater paddle
+var alive: bool = true
+var bird_powered: bool = true
 var speed: float = 0.0
 var twitch: float = 0.0
 var action: BaitMotion.Action = BaitMotion.Action.PAUSE
@@ -109,7 +111,8 @@ func _process(delta: float) -> void:
 		return
 	delta = _animation_delta
 	_animation_delta = 0
-	_phase += delta * (4.0 + speed * 6.0)
+	if not alive: return
+	_phase += delta * (10.0 if kind == BaitMotion.Kind.GULL else 4.0 + speed * 6.0)
 	for i in range(_appendages.size()):
 		var wave = sin(_phase + i * 0.8)
 		match kind:
@@ -122,7 +125,7 @@ func _process(delta: float) -> void:
 			BaitMotion.Kind.CRAB:
 				_appendages[i].rotation.z = wave * (0.35 if speed > 0.1 else 0.08)
 			BaitMotion.Kind.GULL:
-				var fold = 1.15 if bird_pose == 1 else 0.7 if bird_pose == 2 else 0.55 + sin(_phase*0.25)*0.45 if bird_pose == 3 else sin(_phase*0.18)*0.35
+				var fold = 1.15 if bird_pose == 1 else 0.7 if bird_pose == 2 else 0.55 + sin(_phase*0.25)*0.45 if bird_pose == 3 else sin(_phase)*0.55 if bird_powered else 0.08
 				_appendages[i].rotation.z = lerp_angle(_appendages[i].rotation.z, fold * (-1 if i == 0 else 1), 1-exp(-10*delta))
 				_appendages[i].rotation.y = lerp_angle(_appendages[i].rotation.y, (0.6 if bird_pose == 1 else 0.0) * (-1 if i == 0 else 1), 1-exp(-10*delta))
 			_:

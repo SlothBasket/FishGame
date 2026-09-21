@@ -3,6 +3,16 @@ extends CharacterBody3D
 ## Both drivers obey this motor. The renderer never sees source (live/fisherman).
 
 signal bitten(bait, eater)
+enum Lifecycle { ALIVE, DEAD_SINKING, DEAD_SETTLED, CLAIMED }
+var lifecycle: Lifecycle = Lifecycle.ALIVE
+@export var size_variation: float = 0.15
+@export var carcass_sink_speed: float = 0.7
+@export var retrieve_lift: float = 2.8
+@export var minnow_prepare_limit: float = 0.55
+var _prepare_fraction: float = -1.0
+var _prepare_direction: Vector3 = Vector3.FORWARD
+var _prepare_time: float = 0.0
+var _bird_carry: float = 0.0
 @export var kind: BaitMotion.Kind = BaitMotion.Kind.MINNOW
 @export var source: BaitMotion.Source = BaitMotion.Source.LIVE
 # Zero selects a simple species default; override these before adding a bait.
@@ -54,6 +64,12 @@ var cast_windup_duration: float = 0.28
 var cast_origin: Vector3
 var cast_launch_velocity: Vector3
 @export var squid_roam_radius: float = 8.4
+@export var tether_stiffness: float = 4.0
+@export var tether_damping: float = 2.0
+@export var tether_recovery_extension: float = 1.4
+@export var tether_recovery_duration: float = 0.8
+@export var tether_safety_extension: float = 6.0
+var tether_recovery: float = 0.0
 var floor_height: float = 0.0
 var _floor_scan: float = 0.0
 var cast_destination: Vector3
@@ -91,10 +107,12 @@ func nutrition() -> int:
 
 func randomize_size(random: RandomNumberGenerator) -> void:
 	# Set before _ready so mesh, collision and bite reach agree. No score randomness.
-	body_size = 0.8 * random.randf_range(0.8, 1.2)
+	body_size *= random.randf_range(1.0-size_variation, 1.0+size_variation)
 
 func caught_by_bird(bird) -> bool:
-	if claimed: return false
+	if claimed or lifecycle != Lifecycle.ALIVE: return false
+	_bird_carry = 2.5
+	lifecycle = Lifecycle.CLAIMED
 	claimed = true
 	_eater = bird
 	velocity = Vector3.ZERO
@@ -118,7 +136,7 @@ func _ready() -> void:
 	if acceleration <= 0.0:
 		acceleration = [4.5, 14.0, 6.0, 8.0, 6.0, 5.0][kind]
 	if turn_rate <= 0.0:
-		turn_rate = [100.0, 250.0, 105.0, 180.0, 100.0, 90.0][kind]
+		turn_rate = [75.0, 250.0, 105.0, 180.0, 100.0, 90.0][kind]
 	var shape = SphereShape3D.new()
 	shape.radius = hit_radius()
 	var collision = CollisionShape3D.new()
@@ -134,6 +152,9 @@ func _ready() -> void:
 
 func _physics_process(delta: float) -> void:
 	if claimed:
+		return
+	if lifecycle != Lifecycle.ALIVE:
+		dead_motion(delta)
 		return
 	if cast_windup > 0:
 		cast_windup = maxf(0, cast_windup - delta)
@@ -176,6 +197,12 @@ func _physics_process(delta: float) -> void:
 	if command.flee_fraction >= 0.0:
 		start_flee(command.flee_fraction, command.direction)
 		if driver is BaitMotion.LiveBaitDriver: command.flee_fraction = -1 # Consume cached escape once.
+	if _prepare_fraction >= 0:
+		_prepare_time += delta
+		command.direction = _prepare_direction
+		command.action = BaitMotion.Action.CRUISE
+	if tether_recovery > 0:
+		tether_recovery = maxf(0,tether_recovery-delta)
 	# Horizontal steering and vertical travel are independent. This same motor runs
 	# AI and player bait, so neither can invent a different retrieve silhouette.
 	var direction = BaitMotion.horizontal(command.direction)
@@ -183,14 +210,18 @@ func _physics_process(delta: float) -> void:
 	var passive = command.action in [BaitMotion.Action.GLIDE, BaitMotion.Action.RISE]
 	if flee_remaining <= 0 and not airborne and command.direction.length_squared() > 0.001 and command.action != BaitMotion.Action.RISE:
 		heading = FishInput.turn_toward(BaitMotion.horizontal(heading), direction, deg_to_rad(turn_rate) * delta)
+	if _prepare_fraction >= 0 and (heading.dot(_prepare_direction) > cos(deg_to_rad(10)) or _prepare_time >= minnow_prepare_limit):
+		var fraction = _prepare_fraction
+		_prepare_fraction = -1
+		_release_flee(fraction,heading)
 	var target = BaitMotion.horizontal(heading) * swim_speed * command.effort
 	var response = acceleration
 	match command.action:
 		BaitMotion.Action.CRUISE:
-			target.y = swim_speed * 0.18 * command.effort
+			target.y = -sink_speed + retrieve_lift * command.effort * command.line_lift
 		BaitMotion.Action.GLIDE:
-			target = BaitMotion.horizontal(heading) * swim_speed * 0.24
-			target.y = -sink_speed * 0.65
+			target = Vector3.ZERO
+			target.y = -sink_speed
 			response = 1.8
 		BaitMotion.Action.RISE:
 			target.y = sink_speed * command.effort
@@ -199,7 +230,7 @@ func _physics_process(delta: float) -> void:
 		target = BaitMotion.horizontal(heading) * 0.45
 		target.y = -1.5 if passive else 2.0 * command.effort * (0.2 + 0.8 * pow(maxf(0, sin(_motion_age * 4)), 2))
 	elif kind == BaitMotion.Kind.SHRIMP:
-		target.y = -1.4
+		target.y = -1.4 + retrieve_lift * command.effort * command.line_lift if not passive else -1.4
 		target *= Vector3(0.55, 1, 0.55)
 	elif kind == BaitMotion.Kind.CRAB:
 		target = BaitMotion.horizontal(heading) * swim_speed * command.effort
@@ -209,11 +240,15 @@ func _physics_process(delta: float) -> void:
 		target.y = clampf((water_height - surface_depth - global_position.y) * 2.0, -1.5, 2.5)
 	if command.action == BaitMotion.Action.RISE and kind != BaitMotion.Kind.CRAB:
 		target.y = powered_descent_speed * 0.7
-	if command.descend and kind != BaitMotion.Kind.CRAB:
-		target.y = -powered_descent_speed
+	if command.descend:
+		target.y = -maxf(powered_descent_speed,4.5 if kind == BaitMotion.Kind.CRAB else 0.0) * (2.0 if bottom_kind else 1.0)
 	if command.arriving:
 		target = command.arrival_velocity
 		response = acceleration
+	if tether_recovery > 0:
+		target = velocity
+		target.y = move_toward(velocity.y, -0.7, delta)
+		flee_remaining = 0
 	if airborne or _breaching:
 		velocity.y -= airborne_gravity * delta
 	elif flee_remaining > 0.0:
@@ -244,13 +279,8 @@ func _physics_process(delta: float) -> void:
 			velocity.y = 0
 			flee_velocity.y = maxf(0, flee_velocity.y)
 		if driver is BaitMotion.PlayerLiveDriver and driver.use_anchor:
-			var offset = Vector3(global_position.x - driver.anchor_position.x, 0, global_position.z - driver.anchor_position.z)
-			var radius = offset.length()
-			if radius > squid_roam_radius - 0.6:
-				var outward = offset.normalized()
-				var radial_speed = velocity.dot(outward)
-				if radial_speed > 0: velocity -= outward * radial_speed
-				velocity -= outward * minf(3.0, maxf(0, radius - squid_roam_radius + 0.6) * 5.0)
+			apply_squid_tether(delta,driver.anchor_position)
+
 	flee_remaining = maxf(0.0, flee_remaining - delta)
 	# Remove downward settling velocity before sweeping a supported body. Otherwise
 	# every grounded crab repeatedly collides with the floor and resolves the same contact.
@@ -289,7 +319,16 @@ func _physics_process(delta: float) -> void:
 	if BaitProfile.enabled: BaitProfile.add_sample("pose",profile_start)
 
 func start_flee(fraction: float, away: Vector3) -> bool:
-	if flee_recovery > 0.0 or airborne or _breaching: return false
+	if lifecycle != Lifecycle.ALIVE or flee_recovery > 0.0 or airborne or _breaching or tether_recovery > 0: return false
+	if kind == BaitMotion.Kind.MINNOW:
+		if _prepare_fraction >= 0: return false
+		_prepare_fraction = fraction
+		_prepare_direction = BaitMotion.horizontal(away)
+		_prepare_time = 0
+		return true
+	return _release_flee(fraction,away)
+
+func _release_flee(fraction: float, away: Vector3) -> bool:
 	if kind == BaitMotion.Kind.MULLET:
 		if forced_dive_remaining > 0: return false
 		if jump_chain >= maximum_jump_chain:
@@ -328,6 +367,8 @@ func start_flee(fraction: float, away: Vector3) -> bool:
 	return true
 
 func clear_actions() -> void:
+	_prepare_fraction = -1
+	tether_recovery = 0
 	jump_chain = 0
 	forced_dive_remaining = 0
 	flee_remaining = 0.0
@@ -355,6 +396,7 @@ func try_bite(eater) -> bool:
 		return false
 	if claimed:
 		return false
+	lifecycle = Lifecycle.CLAIMED
 	claimed = true
 	_eater = eater
 	velocity = Vector3.ZERO
@@ -370,6 +412,12 @@ func try_bite(eater) -> bool:
 func _process(delta: float) -> void:
 	if not claimed:
 		return
+	if _bird_carry > 0:
+		_bird_carry -= delta
+		if is_instance_valid(_eater):
+			global_position = _eater.mouth_position()
+			visual.rotation.z = PI * 0.5
+			return
 	_swallow += delta
 	if is_instance_valid(_eater):
 		global_position = global_position.lerp(_eater.mouth_position(), 1.0 - exp(-22.0 * delta))
@@ -386,3 +434,41 @@ func launch_cast(origin: Vector3, destination: Vector3, duration: float = 1.8) -
 	cast_launch_velocity = (destination - origin) / cast_remaining + Vector3.UP * cast_gravity * cast_remaining * 0.5
 	cast_windup = cast_windup_duration
 	velocity = Vector3.ZERO
+
+func apply_squid_tether(delta: float, anchor: Vector3) -> void:
+	var offset = Vector3(global_position.x-anchor.x,0,global_position.z-anchor.z)
+	var radius = offset.length()
+	var extension = radius-squid_roam_radius
+	if extension <= 0: return # No changes to the good movement inside the normal range.
+	var outward = offset / radius
+	var radial_speed = velocity.dot(outward)
+	velocity -= outward * (tether_stiffness*extension*extension + tether_damping*maxf(0,radial_speed)*extension) * delta
+	if extension > tether_recovery_extension:
+		tether_recovery = tether_recovery_duration
+		flee_remaining = 0
+	flee_velocity = velocity # Preserve tension's change across subsequent jet ticks.
+	if extension > tether_safety_extension:
+		global_position -= outward * (extension-tether_safety_extension)
+		velocity -= outward * maxf(0,velocity.dot(outward))
+
+func die_naturally() -> void:
+	if lifecycle != Lifecycle.ALIVE or claimed: return
+	lifecycle = Lifecycle.DEAD_SINKING
+	flee_remaining = 0
+	_prepare_fraction = -1
+	airborne = false
+	_breaching = false
+	visual.alive = false
+
+func dead_motion(delta: float) -> void:
+	visual.rotation.z = lerp_angle(visual.rotation.z,PI,1-exp(-2*delta))
+	if lifecycle == Lifecycle.DEAD_SETTLED: return
+	velocity = velocity.move_toward(Vector3.DOWN*carcass_sink_speed,2*delta)
+	_apply_bottom_constraint(false)
+	move_and_slide()
+	for i in range(get_slide_collision_count()):
+		if get_slide_collision(i).get_normal().y > 0.5:
+			lifecycle = Lifecycle.DEAD_SETTLED
+			velocity = Vector3.ZERO
+	if velocity.length_squared() < 0.0001:
+		lifecycle = Lifecycle.DEAD_SETTLED

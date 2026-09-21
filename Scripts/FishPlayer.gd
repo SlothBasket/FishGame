@@ -26,7 +26,11 @@ extends CharacterBody3D
 @export var bite_grace_duration: float = 0.2
 @export_range(0.0, 179.0) var maximum_lunge_turn_angle: float = 65.0
 @export var lunge_turn_rate: float = 220.0
-@export var charge_swim_multiplier: float = 0.25
+@export var charge_swim_multiplier: float = 0.85
+@export var charge_response_multiplier: float = 0.28
+@export var lunge_acceleration: float = 65.0
+@export var camera_clearance: float = 0.35
+@export var gamepad_look_speed: float = 2.2
 @export var bite_radius: float = 0.9
 @export_group("Air and surface")
 @export var water_height: float = 32.0
@@ -62,19 +66,11 @@ func _ready() -> void:
 	feeding = FishFeeding.new(self)
 	update_growth_collision()
 	$CameraPivot/SpringArm3D.add_excluded_object(get_rid())
-	var keys = {"forward": KEY_W, "back": KEY_S, "left": KEY_A, "right": KEY_D,
-		"rise": KEY_SPACE, "dive": KEY_CTRL, "boost": KEY_SHIFT, "reset": KEY_R}
-	for action in keys:
-		if not InputMap.has_action(action):
-			InputMap.add_action(action)
-			var event = InputEventKey.new()
-			event.physical_keycode = keys[action]
-			InputMap.action_add_event(action, event)
-	if not InputMap.has_action("bite"):
-		InputMap.add_action("bite")
-		var event = InputEventMouseButton.new()
-		event.button_index = MOUSE_BUTTON_LEFT
-		InputMap.action_add_event("bite", event)
+	GameControls.install()
+	# A swept sphere protects the camera volume, including beside slopes and rocks.
+	var clearance = SphereShape3D.new()
+	clearance.radius = camera_clearance
+	$CameraPivot/SpringArm3D.shape = clearance
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	pivot.rotation = Vector3(_camera_pitch, _camera_yaw, 0.0)
 
@@ -118,6 +114,11 @@ func aim_through_crosshair() -> Vector3:
 	return direction.normalized() if direction.dot(-pivot.global_basis.z) > 0.1 else -pivot.global_basis.z.normalized()
 
 func _physics_process(delta: float) -> void:
+	if camera.current:
+		var look = GameControls.look() * gamepad_look_speed * delta
+		_camera_yaw -= look.x
+		_camera_pitch = clampf(_camera_pitch-look.y,-1.35,1.35)
+		pivot.rotation = Vector3(_camera_pitch,_camera_yaw,0)
 	var intent = command if external_input else read_local_input()
 	var bite_start = global_position
 	feeding.update_attack(intent, delta)
@@ -134,8 +135,9 @@ func _physics_process(delta: float) -> void:
 			manual_steering_strength, idle_pivot_multiplier, delta)
 		var swim = FishInput.new(intent.throttle, intent.steering, intent.vertical, intent.aim_direction, boosting)
 		var speed = swim_speed * (charge_swim_multiplier if feeding.is_charging else 1.0)
+		var response = charge_response_multiplier if feeding.is_charging else 1.0
 		velocity = FishInput.next_velocity(velocity, heading, swim, speed, boost_multiplier,
-			reverse_speed_multiplier, acceleration, reverse_acceleration, water_drag, vertical_speed_multiplier, delta)
+			reverse_speed_multiplier, acceleration * response, reverse_acceleration * response, water_drag * response, vertical_speed_multiplier, delta)
 		move_and_slide()
 	if global_position.y > water_height and not airborne: limit_breach_velocity()
 	airborne = global_position.y > water_height

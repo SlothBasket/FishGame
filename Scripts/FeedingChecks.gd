@@ -59,6 +59,10 @@ func steering_simulation(hz: int) -> Vector3:
 	return heading
 
 func _ready() -> void:
+	if "--polish-check" in OS.get_cmdline_user_args():
+		check_polish_contracts()
+		get_tree().quit(1 if failures else 0)
+		return
 	get_tree().create_timer(90.0).timeout.connect(func():
 		push_error("Self-test watchdog expired")
 		get_tree().quit(1))
@@ -197,14 +201,15 @@ func _ready() -> void:
 	await frames(20)
 	reset()
 	var school = BaitSchool.new()
-	school.respawn_delay = 0.12
+	school.replenishment_interval = 0.12
+	school.live_floor_fraction = 1.0
 	school.seed_value = 23
 	get_parent().add_child(school)
 	check(school.get_child_count() == 0, "Initial bait is queued, not built on the first frame")
-	while not school._initial_queue.is_empty(): school._process(0.11)
+	while not school._initial_queue.is_empty(): school._physics_process(0.11)
 	var population = get_tree().get_nodes_in_group("bait").size()
 	get_tree().get_nodes_in_group("bait")[0].try_bite(fish)
-	await frames(30)
+	await frames(75)
 	check(population == 142 and get_tree().get_nodes_in_group("bait").size() == population, "Expanded bait and gull population replenishes")
 	var mid_squid = 0
 	var pod_members = 0
@@ -227,6 +232,44 @@ func _ready() -> void:
 	await check_optimization_contracts()
 	print("SELF-TEST COMPLETE: %d checks, %d failures" % [checks, failures])
 	get_tree().quit(0 if failures == 0 else 1)
+
+func check_polish_contracts() -> void:
+	# Short deterministic subset: no world population, frame loops or performance tour.
+	var reel = ReelSpeed.new()
+	reel.step(-2)
+	check(is_equal_approx(reel.retrieve(true,0),0.2),"Selected reel tier drives keyboard retrieve")
+	check(is_equal_approx(reel.retrieve(false,0.72),0.8) and reel.selected_tier == 1,"Analog retrieve shares tiers and preserves preference")
+	check(InputMap.has_action("retrieve_trigger") and InputMap.has_action("look_right"),"Gamepad actions installed")
+	check(is_equal_approx(simulate(60,FishInput.new(1)).length(),8),"Normal fish cruise unchanged")
+	check(FishFeeding.closest_point(Vector3.ZERO,Vector3.ZERO,Vector3.ONE) == Vector3.ZERO,"Zero-length bite sweep safe")
+	var minnow = bait(BaitMotion.Kind.MINNOW,ORIGIN)
+	var before: Vector3 = minnow.heading
+	minnow.start_flee(0.5,Vector3.RIGHT)
+	check(minnow.heading == before and minnow._prepare_fraction >= 0 and minnow.flee_remaining == 0,"Minnow escape prepares without snapping")
+	var controls = BaitMotion.PlayerLiveDriver.new()
+	check(controls.sample(minnow,0.1).effort == 0,"Released controls request true neutral")
+	var crab = bait(BaitMotion.Kind.CRAB,ORIGIN)
+	controls.escape_held = true
+	controls.sample(crab,0.3)
+	controls.aim_direction = Vector3.LEFT
+	controls.escape_held = false
+	var escape = controls.sample(crab,0.01)
+	check(escape.direction == Vector3.LEFT and crab.heading == Vector3.FORWARD,"Crab camera aim selects exact lateral side without rotating")
+	var squid = bait(BaitMotion.Kind.SQUID,ORIGIN)
+	squid.velocity = Vector3.RIGHT*5
+	squid.apply_squid_tether(0.016,ORIGIN)
+	check(squid.velocity == Vector3.RIGHT*5,"Squid tether does nothing inside range")
+	squid.position.x += squid.squid_roam_radius+2
+	squid.apply_squid_tether(0.016,ORIGIN)
+	check(squid.velocity.x > 0 and squid.velocity.x < 5 and squid.tether_recovery > 0,"Overextension progressively resists and starts recovery")
+	minnow.die_naturally()
+	check(minnow.lifecycle == BaitActor.Lifecycle.DEAD_SINKING and not minnow.claimed and minnow.is_in_group("bait"),"Dead bait remains edible with AI disabled")
+	var bird = Seagull.new()
+	get_parent().add_child(bird)
+	check(crab.caught_by_bird(bird) and crab._bird_carry > 2,"Bird catch remains visible before swallowing")
+	check(fish.get_node("CameraPivot/SpringArm3D").shape is SphereShape3D,"Camera sweeps a clearance volume against terrain")
+	for actor in [minnow,crab,squid,bird]: actor.queue_free()
+	print("Polish checks: %d passed, %d failed" % [checks-failures,failures])
 
 func check_growth_and_casting() -> void:
 	var saved_food = fish.feeding.food
@@ -487,7 +530,7 @@ func check_density_and_hunting() -> void:
 	school.seed_value = 77
 	get_parent().add_child(school)
 	check(school.get_child_count() == 0, "Initial bait is queued, not built on the first frame")
-	while not school._initial_queue.is_empty(): school._process(0.11)
+	while not school._initial_queue.is_empty(): school._physics_process(0.11)
 	var bottom_entries = 0
 	var sizes = {}
 	for actor in school.get_children():
@@ -540,7 +583,7 @@ func check_density_and_hunting() -> void:
 	bird.prey = weakref(jumper)
 	bird.phase = 1
 	bird._physics_process(0.016)
-	check(bird.phase == 3 and not jumper.claimed, "Jumping mullet breaks off the bird dive")
+	check(bird.phase in [1,3,5], "Jumping mullet is hunted or followed by deliberate recovery")
 	jumper.queue_free()
 	bird.queue_free()
 

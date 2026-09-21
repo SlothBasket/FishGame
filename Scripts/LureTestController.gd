@@ -7,6 +7,7 @@ const ROSTER = [BaitMotion.Kind.MINNOW, BaitMotion.Kind.SHRIMP, BaitMotion.Kind.
 @export var cast_angle_variation: float = 0.12
 @export var origin_move_speed: float = 12.0
 @export var orbit_distance: float = 10.8
+var reel_speed = ReelSpeed.new()
 var fish
 var bait_parent: Node3D
 var lure: BaitActor
@@ -65,15 +66,14 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and not event.echo:
-		match event.keycode:
-			KEY_G: cast_bait()
-			KEY_TAB: set_active(not active)
-			KEY_C: toggle_camera()
-			KEY_F:
-				if active and not boat_aiming: reset_lure()
-			KEY_X:
-				if active: switch_lure()
+	if event.is_echo(): return
+	if event.is_action_pressed("cast"): cast_bait()
+	if event.is_action_pressed("bait_mode"): set_active(not active)
+	if event.is_action_pressed("bait_camera"): toggle_camera()
+	if event.is_action_pressed("bait_reset") and active and not boat_aiming: reset_lure()
+	if event.is_action_pressed("bait_species") and active: switch_lure()
+	if event.is_action_pressed("reel_up"): reel_speed.step(1)
+	if event.is_action_pressed("reel_down"): reel_speed.step(-1)
 
 func freeze_fish() -> void:
 	fish.external_input = true
@@ -175,16 +175,15 @@ func _physics_process(delta: float) -> void:
 		move_origin(forward*Input.get_axis("back","forward") + forward.cross(Vector3.UP)*Input.get_axis("left","right"),delta)
 		return
 	if not is_instance_valid(lure) or lure.claimed or lure.cast_windup > 0 or lure.cast_remaining > 0: return
-	if Input.is_action_pressed("forward") and lure.global_position.distance_to(anchor_position - Vector3.UP*0.65) < 1.2:
+	if reel_speed.retrieve(Input.is_action_pressed("retrieve"),Input.get_action_strength("retrieve_trigger")) > 0 and lure.global_position.distance_to(anchor_position - Vector3.UP*0.65) < 1.2:
 		cast_bait()
 		return
-	live_driver.throttle = Input.get_action_strength("forward")
+	live_driver.throttle = reel_speed.retrieve(Input.is_action_pressed("retrieve"),Input.get_action_strength("retrieve_trigger"))
 	live_driver.steering = Input.get_axis("left","right")
-	live_driver.rise = Input.is_physical_key_pressed(KEY_SPACE)
-	live_driver.descend = Input.is_physical_key_pressed(KEY_CTRL)
+	live_driver.rise = Input.is_action_pressed("rise")
+	live_driver.descend = Input.is_action_pressed("dive")
 	live_driver.aim_direction = current_dash_aim()
-	live_driver.escape_held = Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
-	live_driver.escape_side = -1 if live_driver.steering < 0 else 1
+	live_driver.escape_held = Input.is_action_pressed("bite")
 	_update_label()
 
 func move_origin(direction: Vector3, delta: float) -> void:
@@ -196,6 +195,11 @@ func move_origin(direction: Vector3, delta: float) -> void:
 
 func _process(delta: float) -> void:
 	if not active: return
+	var look = GameControls.look() * 2.2 * delta
+	if boat_aiming:
+		boat_yaw -= look.x
+		boat_pitch = clampf(boat_pitch-look.y,-0.6,0.65)
+	elif not use_fish_camera: orbit_mouse(look / 0.004)
 	if boat_aiming:
 		var forward = Vector3.FORWARD.rotated(Vector3.UP,boat_yaw)
 		boat.rotation.y = boat_yaw
@@ -232,6 +236,7 @@ func _update_label() -> void:
 	elif active:
 		mode_label.text = "BAIT: W reel | A/D steer | Hold/release LMB escape | X species | G boat setup | C camera | TAB fish"
 		if selected_kind == BaitMotion.Kind.SQUID:
-			mode_label.text += "\nSQUID: Mouse aims dash | SPACE up jet | CTRL down jet | W slow reel | 8.4 m range"
-		if live_driver != null: mode_label.text += "\nCharge %d%%" % int(live_driver.charge / lure.flee_charge_time * 100)
+			mode_label.text += "\nSQUID: Mouse aims dash | SPACE up jet | CTRL down jet | W slow reel | elastic line"
+		mode_label.text += "\nWheel / D-pad: reel %d%% | RT analog reel | RB escape" % roundi(reel_speed.selected_speed()*100)
+		if live_driver != null and is_instance_valid(lure): mode_label.text += "\nCharge %d%%" % int(live_driver.charge / lure.flee_charge_time * 100)
 	else: mode_label.text = "TAB bait control | G enter boat and prepare a cast"

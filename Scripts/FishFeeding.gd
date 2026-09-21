@@ -64,11 +64,11 @@ func advance_dash(delta: float) -> void:
 		var start: Vector3 = fish.global_position
 		if fish.global_position.y <= fish.water_height:
 			fish.heading = FishInput.turn_toward(fish.heading, dash_target, deg_to_rad(fish.lunge_turn_rate) * dt)
-			fish.velocity = fish.heading * maxf(1.0, fish.lunge_speed)
+			fish.velocity = fish.velocity.move_toward(fish.heading * maxf(1.0, fish.lunge_speed), fish.lunge_acceleration * dt)
 		else:
 			fish.velocity.y -= fish.air_gravity * dt
 			fish.heading = fish.velocity.normalized()
-		var step = fish.lunge_speed * dt
+		var step = maxf(0.1, fish.velocity.length()) * dt
 		var collision = fish.move_and_collide(fish.velocity * dt)
 		if start.y <= fish.water_height and fish.global_position.y > fish.water_height:
 			fish.limit_breach_velocity()
@@ -96,7 +96,7 @@ func advance_dash(delta: float) -> void:
 			if collision != null:
 				fish.velocity = fish.velocity.slide(collision.get_normal()).limit_length(fish.swim_speed)
 			elif fish.global_position.y <= fish.water_height:
-				fish.velocity = fish.heading * fish.swim_speed
+				fish.velocity = fish.velocity.limit_length(fish.swim_speed * 1.5)
 			bite_flash = 0.16
 
 func sweep_bite(from: Vector3, to: Vector3) -> int:

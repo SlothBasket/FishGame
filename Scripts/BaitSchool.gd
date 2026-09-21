@@ -2,7 +2,19 @@ class_name BaitSchool
 extends Node3D
 ## Eight sparse zones: open minnows, low shrimp, midwater squid, bottom crabs.
 
-@export var respawn_delay: float = 8.0
+@export var replenishment_interval: float = 3.0
+@export var live_floor_fraction: float = 0.95
+@export var natural_lifetime_min: float = 240.0
+@export var natural_lifetime_max: float = 720.0
+@export var carcass_lifetime: float = 150.0
+@export var maximum_carcasses: int = 20
+@export var anchor_migration_speed: float = 0.65
+var anchors: Array[BaitPod] = []
+var habitats: Dictionary = {}
+var _population: Array = []
+var _targets: Dictionary = {}
+var _ecosystem_clock: float = 0.0
+var _arrival_clock: float = 0.0
 @export var zone_population: int = 6
 @export var individual_spacing: float = 7.0
 @export var roam_radius: float = 45.0
@@ -10,9 +22,6 @@ extends Node3D
 @export var water_depth: float = 32.0
 @export var seed_value: int = -1 # -1 = varied play; explicit seeds for tests
 var _rng = RandomNumberGenerator.new()
-var _respawns: Array = []
-var _entry_baits: Array = []
-var _entry_clock: float = 6.0
 @export var pod_population: int = 6
 @export var midwater_squid_count: int = 6
 var pods: Array[BaitPod] = []
@@ -33,8 +42,19 @@ func _ready() -> void:
 		_rng.randomize()
 	else:
 		_rng.seed = seed_value
+	for species in range(6):
+		var low = 2.0
+		var high = water_depth-2
+		if species in [BaitMotion.Kind.CRAB,BaitMotion.Kind.SHRIMP]: low = 0.5; high = 1.5
+		if species == BaitMotion.Kind.SQUID: low = 14; high = 25
+		if species == BaitMotion.Kind.MULLET: low = water_depth-1; high = water_depth-0.4
+		if species == BaitMotion.Kind.GULL: low = water_depth+10; high = water_depth+12
+		var edge = arena_half_width-10
+		habitats[species] = BaitHabitat.new(AABB(Vector3(-edge,low,-edge),Vector3(edge*2,high-low,edge*2)),species,terrain_point)
 	# Four small schools occupy the middle column, rather than pooling at the floor.
 	for center in [Vector3(-28,15,-20), Vector3(24,20,-28), Vector3(-20,22,32), Vector3(35,13,24), Vector3(-45,28,40), Vector3(38,28,-45), Vector3(-35,4,-45), Vector3(40,4,40)]:
+		center.x = _rng.randf_range(-arena_half_width+18,arena_half_width-18)
+		center.z = _rng.randf_range(-arena_half_width+18,arena_half_width-18)
 		var pod = BaitPod.new(center)
 		pods.append(pod)
 		for i in range(pod_population):
@@ -42,6 +62,8 @@ func _ready() -> void:
 			var slot = Vector3(cos(angle)*4.5, _rng.randf_range(-1.8,1.8), sin(angle)*4.5)
 			_enqueue(BaitMotion.Kind.MINNOW, center + slot, _rng.randi(), 40, pod, slot)
 	for center in [Vector3(-22,31.5,-18), Vector3(35,31.5,20)]:
+		center.x = _rng.randf_range(-arena_half_width+18,arena_half_width-18)
+		center.z = _rng.randf_range(-arena_half_width+18,arena_half_width-18)
 		var pod = BaitPod.new(center)
 		pods.append(pod)
 		for i in range(8):
@@ -72,11 +94,13 @@ func _ready() -> void:
 		_initial_queue[j] = swap
 
 func _enqueue(kind: int, home: Vector3, seed_id: int, radius: float, pod: BaitPod = null, slot: Vector3 = Vector3.ZERO) -> void:
+	_targets[kind] = _targets.get(kind,0)+1
 	_initial_queue.append([kind,home,seed_id,radius,pod,slot])
 
 func _spawn(kind: int, home: Vector3, behavior_seed: int, radius: float, pod: BaitPod = null, slot: Vector3 = Vector3.ZERO, initial: bool = false) -> BaitActor:
 	var bait = Seagull.new() if kind == BaitMotion.Kind.GULL else BaitActor.new()
 	bait.kind = kind
+	if bait is Seagull: bait.rng.seed = behavior_seed
 	bait.neighborhood = neighborhood
 	bait.randomize_size(_rng)
 	bait.water_height = water_depth
@@ -103,36 +127,79 @@ func _spawn(kind: int, home: Vector3, behavior_seed: int, radius: float, pod: Ba
 		bait.driver.pod = pod
 		bait.driver.pod_slot = slot
 		pod.add_member(bait)
-	bait.bitten.connect(func(_bait, _eater):
-		_respawns.append({"remaining": respawn_delay, "kind": kind, "home": home, "radius": radius, "pod": pod, "slot": slot}))
+	var anchor = pod if pod != null else BaitPod.new(home)
+	if anchor.habitat == null:
+		anchor.habitat = habitats[kind]
+		anchor.migration_speed = anchor_migration_speed
+		anchor.destination_clock = _rng.randf_range(0,20)
+		anchors.append(anchor)
+	bait.driver.anchor = anchor
 	add_child(bait)
-	if kind == BaitMotion.Kind.MINNOW and home.y > water_depth - 0.6:
-		_entry_baits.append(weakref(bait))
+	_population.append({"actor":weakref(bait),"life":_rng.randf_range(natural_lifetime_min,natural_lifetime_max),"dead_age":0.0})
+	if not initial and kind == BaitMotion.Kind.MINNOW:
+		bait.position.y = water_depth-0.45
+		bait.velocity = Vector3.DOWN*2.5
+		bait.entry_remaining = 0.5
+
 	return bait
 
-func _process(delta: float) -> void:
+func _physics_process(delta: float) -> void:
+	# Authority boundary: one population owner advances migration, mortality and arrivals.
+	for anchor in anchors: anchor.migrate(delta,_rng,anchors)
 	_spawn_clock -= delta
 	if not _initial_queue.is_empty() and _spawn_clock <= 0:
 		_spawn_clock = initial_spawn_interval
 		var entry = _initial_queue.pop_back()
 		_spawn(entry[0],entry[1],entry[2],entry[3],entry[4],entry[5],true)
-		return # At most one actor construction per frame across both queues.
-	_entry_clock -= delta
-	if _entry_clock <= 0:
-		_entry_clock = _rng.randf_range(5, 9)
-		_entry_baits = _entry_baits.filter(func(reference): return is_instance_valid(reference.get_ref()))
-		for reference in _entry_baits:
-			var entrant = reference.get_ref()
-			if is_instance_valid(entrant) and not entrant.claimed and entrant.position.y < water_depth * 0.5:
-				entrant.position = Vector3(_rng.randf_range(-50, 50), water_depth - 0.45, _rng.randf_range(-50, 50))
-				entrant.clear_actions()
-				entrant.velocity = Vector3.DOWN * 4
-				entrant.entry_remaining = 0.45
-				break
-	for i in range(_respawns.size() - 1, -1, -1):
-		var entry: Dictionary = _respawns[i]
-		entry.remaining -= delta
-		if entry.remaining <= 0.0:
-			_respawns.remove_at(i)
-			_spawn(entry.kind, entry.home, _rng.randi(), entry.radius, entry.pod, entry.slot)
-			break # Spread mesh/node creation after multi-bait meals across frames.
+		return
+	_ecosystem_clock += delta
+	_arrival_clock -= delta
+	if _ecosystem_clock < 1.0: return
+	var elapsed = _ecosystem_clock
+	_ecosystem_clock = 0
+	var live: Dictionary = {}
+	var dead: Array = []
+	var occupied_anchors: Array = []
+	for record in _population:
+		var actor = record.actor.get_ref()
+		if not is_instance_valid(actor): continue
+		if actor.driver is BaitMotion.LiveBaitDriver: occupied_anchors.append(actor.driver.anchor)
+		if actor.claimed: continue
+		if actor.lifecycle == BaitActor.Lifecycle.ALIVE:
+			record.life -= elapsed
+			if record.life <= 0 and actor.kind != BaitMotion.Kind.GULL: actor.die_naturally()
+			else: live[actor.kind] = live.get(actor.kind,0)+1
+		if actor.lifecycle in [BaitActor.Lifecycle.DEAD_SINKING,BaitActor.Lifecycle.DEAD_SETTLED]:
+			record.dead_age += elapsed
+			dead.append(record)
+			if record.dead_age >= carcass_lifetime: actor.queue_free()
+	dead.sort_custom(func(a,b): return a.dead_age > b.dead_age)
+	for i in range(maxi(0,dead.size()-maximum_carcasses)):
+		dead[i].actor.get_ref().queue_free()
+	_population = _population.filter(func(record): return is_instance_valid(record.actor.get_ref()))
+	anchors = anchors.filter(func(anchor): return anchor in occupied_anchors or anchor in pods)
+	if not _initial_queue.is_empty() or _arrival_clock > 0: return
+	_arrival_clock = replenishment_interval*_rng.randf_range(0.8,1.2)
+	var species: int = -1
+	var shortage: float = 0.0
+	for kind in _targets:
+		var missing = 1.0-float(live.get(kind,0))/_targets[kind]
+		if live.get(kind,0) < ceili(_targets[kind]*live_floor_fraction) and missing > shortage:
+			species = kind
+			shortage = missing
+	if species < 0: return
+	var pod: BaitPod
+	var compatible = pods.filter(func(group): return group.habitat != null and group.habitat.kind == species)
+	if not compatible.is_empty(): pod = compatible[_rng.randi_range(0,compatible.size()-1)]
+	var habitat: BaitHabitat = habitats[species]
+	var home = pod.center if pod != null else habitat.destination(habitat.bounds.get_center(),Vector3.FORWARD,_rng,anchors)
+	_spawn(species,home,_rng.randi(),roam_radius,pod)
+
+func terrain_point(point: Vector3, species: int) -> Vector3:
+	# This level uses a box water volume plus actual terrain height; drivers know neither.
+	var ray = PhysicsRayQueryParameters3D.create(Vector3(point.x,water_depth,point.z),Vector3(point.x,-100,point.z),1)
+	var hit = get_world_3d().direct_space_state.intersect_ray(ray)
+	if not hit.is_empty():
+		var clearance = 6.0 if species == BaitMotion.Kind.SQUID else 0.6
+		point.y = maxf(point.y,hit.position.y+clearance)
+	return point
