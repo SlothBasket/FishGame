@@ -24,7 +24,7 @@ window/stretch/mode="canvas_items"
 
 [editor]
 
-run/main_run_args="-- --host --role=fisher --ai=fish --port=24567"
+run/main_run_args="-- --host --role=fish --ai=fisher --port=24567"
 
 [rendering]
 
