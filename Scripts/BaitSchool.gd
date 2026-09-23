@@ -17,15 +17,15 @@ var _population: Array = []
 var _targets: Dictionary = {}
 var _ecosystem_clock: float = 0.0
 var _arrival_clock: float = 0.0
-@export var zone_population: int = 6
+@export var zone_population: int = 3
 @export var individual_spacing: float = 7.0
 @export var roam_radius: float = 45.0
 @export var arena_half_width: float = 132.0
 @export var water_depth: float = 32.0
 @export var seed_value: int = -1 # -1 = varied play; explicit seeds for tests
 var _rng = RandomNumberGenerator.new()
-@export var pod_population: int = 6
-@export var midwater_squid_count: int = 6
+@export var pod_population: int = 4
+@export var midwater_squid_count: int = 4
 var pods: Array[BaitPod] = []
 var neighborhood = BaitNeighborhood.new()
 @export var initial_spawn_interval: float = 0.10
@@ -68,14 +68,14 @@ func _ready() -> void:
 		center.z = _rng.randf_range(-arena_half_width+18,arena_half_width-18)
 		var pod = BaitPod.new(center)
 		pods.append(pod)
-		for i in range(8):
-			var slot = Vector3(cos(i*TAU/8)*5, 0, sin(i*TAU/8)*5)
+		for i in range(6):
+			var slot = Vector3(cos(i*TAU/6)*5, 0, sin(i*TAU/6)*5)
 			_enqueue(BaitMotion.Kind.MULLET, center+slot, _rng.randi(), 50, pod, slot)
 	for i in range(midwater_squid_count):
 		_enqueue(BaitMotion.Kind.SQUID, Vector3(_rng.randf_range(-65,65), _rng.randf_range(14,24), _rng.randf_range(-65,65)), _rng.randi(), 45)
-	for i in range(12):
+	for i in range(8):
 		_enqueue(BaitMotion.Kind.MINNOW if i % 2 == 0 else BaitMotion.Kind.SQUID, Vector3(_rng.randf_range(-60, 60), _rng.randf_range(23, 28), _rng.randf_range(-60, 60)), _rng.randi(), 55.0)
-	for i in range(4):
+	for i in range(2):
 		_enqueue(BaitMotion.Kind.GULL, Vector3(-18 + i * 12, water_depth + 10, -12), _rng.randi(), 60.0)
 		_enqueue(BaitMotion.Kind.MINNOW, Vector3(_rng.randf_range(-50, 50), water_depth - 0.45, _rng.randf_range(-50, 50)), _rng.randi(), 50.0)
 	for i in range(4):

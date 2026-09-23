@@ -13,15 +13,18 @@ var peak_physics: float = 0.0
 var recent_frames: Array[String] = []
 var notice: Label
 var notice_time: float = 0
+var last_report_base: String = ""
 var tour_camera: Camera3D
 
 func _ready() -> void:
 	started = Time.get_ticks_usec()
 	BaitProfile.enabled = "--profile-bait" in OS.get_cmdline_user_args()
 	var layer = CanvasLayer.new()
+	layer.layer = 30
 	add_child(layer)
 	notice = Label.new()
-	notice.position = Vector2(40,205)
+	notice.position = Vector2(40,340)
+	notice.add_theme_font_size_override("font_size",22)
 	layer.add_child(notice)
 	if "--perf-check" in OS.get_cmdline_user_args(): duration = 75.0
 	if "--perf-tour" in OS.get_cmdline_user_args():
@@ -72,7 +75,9 @@ func save_report() -> void:
 	var stamp = Time.get_datetime_string_from_system().replace(":","-") + "-" + str(Time.get_ticks_msec())
 	var base = folder + "/" + stamp
 	var file = FileAccess.open(base+".csv",FileAccess.WRITE)
-	if file == null: return
+	if file == null:
+		push_error("Hitch CSV could not be saved")
+		return
 	file.store_line("elapsed_s,frame_ms,physics_ms,process_ms,nodes,draw_calls,physics_steps")
 	for record in recent_frames: file.store_line(record)
 	var actors: Array = []
@@ -86,9 +91,20 @@ func save_report() -> void:
 	var late_summary = {} if late_frames.is_empty() else {"median_ms":late_frames[late_frames.size()/2],"p95_ms":late_frames[int(late_frames.size()*0.95)],"max_ms":late_frames.back()}
 	var report = {"last_10_seconds":late_summary,"camera_position":str(get_viewport().get_camera_3d().global_position),"bait_profile":BaitProfile.snapshot(),"time":Time.get_datetime_string_from_system(),"engine":Engine.get_version_info(),"os":OS.get_name(),"gpu":RenderingServer.get_video_adapter_name(),"elapsed_s":elapsed,"peak_physics_ms":peak_physics,"static_memory_bytes":OS.get_static_memory_usage(),"bait_count":actors.size(),"bait_snapshot":actors,"hitches_over_50ms":hitches,"arena_width":get_parent().arena_width,"physics_ticks_per_second":Engine.physics_ticks_per_second}
 	var details = FileAccess.open(base+".json",FileAccess.WRITE)
-	if details != null: details.store_string(JSON.stringify(report,"  "))
+	if details == null:
+		push_error("Hitch JSON could not be saved")
+		return
+	details.store_string(JSON.stringify(report,"  "))
+	file.flush()
+	details.flush()
+	if file.get_error() != OK or details.get_error() != OK:
+		push_error("Hitch report write failed")
+		return
 	var path = ProjectSettings.globalize_path(base)
-	print("Performance report: ",path," (.csv and .json)")
-	notice.text = "F9 report saved: " + path.get_file() + "\nSee hitch-reports in Godot's user data folder; full path printed in Output."
+	last_report_base = path
+	print("HITCH REPORT CSV: ",path+".csv")
+	print("HITCH REPORT JSON: ",path+".json")
+	notice.text = "HITCH REPORT SAVED\n"+path.get_file()
+
 	notice.visible = true
 	notice_time = 8

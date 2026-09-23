@@ -16,6 +16,8 @@ var spectator_vision_used: bool = false
 var spectator_vision_recovered: bool = false
 var spectator_min_focus: float = 100
 var spectator_jumped: bool = false
+var spectator_jerked: bool = false
+var spectator_interrupted: bool = false
 var outcome_banner: FightOutcomeBanner
 @export var show_test_bait_markers: bool = true
 var smoke_fish_driver = FightTestDriver.new()
@@ -282,6 +284,9 @@ func _physics_process(delta: float) -> void:
 		if players.has(-2):
 			var observer_fisher: FisherActor = players[-2].entity
 			spectator_min_focus = minf(spectator_min_focus,observer_fisher.focus)
+			if is_instance_valid(observer_fisher.fight):
+				if observer_fisher.fight.jerk_notice_time > 0: spectator_jerked = true
+				if observer_fisher.fight.interruption > 0: spectator_interrupted = true
 			if observer_fisher.vision_active: spectator_vision_used = true
 			if spectator_vision_used and not observer_fisher.vision_active and observer_fisher.focus > spectator_min_focus+2: spectator_vision_recovered = true
 		if players.has(-1) and players[-1].entity.natural_breach: spectator_jumped = true
@@ -291,7 +296,14 @@ func _physics_process(delta: float) -> void:
 				spectator_saw_fight = true
 				print("SPECTATOR PASS natural bait attack and hook-set reached fight")
 		if clock >= 40:
-			var valid = players.size() == 2 and players.has(-1) and players.has(-2) and not players.has(1) and spectator_saw_fight
+			print("GESTURE observed=",spectator_jerked," interruption=",spectator_interrupted)
+			var report_ok = false
+			for node in world.get_children():
+				if node is PerformanceProbe:
+					node.save_report()
+					report_ok = FileAccess.file_exists(node.last_report_base+".csv") and FileAccess.file_exists(node.last_report_base+".json")
+			print("HITCH SAVE ","PASS" if report_ok else "FAIL")
+			var valid = players.size() == 2 and players.has(-1) and players.has(-2) and not players.has(1) and spectator_saw_fight and report_ok
 			print("SPECTATOR ","PASS" if valid else "FAIL", " natural observer run")
 			get_tree().quit(0 if valid else 1)
 			return
@@ -312,7 +324,7 @@ func _physics_process(delta: float) -> void:
 			if fight_smoke:
 				input.species = BaitMotion.Kind.MINNOW
 				input.cast_serial = 1
-				if fisher_view.data.size() == 56:
+				if fisher_view.data.size() == 60:
 					input.jerk = roundi(fisher_view.data[10]) == FightSession.Phase.CANDIDATE or (roundi(fisher_view.data[10]) == FightSession.Phase.METER and fisher_view.data[11] < 0.72)
 			if hosting: players[owned_id].entity.command = input
 			elif input_clock <= 0:
@@ -587,11 +599,11 @@ func fisher_state(actor: FisherActor) -> PackedFloat32Array:
 		f.rod_tip.x if has_fight else 0,f.rod_tip.y if has_fight else 0,f.rod_tip.z if has_fight else 0,f.rod_hand.x if has_fight else 0,f.rod_hand.y if has_fight else 0,f.rod_hand.z if has_fight else 0,f.spool.strength if has_fight else 110,f.rod_horizontal if has_fight else 0,f.rod_vertical if has_fight else 0,
 		f.spool.maximum_line_out if has_fight else FightLine.DEFAULT_CAPACITY,
 		v.normalized().dot(BaitMotion.horizontal(p-actor.position).cross(Vector3.UP)) if has_fight and v.length() > 0.3 else 0,
-		f.tension/maxf(1,f.spool.break_threshold()) if has_fight else 0,f.counter_pressure if has_fight else 0,f.fisher_action if has_fight else 4,f.fish.motion.dive_power if has_fight else 0,int(f.fish.motion.diving) if has_fight else 0,f.line_damage_rate if has_fight else 0])
+		f.tension/maxf(1,f.spool.break_threshold()) if has_fight else 0,f.counter_pressure if has_fight else 0,f.fisher_action if has_fight else 4,f.fish.motion.dive_power if has_fight else 0,int(f.fish.motion.diving) if has_fight else 0,f.line_damage_rate if has_fight else 0,f.spool.rod_take_up if has_fight else 0,f.recovery_total if has_fight else 0,f.jerk_direction if has_fight else 0,f.jerk_notice_time if has_fight else 0])
 
 @rpc("authority","call_remote","unreliable_ordered",2)
 func fisher_snapshot(peer: int, state: PackedFloat32Array) -> void:
-	if hosting or closed or state.size() != 56 or not players.has(peer) or players[peer].role != ROLE_FISHER: return
+	if hosting or closed or state.size() != 60 or not players.has(peer) or players[peer].role != ROLE_FISHER: return
 	players[peer].entity.position = Vector3(state[0],state[1],state[2])
 	if peer == multiplayer.get_unique_id() and fisher_view != null:
 		if fight_smoke and (fisher_view.data.is_empty() or fisher_view.data[10] != state[10]): print("CLIENT FIGHT PHASE ",state[10]," fields=",state.size())
@@ -642,7 +654,7 @@ func fight_smoke_tick() -> void:
 			smoke_connected = clock
 		if smoke_stage == 4 and clock-smoke_connected > 0.4: get_tree().quit(0)
 	else:
-		if fisher_view != null and fisher_view.data.size() == 56:
+		if fisher_view != null and fisher_view.data.size() == 60:
 			if roundi(fisher_view.data[10]) == FightSession.Phase.FIGHT and not smoke_saw_two:
 				smoke_saw_two = true
 				print("FIGHT SMOKE PASS replicated fight/HUD state")
@@ -683,3 +695,19 @@ func present_fight_result(fish_id: int, fisher_id: int, result: int) -> void:
 	var owned = 1 if hosting else multiplayer.get_unique_id()
 	if spectator_mode or owned == fish_id or owned == fisher_id:
 		outcome_banner.show_result(result,owned == fish_id)
+
+func publish_fight_counter(fish: FishPlayer, fisher: FisherActor, kind: int) -> void:
+	var fish_id = 0
+	for id in players:
+		if players[id].entity == fish: fish_id = id
+	present_fight_counter(fish_id,fisher.peer_id,kind)
+	if connected: fight_counter.rpc(fish_id,fisher.peer_id,kind)
+
+@rpc("authority","call_remote","reliable",0)
+func fight_counter(fish_id: int, fisher_id: int, kind: int) -> void:
+	if hosting or kind < 1 or kind > 3: return
+	present_fight_counter(fish_id,fisher_id,kind)
+
+func present_fight_counter(fish_id: int, fisher_id: int, kind: int) -> void:
+	var owned = 1 if hosting else multiplayer.get_unique_id()
+	if spectator_mode or owned == fish_id or owned == fisher_id: outcome_banner.show_counter(kind)

@@ -30,3 +30,5 @@ Validation for the pacing milestone: 97 checks passed. Standalone 75-second grap
 - **Give powered fish resistance line risk and delayed fisher perception** — removes charge-boat AI, banks/spends legal Drive, adds powered resistance/turn load, measured damage feedback and delayed visible-state fisher decisions with normal Focus use.
 
 - Milestone subject: `Make fight pressure and AI execution readable to players and spectators` — shared physical cues, Drive/Overdrive/Dive animation, visible boat/rod/line, strategic Vision, 150 m spool, skill settings, wall-aware movement jumps and separate directional wear. See FIGHT_READABILITY_GUIDE.md for tuning and scoped validation.
+
+- Milestone subject: `Add physical directional jerks and readable pump recovery` — shared server rod gestures, timed directional counters, simple legal AI counter/pump rhythm and spool urgency, 88-actor baseline, visible F9 save confirmation and editor launch documentation.

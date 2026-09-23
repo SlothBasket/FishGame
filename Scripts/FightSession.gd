@@ -94,6 +94,15 @@ var rod_direction: Vector3 = Vector3.FORWARD
 var power_active: bool = false
 var power_locked_sprint: bool = false
 var power_preexisting_sprint: bool = false
+@export var gesture: RodGesture = RodGesture.new()
+@export var jerk_counter_force: float = 65
+@export var early_run_window: float = 0.9
+@export var late_jerk_spike: float = 65
+@export var counter_impulse: float = 4
+var jerk_direction: int = 0
+var jerk_notice_time: float = 0
+var interruption: int = 0 # 1 run, 2 overdrive, 3 dive; authoritative successful counters only.
+var recovery_total: float = 0
 var jerk_wait: float = 0
 var spike: float = 0
 var landing_time: float = 0
@@ -112,6 +121,7 @@ func _ready() -> void:
 	perception.reaction_jitter = lerpf(0.28,0.06,fisher_skill)
 	perception.late_reaction_chance = lerpf(0.5,0.08,fisher_skill)
 	spool = spool.duplicate()
+	gesture = gesture.duplicate()
 	update_rod(0.016)
 	line_length = fish.position.distance_to(neutral_tip)
 	fish.motion = FishFightMotion.new()
@@ -135,6 +145,9 @@ func _physics_process(delta: float) -> void:
 	if not is_instance_valid(fish) or not is_instance_valid(fisher): finish(Outcome.DISCONNECT); return
 	phase_time += delta
 	update_rod(delta)
+	jerk_wait = maxf(0,jerk_wait-delta)
+	jerk_notice_time = maxf(0,jerk_notice_time-delta)
+	var gesture_direction = gesture.step(delta,Vector2(rod_horizontal,rod_vertical),phase in [Phase.OPENING,Phase.FIGHT] and not fisher.vision_active and jerk_wait <= 0 and fisher.stamina >= jerk_cost)
 	perception.tick(delta,self)
 	fisher_action = FightDecisions.fisher_choice(perception.observation)
 	jump_cooldown = maxf(0,jump_cooldown-delta)
@@ -203,25 +216,19 @@ func _physics_process(delta: float) -> void:
 	directional_load = struggle.x
 	turn_shock = maxf(turn_shock*exp(-delta/maxf(0.01,turn_shock_decay_time)),struggle.y)
 	var movement_load = drive+directional_load+fish.motion.dive_power*35
-	jerk_wait = maxf(0,jerk_wait-delta)
 	spike = maxf(0,spike-jerk_spike*delta*3)
 	var diving = fish.motion.diving
-	var late_dive = diving and fish.motion.dive_power >= fish.motion.dive_counter_window
-	best_counter = FightContest.best_counter(fish.heading,right,diving,late_dive)
-	if diving and rod_vertical > 0.7:
-		spike = maxf(spike,35+fish.motion.dive_power*40)
-		if not late_dive: fish.motion.interrupt_dive()
+	best_counter = FightContest.best_counter(fish.heading,right,diving,fish.motion.dive_power >= fish.motion.dive_counter_window)
 	fish.fight_anchor = fisher.position
 	var resistance = leverage*effort
-	if pressed and not fisher.vision_active and jerk_wait <= 0 and fisher.stamina >= jerk_cost:
-		jerk_wait = jerk_cooldown
-		fisher.stamina -= jerk_cost
-		var dive_counter = diving and rod_vertical > 0.3
-		spike = jerk_spike*(1.4 if dive_counter else 1)
-		if spool.slack < slack_tolerance:
-			fish.stamina = maxf(0,fish.stamina-jerk_damage*(1.4 if dive_counter else resistance))
+	if gesture_direction != RodGesture.Direction.NONE:
+		apply_directional_jerk(gesture_direction,outward,right,connected_line)
+		# Counter changes physical velocity/effort before this tick's spool accounting.
+		radial_speed = fish.velocity.dot(outward)
+		movement_load = alignment*fish.motion.propulsion*fish.acceleration*mass*propulsion_load_scale+directional_load+fish.motion.dive_power*35
 	var condition_before = spool.condition
 	spool.step(delta,fish.position.distance_to(neutral_tip),radial_speed,movement_load,input.retrieve,fisher.drag_setting,power_active,spike+turn_shock,rod_pull)
+	recovery_total += maxf(0,-spool.line_rate)*delta
 	if check_spooled(): return
 	tension = spool.tension
 	condition = spool.condition
@@ -359,3 +366,47 @@ func resistance_load(propulsion: float, effort: float, leverage: float, mass: fl
 
 func directional_wear_rate(drive: float, run: float, propulsion: float, leverage: float, pressure: float) -> float:
 	return directional_wear_scale*clampf((drive-0.6)/0.4,0,1)*clampf(run,0,1)*clampf(propulsion-0.9,0,1)*clampf(leverage,0,1)*clampf((pressure-spool.wear_start)/0.35,0,1)
+
+func jerk_contest(direction: int, heading: Vector3, outward: Vector3, right: Vector3, contact: float) -> Vector2:
+	# x = line spike, y = control fraction. Wrong direction always loads the line.
+	var side = heading.dot(right)
+	var matched = false
+	var committed = fish.motion.run_build > 0.3 and fish.motion.swim_drive > 0.55
+	if fish.motion.diving:
+		matched = direction == RodGesture.Direction.UP
+	elif committed:
+		if absf(side) > 0.25:
+			matched = (side < 0 and direction == RodGesture.Direction.RIGHT) or (side > 0 and direction == RodGesture.Direction.LEFT)
+		else: matched = direction == RodGesture.Direction.UP and heading.dot(outward) > 0.6
+	var late = clampf((fish.motion.run_age-early_run_window)/1.5,0,1)
+	if fish.motion.diving: late = clampf(fish.motion.dive_power/maxf(0.01,fish.motion.dive_counter_window),0,1)
+	var resistance = 25+fish.motion.propulsion*15+fish.motion.swim_drive*12+fish.motion.overdrive*30+fish.motion.dive_power*20
+	var force = jerk_counter_force*(0.65+0.35*rod_pull)
+	return Vector2((jerk_spike+late*late_jerk_spike)*contact,clampf(force/(resistance*(1+late*0.65)),0,1)*contact if matched else 0.0)
+
+func apply_directional_jerk(direction: int, outward: Vector3, right: Vector3, contact: float) -> void:
+	jerk_wait = jerk_cooldown
+	fisher.stamina = maxf(0,fisher.stamina-jerk_cost)
+	jerk_direction = direction
+	jerk_notice_time = 0.8
+	interruption = 0
+	var result = jerk_contest(direction,fish.heading,outward,right,contact)
+	spike = maxf(spike,result.x)
+	if result.y <= 0: return
+	var impulse_direction = Vector3.UP if direction == RodGesture.Direction.UP and fish.motion.diving else -outward
+	fish.velocity += impulse_direction*counter_impulse*result.y
+	fish.stamina = maxf(0,fish.stamina-jerk_damage*result.y)
+	if fish.motion.diving:
+		if result.y >= 0.65:
+			fish.motion.interrupt_dive()
+			fish.motion.interrupt_run()
+			interruption = 3
+		else: fish.motion.dive_power *= 1-result.y*0.5
+	else:
+		if result.y >= 0.65:
+			interruption = 2 if fish.motion.overdrive > 0 else 1
+			fish.motion.interrupt_run()
+		else:
+			fish.motion.overdrive *= 1-result.y*0.5
+			fish.motion.run_build *= 1-result.y*0.3
+	if interruption > 0: fisher.session.publish_fight_counter(fish,fisher,interruption)

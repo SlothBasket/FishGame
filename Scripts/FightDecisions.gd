@@ -57,15 +57,17 @@ static func fisher_choice(observed: Dictionary) -> int:
 	if observed.get("airborne",false): return FisherAction.LOWER
 	var strength = float(observed.get("strength",110))
 	var condition = float(observed.get("condition",1))
-	# Approximate risk tolerance, not the exact condition-dependent break threshold.
-	if float(observed.get("tension",0)) > strength*(0.88 if condition > 0.7 else 0.72): return FisherAction.LET_RUN
-	if observed.get("descending",false):
-		return FisherAction.UP if float(observed.get("descending_time",0)) < 0.65 else FisherAction.LET_RUN
+	var urgency = clampf((float(observed.get("line_out",0))/maxf(1,float(observed.get("capacity",150)))-0.5)/0.4,0,1)
+	# Risk tolerance rises near spool loss; even desperation still respects extreme load.
+	if float(observed.get("tension",0)) > strength*((0.88 if condition > 0.7 else 0.72)+urgency*0.5): return FisherAction.LET_RUN
+	if observed.get("descending",false): return FisherAction.UP
 	if float(observed.get("slack",0)) > 0.5: return FisherAction.REEL
 	var side = float(observed.get("side",0))
 	if side < -0.2: return FisherAction.RIGHT
 	if side > 0.2: return FisherAction.LEFT
-	return FisherAction.LET_RUN if float(observed.get("payout",0)) > 1 else FisherAction.REEL
+	if float(observed.get("payout",0)) > 1 or float(observed.get("outward_speed",0)) > 3:
+		return FisherAction.UP if urgency > 0.15 or float(observed.get("outward_speed",0)) > 5 else FisherAction.LET_RUN
+	return FisherAction.REEL
 
 static func fish_text(action: int) -> String:
 	return ["RUN","← LEFT","RIGHT →","↓ DIVE","↑ JUMP","REST"][clampi(action,0,5)]

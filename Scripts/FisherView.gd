@@ -3,7 +3,7 @@ extends Node3D
 ## Owner-only camera, rod/line art and HUD. Never moves a gameplay actor.
 @export var show_fight_coaching: bool = true
 @export var rod_mouse_response: float = 0.0035
-@export var rod_stick_response: float = 1.2
+@export var rod_stick_response: float = 5.0
 @export var fight_camera_response: float = 5
 var rod_horizontal: float = 0
 var rod_vertical: float = 0
@@ -23,6 +23,7 @@ var pitch: float = -0.2
 var alternate_view: bool = false
 var camera: Camera3D
 var boat: Node3D
+var jerk_label: Label3D
 var rod_mesh: MeshInstance3D
 var line_mesh: MeshInstance3D
 var rod_material: StandardMaterial3D
@@ -34,6 +35,11 @@ var previous_phase: int = -1
 var impact_age: float = 0
 
 func _ready() -> void:
+	jerk_label = Label3D.new()
+	jerk_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	jerk_label.font_size = 40
+	jerk_label.no_depth_test = true
+	add_child(jerk_label)
 	boat = Node3D.new()
 	add_child(boat)
 	Geometry.sphere(boat,"Hull",Vector3(0,-0.45,0),Vector3(1.4,0.6,2.8),Geometry.material("58473c"))
@@ -158,8 +164,9 @@ func sample() -> FisherIntent:
 	return intent
 
 func _process(delta: float) -> void:
-	if data.size() != 56: return
-	apply_look(GameControls.look()*rod_stick_response*delta)
+	if data.size() != 60: return
+	var stick = GameControls.look()
+	apply_look(stick*stick.length()*rod_stick_response*delta)
 	var origin = Vector3(data[0],data[1],data[2])
 	boat.position = origin
 	boat.rotation.y = data[3]
@@ -189,6 +196,8 @@ func _process(delta: float) -> void:
 	var hand = Vector3(data[42],data[43],data[44])
 	var tip = Vector3(data[39],data[40],data[41])
 	if not fighting: hand = origin+Vector3.UP*1.3; tip = hand+rod*3
+	jerk_label.position = tip+Vector3.UP*0.5
+	jerk_label.text = RodGesture.caption(roundi(data[58])) if data[59] > 0 else ""
 	var rod_points: Array = []
 	var control = hand+rod*1.5
 	for i in range(7):
@@ -204,12 +213,13 @@ func _process(delta: float) -> void:
 	rod_mesh.visible = not underwater or fighting
 	line_mesh.visible = fighting or roundi(data[4]) == FisherActor.State.BAIT
 	var phase_name = ["BAIT TAKEN — hold Q / RB when ready","HOOK: release near 75%","HOOK IMPACT","OPENING RUN — Power locked","FIGHT"][clampi(phase,0,4)] if fighting else BaitMotion.Kind.keys()[roundi(data[5])]
-	label.text = "FISHER — %s\nG cast/setup | X species | W/RT retrieve | Wheel/D-pad up/down reel\nMouse/right stick: rod during fight | [ ] / D-pad left/right: drag\nQ/RB hook/jerk | Shift/LB Power | V/LS Focus | C/RS bait view" % phase_name
+	label.text = "FISHER — %s\nG cast/setup | X species | W/RT retrieve | Wheel/D-pad up/down reel\nMouse/right stick: rod during fight | [ ] / D-pad left/right: drag\nQ/RB hook set; fast rod flick: jerk | Shift/LB Power | V/LS Focus | C/RS bait view" % phase_name
 	if not fighting and data[27] > 0: label.text += "\n"+FightSession.Outcome.keys()[roundi(data[27])]
 	var pressure = "SLACK — REEL!" if data[31] > 0.5 else "CRITICAL" if data[13] > data[45] else "HEAVY" if data[13] > data[45]*0.7 else "DRAG" if data[38] > 0 else "WORKING" if data[13] > data[45]*0.2 else "LIGHT"
 	var pull_direction = "LEFT" if data[49] < -0.3 else "RIGHT" if data[49] > 0.3 else "AWAY"
 	readings.text = "LINE %.1f / %.0f m\n%s | %s\nSlack %.1f m | Line rate %+.1f m/s\nTension %.0f | Drag limit %.0f\nSaved retrieve %d%% | %s" % [data[12],data[48],pressure,pull_direction if fighting else "READY",data[31],data[35],data[13],data[33],roundi(data[7]*5),"POWER" if data[15] > 0 else "NORMAL"]
 	if fighting:
+		readings.text += "\nREMAINING %.1f m | TAKE-UP %.1f m\nREEL RECOVERY %.1f m" % [maxf(0,data[48]-data[12]),data[56],data[57]]
 		readings.text += "\n"+("FISH TAKING LINE" if data[35] > 0.15 else "GAINING LINE" if data[35] < -0.15 else "HOLDING")
 		if data[51] > 0.2: readings.text += " | GOOD COUNTER"
 		elif absf(data[46]) > 0.4: readings.text += " | POOR ANGLE"
@@ -231,7 +241,7 @@ func _process(delta: float) -> void:
 	drag_value.text = "%d%%" % roundi(drag_setting*100)
 
 func apply_look(movement: Vector2) -> void:
-	if data.size() == 56 and roundi(data[4]) == FisherActor.State.FIGHT:
+	if data.size() == 60 and roundi(data[4]) == FisherActor.State.FIGHT:
 		if data[16] <= 0:
 			rod_horizontal = clampf(rod_horizontal+movement.x,-1,1)
 			rod_vertical = clampf(rod_vertical-movement.y,-1,1)

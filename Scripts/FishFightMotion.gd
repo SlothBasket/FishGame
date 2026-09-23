@@ -36,17 +36,23 @@ var overdrive_remaining: float = 0
 var overdrive_exhausted: bool = false
 var cadence_grade: int = 0 # 0 none, 1 GOOD, 2 FAST, 3 LATE
 var dive_hold: float = 0
+var run_age: float = 0
+var counter_recovery: float = 0
+@export var counter_recovery_duration: float = 1.1
 
 func step(delta: float, input: FishInput, heading: Vector3, speed_fraction: float, stamina: float, bottom: bool) -> void:
+	counter_recovery = maxf(0,counter_recovery-delta)
+	run_age = run_age+delta if input.boost and input.throttle > 0 and stamina > 1 else 0.0
 	if swim_drive <= overdrive_minimum_drive: overdrive_exhausted = true
 	if swim_drive >= overdrive_rearm_drive: overdrive_exhausted = false
 	stroke_age += delta
+	var had_overdrive = overdrive > 0
 	var axis = input.steering if absf(input.steering) > 0.25 else input.stroke_axis
 	var side = int(signf(axis)) if absf(axis) > 0.25 else 0
 	if input.throttle > 0 and side != 0 and side != last_side and stroke_age >= minimum_stroke_interval:
 		if last_side != 0:
 			var fast_boundary = ideal_stroke_interval-full_credit_window
-			if stroke_age < fast_boundary and swim_drive > overdrive_minimum_drive and not overdrive_exhausted:
+			if stroke_age < fast_boundary and swim_drive > overdrive_minimum_drive and not overdrive_exhausted and counter_recovery <= 0:
 				var excess = clampf((fast_boundary-stroke_age)/maxf(0.01,fast_boundary-minimum_stroke_interval),0,1)
 				overdrive = overdrive_max*(0.6+0.4*clampf(excess*fast_cadence_scaling,0,1))
 				fast_cost = 1+excess # Diminishing benefit; extreme shaking doubles cost at most.
@@ -59,13 +65,14 @@ func step(delta: float, input: FishInput, heading: Vector3, speed_fraction: floa
 				cadence_grade = 1 if error <= full_credit_window else 3
 		last_side = side
 		stroke_age = 0
+	if not had_overdrive and overdrive > 0: run_age = 0
 	overdrive_remaining = maxf(0,overdrive_remaining-delta)
 	if swim_drive <= overdrive_minimum_drive or overdrive_remaining <= 0:
 		overdrive = 0
 		fast_cost = 0
 	var passive_decay = drive_decay if stroke_age > decay_delay else 0.0
 	swim_drive = maxf(0,swim_drive-(passive_decay+overdrive_consumption*fast_cost)*delta)
-	run_build = move_toward(run_build,1 if input.boost and input.throttle > 0 and stamina > 0 else 0,delta/maxf(0.05,run_build_time))
+	run_build = move_toward(run_build,1 if input.boost and input.throttle > 0 and stamina > 0 and counter_recovery <= 0 else 0,delta/maxf(0.05,run_build_time))
 	if not input.boost: dive_blocked = false
 	if not input.boost or stamina <= 1 or bottom:
 		diving = false
@@ -80,10 +87,17 @@ func step(delta: float, input: FishInput, heading: Vector3, speed_fraction: floa
 	propulsion = lerpf(propulsion,target,1-exp(-delta/0.25))
 
 func multiplier() -> float:
-	return 1+0.22*swim_drive/maxf(0.01,sustainable_max)+overdrive
+	return (1+0.22*swim_drive/maxf(0.01,sustainable_max)+overdrive)*(0.65 if counter_recovery > 0 else 1.0)
 
 func interrupt_dive() -> void:
 	diving = false
 	dive_power = 0
 	dive_hold = 0
 	dive_blocked = true # Require a new sprint commitment, not repeated instant dives.
+
+func interrupt_run() -> void:
+	overdrive = 0
+	overdrive_remaining = 0
+	run_build = 0
+	propulsion *= 0.5
+	counter_recovery = counter_recovery_duration

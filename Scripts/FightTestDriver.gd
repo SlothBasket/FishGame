@@ -12,6 +12,10 @@ var vision_remaining: float = 0
 var vision_cooldown: float = 0
 var drag_wait: float = 0
 var selected_drag: float = 0.4
+var gesture_phase: float = -1
+var gesture_axis: Vector2 = Vector2.ZERO
+var gesture_wait: float = 0
+var pump_clock: float = 0
 
 func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 	clock += delta
@@ -89,10 +93,48 @@ func fisher_input(actor: FisherActor, delta: float) -> FisherIntent:
 			input.drag = selected_drag
 			input.retrieve = 0.8 if action == FightDecisions.FisherAction.REEL else 0.25 if action in [FightDecisions.FisherAction.LEFT,FightDecisions.FisherAction.RIGHT] else 0
 			input.power = action == FightDecisions.FisherAction.REEL and float(seen.get("outward_speed",10)) < 1.5 and float(seen.get("slack",1)) < 0.5 and float(seen.get("tension",110)) < 55 and actor.stamina > 30
-			input.jerk = action == FightDecisions.FisherAction.UP and fight.jerk_wait <= 0
+			# Active jerks only use the normal bounded rod inputs; the hook button is idle.
+			input.jerk = false
+			var urgency = clampf((float(seen.get("line_out",0))/maxf(1,float(seen.get("capacity",150)))-0.5)/0.4,0,1)
+			var running = bool(seen.get("descending",false)) or float(seen.get("outward_speed",0)) > 3 or float(seen.get("payout",0)) > 2
+			var risk = float(seen.get("tension",0))/maxf(1,float(seen.get("strength",110)))
+			if running and urgency > 0 and float(seen.get("condition",1)) > 0.35:
+				input.drag = maxf(input.drag,lerpf(0.4,0.7,urgency))
+			gesture_wait = maxf(0,gesture_wait-delta)
+			if gesture_phase < 0 and gesture_wait <= 0 and running and action != FightDecisions.FisherAction.LET_RUN and not actor.vision_active and actor.stamina >= fight.jerk_cost:
+				gesture_axis = Vector2.UP if bool(seen.get("descending",false)) else Vector2.RIGHT if float(seen.get("side",0)) < -0.25 else Vector2.LEFT if float(seen.get("side",0)) > 0.25 else Vector2.UP
+				# Rod Y is up-positive (unlike screen-space Vector2.UP).
+				if gesture_axis == Vector2.UP: gesture_axis = Vector2(0,1)
+				gesture_phase = 0
+				gesture_wait = fight.jerk_cooldown+lerpf(1.0,0.25,fight.fisher_skill)
+			if gesture_phase >= 0:
+				gesture_phase += delta
+				var prepare = lerpf(0.65,0.45,fight.fisher_skill)
+				var rod = -gesture_axis*0.35 if gesture_phase < prepare else gesture_axis
+				input.rod_horizontal = rod.x
+				input.rod_vertical = rod.y
+				input.retrieve = 0
+				input.power = false
+				if gesture_phase > prepare+0.4: gesture_phase = -1
+				pump_clock = 0
+			elif not running and risk < 0.72 and not actor.vision_active:
+				# Slow load, short hold, lower while reeling; deliberately below gesture speed.
+				pump_clock = fmod(pump_clock+delta,3.8)
+				input.rod_horizontal = 0
+				if pump_clock < 1.6:
+					input.rod_vertical = pump_clock/1.6
+					input.retrieve = 0
+				elif pump_clock < 2.0:
+					input.rod_vertical = 1
+					input.retrieve = 0
+				else:
+					input.rod_vertical = maxf(0,1-(pump_clock-2.0)/1.4)
+					input.retrieve = lerpf(0.65,1,fight.fisher_skill)
+				input.power = false
+			else: pump_clock = 0
 			vision_cooldown = maxf(0,vision_cooldown-delta)
 			vision_remaining = maxf(0,vision_remaining-delta)
-			if vision_cooldown <= 0 and actor.focus > 55 and (fight.perception.uncertainty or (fight.perception.age() > 0.3 and float(seen.get("tension",0)) > 35) or float(seen.get("depth",0)) > 8 or float(seen.get("payout",0)) > 2 or (fight.fisher_skill < 0.75 and sin(clock) > 0.95)):
+			if gesture_phase < 0 and gesture_wait < 0.3 and vision_cooldown <= 0 and actor.focus > 55 and (fight.perception.uncertainty or (fight.perception.age() > 0.3 and float(seen.get("tension",0)) > 35) or float(seen.get("depth",0)) > 8 or float(seen.get("payout",0)) > 2 or (fight.fisher_skill < 0.75 and sin(clock) > 0.95)):
 				vision_remaining = lerpf(1.6,1.0,fight.fisher_skill)
 				vision_cooldown = lerpf(11,6,fight.fisher_skill)
 			input.vision = vision_remaining > 0

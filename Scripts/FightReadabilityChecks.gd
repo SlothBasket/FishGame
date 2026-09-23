@@ -74,6 +74,7 @@ static func run() -> bool:
 	ok = check(perception.observation.is_empty(),"Fisher cannot act on a fresh observation immediately") and ok
 	perception.tick(0.31,fight)
 	ok = check(not perception.observation.is_empty() and perception.age() >= 0.3 and not perception.observation.has("stamina") and not perception.observation.has("drive") and not perception.observation.has("dive_power"),"Delivered perception is delayed and contains no hidden fish resources") and ok
+	ok = gesture_and_pump_checks(fight) and ok
 	print("FORCE RANGE hard=",hard," tension=",threatened.tension," exceptional=",exceptional.tension," fresh risk=",exceptional.break_threshold())
 	fight.free()
 	fish.free()
@@ -82,3 +83,62 @@ static func run() -> bool:
 static func check(value: bool, description: String) -> bool:
 	print("READABILITY ","PASS " if value else "FAIL ",description)
 	return value
+
+static func gesture_and_pump_checks(f: FightSession) -> bool:
+	var ok = true
+	var g = RodGesture.new()
+	g.step(0.016,Vector2.ZERO,false)
+	var detected = 0
+	for i in range(60): detected = maxi(detected,g.step(1.0/60,Vector2(i/60.0,0),true))
+	ok = check(detected == 0,"Slow pump/reposition never jerks") and ok
+	for axis in [Vector2.LEFT,Vector2.RIGHT,Vector2(0,1)]:
+		g = RodGesture.new()
+		g.step(0.016,Vector2.ZERO,false)
+		detected = g.step(0.15,axis*0.8,true)
+		ok = check(detected == (1 if axis.x < 0 else 2 if axis.x > 0 else 3),"Rapid rod gesture registers correct direction") and ok
+	f.fish.motion.run_build = 1
+	f.fish.motion.swim_drive = 1
+	f.fish.motion.propulsion = 1.6
+	f.fish.motion.overdrive = 0.25
+	f.fish.motion.run_age = 0.4
+	f.rod_pull = 1
+	var heading = Vector3(-0.7,0,-0.7).normalized()
+	var correct = f.jerk_contest(RodGesture.Direction.RIGHT,heading,Vector3.FORWARD,Vector3.RIGHT,1)
+	var wrong = f.jerk_contest(RodGesture.Direction.LEFT,heading,Vector3.FORWARD,Vector3.RIGHT,1)
+	ok = check(correct.y >= 0.65 and wrong.y == 0 and wrong.x > 0,"Matching early lateral jerk controls; wrong jerk only loads") and ok
+	f.fish.motion.run_age = 4
+	var late = f.jerk_contest(RodGesture.Direction.RIGHT,heading,Vector3.FORWARD,Vector3.RIGHT,1)
+	ok = check(late.x > correct.x*2 and late.y < correct.y,"Late counters carry substantially more risk and less control") and ok
+	f.fish.motion.diving = true
+	f.fish.motion.dive_power = 0.1
+	ok = check(f.jerk_contest(RodGesture.Direction.UP,Vector3.DOWN,Vector3.FORWARD,Vector3.RIGHT,1).y >= 0.65,"Early Dive responds to UP jerk") and ok
+	f.fish.motion.diving = false
+	f.fish.motion.run_age = 0
+	ok = check(f.jerk_contest(RodGesture.Direction.UP,Vector3.FORWARD,Vector3.FORWARD,Vector3.RIGHT,1).y >= 0.65 and f.jerk_contest(RodGesture.Direction.LEFT,Vector3.FORWARD,Vector3.FORWARD,Vector3.RIGHT,1).y == 0,"Straight run requires UP rather than arbitrary lateral jerk") and ok
+	ok = check(f.jerk_contest(RodGesture.Direction.UP,Vector3.FORWARD,Vector3.FORWARD,Vector3.RIGHT,0) == Vector2.ZERO,"Slack defeats jerk control") and ok
+	var line = FightLine.new()
+	line.line_out = 50
+	line.step(0.1,50,0,10,0,0.4,false,0,1)
+	ok = check(is_equal_approx(line.line_out,50) and line.rod_take_up == 2,"Pump creates temporary take-up, not permanent recovery") and ok
+	line.step(0.1,50,0,10,0,0.4,false,0,0)
+	ok = check(is_equal_approx(line.line_out,50) and line.rod_take_up == 0,"Lowering without reel returns temporary span") and ok
+	# Integrate a yielding fish under measured line force, rather than granting a teleport.
+	var distance: float = 50
+	var speed: float = 0
+	for i in range(90):
+		line.step(1.0/60,distance,speed,10,0,0.4,false,0,1)
+		speed += (3-line.tension/3.2-speed*2)/60
+		distance += speed/60
+	var before = line.line_out
+	for i in range(90):
+		line.step(1.0/60,distance,0,10,1,0.4,false,0,maxf(0,1-i/60.0))
+	ok = check(before-line.line_out > 1 and line.line_out >= distance-line.maximum_extension,"Controlled pump/reel recovers meaningful metres within real separation") and ok
+	line = FightLine.new()
+	line.line_out = 50
+	line.step(0.1,51,10,200,1,0.4,false,0,1)
+	ok = check(line.line_out >= 50,"Reeling cannot win free line against overpowering payout") and ok
+	var observed = {"tension":100,"strength":110,"condition":1,"outward_speed":7,"payout":5,"line_out":40,"capacity":150}
+	ok = check(FightDecisions.fisher_choice(observed) == FightDecisions.FisherAction.LET_RUN,"Early spool allows conservative response") and ok
+	observed.line_out = 140
+	ok = check(FightDecisions.fisher_choice(observed) == FightDecisions.FisherAction.UP,"Near spool loss prioritizes active counter") and ok
+	return ok

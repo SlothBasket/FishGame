@@ -1,3 +1,5 @@
+> Latest rod-gesture/pump pass: [ROD_GESTURE_GUIDE.md](ROD_GESTURE_GUIDE.md) gives **Godot editor launch arguments**, directional gesture controls, interruption rules, pump audit, 88-actor baseline and current 60-float fisherman snapshots. Supersedes older button-jerk and population descriptions below.
+
 > Current physical-cue/AI pass: [FIGHT_READABILITY_GUIDE.md](FIGHT_READABILITY_GUIDE.md) supersedes historical defaults below: **150 m spool, 42-float fish snapshots**, physical-pressure cues, skill overrides, visible spectator equipment and powered directional wear.
 
 > Latest escape/AI rules: [ESCAPE_BALANCE_GUIDE.md](ESCAPE_BALANCE_GUIDE.md) documents powered resistance load, measured line damage and delayed fisherman perception. CHARGE BOAT is removed; older policy descriptions below are historical. Current snapshots: 41 fish / 56 fisherman floats.

@@ -23,6 +23,10 @@ func show_result(result: int, fish_role: bool) -> void:
 	label.text = (fish_messages if fish_role else fisher_messages)[clampi(result,0,6)]
 	remaining = duration
 	label.show()
+func show_counter(kind: int) -> void:
+	label.text = ["","RUN STOPPED!","OVERDRIVE BROKEN!","DIVE STOPPED!"][clampi(kind,0,3)]
+	remaining = 1.0
+	label.show()
 func _process(delta: float) -> void:
 	remaining = maxf(0,remaining-delta)
 	label.visible = remaining > 0

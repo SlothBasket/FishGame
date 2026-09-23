@@ -43,6 +43,6 @@ func capture(f: FightSession) -> Dictionary:
 	return {"side":side,"descending":f.fish.velocity.y < -3,"airborne":f.fish.position.y > f.fish.water_height,
 		"outward_speed":f.fish.velocity.dot(outward),"tension":f.tension,"condition":f.spool.condition,
 		"slack":f.spool.slack,"payout":f.spool.payout,"strength":f.spool.strength,
-		"depth":snappedf(f.fish.water_height-f.fish.position.y,4),"drag":f.fisher.drag_setting,"distance":f.spool.distance}
+		"depth":snappedf(f.fish.water_height-f.fish.position.y,4),"line_out":f.spool.line_out,"capacity":f.spool.maximum_line_out,"drag":f.fisher.drag_setting,"distance":f.spool.distance}
 func age() -> float:
 	return clock-float(observation.get("sample_time",clock))

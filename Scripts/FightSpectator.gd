@@ -9,6 +9,7 @@ var boat: Node3D
 var rod_mesh: MeshInstance3D
 var line_mesh: MeshInstance3D
 var art_material: StandardMaterial3D
+var jerk_label: Label3D
 var damage_label: Label
 var yaw: float = 0
 var pitch: float = -0.3
@@ -19,6 +20,11 @@ func _ready() -> void:
 	camera.rotation = Vector3(pitch,yaw,0)
 	camera.make_current()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	jerk_label = Label3D.new()
+	jerk_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	jerk_label.no_depth_test = true
+	jerk_label.font_size = 48
+	add_child(jerk_label)
 	boat = Node3D.new()
 	add_child(boat)
 	Geometry.sphere(boat,"Hull",Vector3(0,-0.35,0),Vector3(1.8,0.7,3.4),Geometry.material("785d40"))
@@ -40,7 +46,7 @@ func _ready() -> void:
 	debug.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	damage_label = Label.new()
 	layer.add_child(damage_label)
-	damage_label.position = Vector2(24,225)
+	damage_label.position = Vector2(24,275)
 	damage_label.add_theme_font_size_override("font_size",24)
 	damage_label.modulate = Color(1,0.35,0.18)
 	damage_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -62,6 +68,8 @@ func _process(delta: float) -> void:
 	boat.position = fisher.position
 	boat.rotation.y = fisher.boat_yaw
 	draw_equipment(fisher,fish)
+	jerk_label.text = RodGesture.caption(fight.jerk_direction) if is_instance_valid(fight) and fight.jerk_notice_time > 0 else ""
+	jerk_label.position = fight.rod_tip+Vector3.UP if is_instance_valid(fight) else fisher.position
 	damage_label.text = "LINE DAMAGE -%.2f%%/s" % (fight.line_damage_rate*100) if is_instance_valid(fight) and fight.line_damage_rate > 0.00001 else ""
 	if mode == 2:
 		camera.rotation = Vector3(pitch,yaw,0)
@@ -76,6 +84,7 @@ func _process(delta: float) -> void:
 	debug.text = "AI vs AI — OBSERVER ONLY\n1 Fisher | 2 Fish | 3 Overview (WASD, Q/E, RMB look)\nView: %s | Participants: %d\nDrive %.0f%% %s | Stamina %.0f / %.0f" % [["Fisher","Fish","Overview"][mode],session.players.size(),fish.motion.swim_drive*100,"OVERDRIVE" if fish.motion.overdrive > 0 else "",fish.stamina,fish.endurance]
 	if is_instance_valid(fight):
 		debug.text += "\nFish: %s | Fisher: %s\n%s | Line %.1f / %.0f m | Tension %.1f | Drag %.0f%%" % [FightDecisions.fish_text(fight.fish_action),FightDecisions.fisher_text(fight.fisher_action),FightSession.Phase.keys()[fight.phase],fight.spool.line_out,fight.spool.maximum_line_out,fight.tension,fisher.drag_setting*100]
+		debug.text += "\nREMAINING %.1f m | TAKE-UP %.1f m | REEL RECOVERY %.1f m" % [maxf(0,fight.spool.maximum_line_out-fight.spool.line_out),fight.spool.rod_take_up,fight.recovery_total]
 		var age = fight.perception.age()
 		var perceived = "CURRENT" if age < 0.18 else "%.2fs OLD" % age
 		debug.text += "\nLINE CONDITION: %.1f%%\nVISION: %s | FOCUS: %.0f%% | AI PERCEPTION: %s\nFish Skill: %.0f%% | Fisher Skill: %.0f%%" % [fight.spool.condition*100,"ON" if fisher.vision_active else "OFF",fisher.focus/fisher.focus_capacity*100,perceived,fight.fish_skill*100,fight.fisher_skill*100]

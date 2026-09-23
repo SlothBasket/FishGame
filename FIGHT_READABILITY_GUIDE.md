@@ -1,3 +1,5 @@
+> Latest rod-gesture/pump pass: [ROD_GESTURE_GUIDE.md](ROD_GESTURE_GUIDE.md) gives **Godot editor launch arguments**, directional gesture controls, interruption rules, pump audit, 88-actor baseline and current 60-float fisherman snapshots. Supersedes older button-jerk and population descriptions below.
+
 # Physical fight cues and spectator teaching pass
 
 This is the current reference for this pass; older balance guides record earlier defaults. Core pumping, payout, line risk, Drive, run/dive, stamina and authoritative simulation remain in place. Default spool capacity is now **150 m**, measured in full 3D.

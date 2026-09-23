@@ -210,7 +210,7 @@ func _ready() -> void:
 	var population = get_tree().get_nodes_in_group("bait").size()
 	get_tree().get_nodes_in_group("bait")[0].try_bite(fish)
 	await frames(75)
-	check(population == 142 and get_tree().get_nodes_in_group("bait").size() == population, "Expanded bait and gull population replenishes")
+	check(population == 88 and get_tree().get_nodes_in_group("bait").size() == population, "Expanded bait and gull population replenishes")
 	var mid_squid = 0
 	var pod_members = 0
 	var only_minnows = true
