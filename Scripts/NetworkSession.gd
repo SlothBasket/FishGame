@@ -10,6 +10,7 @@ var pending_peers: Dictionary = {}
 var fisher_view: FisherView
 var ai_mode: String = ""
 @export var show_test_bait_markers: bool = true
+var smoke_fish_driver = FightTestDriver.new()
 var fight_smoke: bool = false
 var smoke_stage: int = 0
 const BAIT_STRIDE = 17
@@ -230,7 +231,7 @@ func fish_intent(sequence: int, axes: PackedFloat32Array, flags: int) -> void:
 	var record: Dictionary = players[sender]
 	if record.role != ROLE_FISH: return
 	if sequence < 0 or sequence > 2147483647 or sequence <= record.sequence: return
-	if axes.size() != 6 or flags < 0 or flags > 7: return
+	if axes.size() != 7 or flags < 0 or flags > 7: return
 	for number in axes:
 		if not is_finite(number): return
 	record.tokens = minf(4,record.tokens+(clock-record.token_time)*60)
@@ -243,6 +244,7 @@ func fish_intent(sequence: int, axes: PackedFloat32Array, flags: int) -> void:
 	record.received = clock
 	var intent = FishInput.new(axes[0],axes[1],axes[2],aim,flags & 1 != 0,flags & 2 != 0)
 	intent.cancel_bite = flags & 4 != 0
+	intent.stroke_axis = clampf(axes[6],-1,1)
 	record.entity.command = intent
 
 func _physics_process(delta: float) -> void:
@@ -264,7 +266,7 @@ func _physics_process(delta: float) -> void:
 			if fight_smoke:
 				input.species = BaitMotion.Kind.MINNOW
 				input.cast_serial = 1
-				if fisher_view.data.size() == 52:
+				if fisher_view.data.size() == 55:
 					input.jerk = roundi(fisher_view.data[10]) == FightSession.Phase.CANDIDATE or (roundi(fisher_view.data[10]) == FightSession.Phase.METER and fisher_view.data[11] < 0.72)
 			if hosting: players[owned_id].entity.command = input
 			elif input_clock <= 0:
@@ -272,12 +274,13 @@ func _physics_process(delta: float) -> void:
 				fisher_intent.rpc_id(1,input_sequence,input.numbers(),input.flags())
 		else:
 			var intent = local_fish.read_local_input()
+			if fight_smoke and hosting: intent = smoke_fish_driver.fish_input(local_fish,self,delta)
 			if smoke: intent = FishInput.new(1,0,0,Vector3.FORWARD if hosting else Vector3.RIGHT)
 			if hosting: local_fish.command = intent
 			elif input_clock <= 0:
 				input_sequence += 1
 				var aim = intent.aim_direction
-				fish_intent.rpc_id(1,input_sequence,PackedFloat32Array([intent.throttle,intent.steering,intent.vertical,aim.x,aim.y,aim.z]),int(intent.boost)|int(intent.bite_held)<<1|int(intent.cancel_bite)<<2)
+				fish_intent.rpc_id(1,input_sequence,PackedFloat32Array([intent.throttle,intent.steering,intent.vertical,aim.x,aim.y,aim.z,intent.stroke_axis]),int(intent.boost)|int(intent.bite_held)<<1|int(intent.cancel_bite)<<2)
 		if input_clock <= 0: input_clock = 1.0/input_hz
 
 	if hosting:
@@ -324,13 +327,13 @@ func fish_state(actor: FishPlayer) -> PackedFloat32Array:
 	var h = actor.heading
 	var v = actor.velocity
 	var f = actor.feeding
-	return PackedFloat32Array([p.x,p.y,p.z,h.x,h.y,h.z,v.x,v.y,v.z,f.food,f.bait_eaten,f._charge_time,f._dash_remaining,int(actor.airborne),int(actor.boosting),f.cooldown_remaining,f.bite_flash,f.grace_remaining,actor.stamina,actor.line_force.x,actor.line_force.y,actor.line_force.z,actor.endurance,int(actor.fight_active),actor.fight_pressure,actor.fight_gain,actor.fight_leverage,actor.fight_counter,int(actor.fight_slack)])
+	return PackedFloat32Array([p.x,p.y,p.z,h.x,h.y,h.z,v.x,v.y,v.z,f.food,f.bait_eaten,f._charge_time,f._dash_remaining,int(actor.airborne),int(actor.boosting),f.cooldown_remaining,f.bite_flash,f.grace_remaining,actor.stamina,actor.line_force.x,actor.line_force.y,actor.line_force.z,actor.endurance,int(actor.fight_active),actor.fight_pressure,actor.fight_gain,actor.fight_leverage,actor.fight_counter,int(actor.fight_slack),actor.motion.swim_drive,actor.motion.overdrive,actor.motion.run_build,actor.motion.dive_power,int(actor.motion.diving),actor.fight_best_move,actor.fight_anchor.x,actor.fight_anchor.y,actor.fight_anchor.z,actor.fight_roll])
 
 @rpc("authority","call_remote","unreliable_ordered",2)
 func fish_snapshot(peer: int, state: PackedFloat32Array) -> void:
-	if hosting or closed or not players.has(peer) or state.size() != 29: return
+	if hosting or closed or not players.has(peer) or state.size() != 39: return
 	var actor: FishPlayer = players[peer].entity
-	track("f%d" % peer,actor,Vector3(state[0],state[1],state[2]),FishInput.angles(Vector3(state[3],state[4],state[5])),1.0/fish_snapshot_hz)
+	track("f%d" % peer,actor,Vector3(state[0],state[1],state[2]),FishInput.angles(Vector3(state[3],state[4],state[5])),1.0/fish_snapshot_hz,state[38])
 	actor.heading = Vector3(state[3],state[4],state[5])
 	actor.velocity = Vector3(state[6],state[7],state[8])
 	actor.feeding.food = roundi(state[9])
@@ -355,6 +358,14 @@ func fish_snapshot(peer: int, state: PackedFloat32Array) -> void:
 	actor.fight_leverage = state[26]
 	actor.fight_counter = state[27]
 	actor.fight_slack = state[28] > 0
+	actor.motion.swim_drive = state[29]
+	actor.motion.overdrive = state[30]
+	actor.motion.run_build = state[31]
+	actor.motion.dive_power = state[32]
+	actor.motion.diving = state[33] > 0
+	actor.fight_best_move = roundi(state[34])
+	actor.fight_anchor = Vector3(state[35],state[36],state[37])
+	actor.fight_roll = state[38]
 	actor.line_force = Vector3(state[19],state[20],state[21])
 	actor.update_growth_collision()
 
@@ -527,11 +538,11 @@ func fisher_state(actor: FisherActor) -> PackedFloat32Array:
 		f.rod_tip.x if has_fight else 0,f.rod_tip.y if has_fight else 0,f.rod_tip.z if has_fight else 0,f.rod_hand.x if has_fight else 0,f.rod_hand.y if has_fight else 0,f.rod_hand.z if has_fight else 0,f.spool.strength if has_fight else 110,f.rod_horizontal if has_fight else 0,f.rod_vertical if has_fight else 0,
 		f.spool.maximum_line_out if has_fight else FightLine.DEFAULT_CAPACITY,
 		v.normalized().dot(BaitMotion.horizontal(p-actor.position).cross(Vector3.UP)) if has_fight and v.length() > 0.3 else 0,
-		f.tension/maxf(1,f.spool.break_threshold()) if has_fight else 0,f.counter_pressure if has_fight else 0])
+		f.tension/maxf(1,f.spool.break_threshold()) if has_fight else 0,f.counter_pressure if has_fight else 0,f.best_counter if has_fight else 0,f.fish.motion.dive_power if has_fight else 0,int(f.fish.motion.diving) if has_fight else 0])
 
 @rpc("authority","call_remote","unreliable_ordered",2)
 func fisher_snapshot(peer: int, state: PackedFloat32Array) -> void:
-	if hosting or closed or state.size() != 52 or not players.has(peer) or players[peer].role != ROLE_FISHER: return
+	if hosting or closed or state.size() != 55 or not players.has(peer) or players[peer].role != ROLE_FISHER: return
 	players[peer].entity.position = Vector3(state[0],state[1],state[2])
 	if peer == multiplayer.get_unique_id() and fisher_view != null:
 		if fight_smoke and (fisher_view.data.is_empty() or fisher_view.data[10] != state[10]): print("CLIENT FIGHT PHASE ",state[10]," fields=",state.size())
@@ -582,7 +593,7 @@ func fight_smoke_tick() -> void:
 			smoke_connected = clock
 		if smoke_stage == 4 and clock-smoke_connected > 0.4: get_tree().quit(0)
 	else:
-		if fisher_view != null and fisher_view.data.size() == 52:
+		if fisher_view != null and fisher_view.data.size() == 55:
 			if roundi(fisher_view.data[10]) == FightSession.Phase.FIGHT and not smoke_saw_two:
 				smoke_saw_two = true
 				print("FIGHT SMOKE PASS replicated fight/HUD state")

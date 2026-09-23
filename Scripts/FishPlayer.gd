@@ -40,6 +40,15 @@ extends CharacterBody3D
 var airborne: bool = false
 var natural_breach: bool = false
 var breach_intent_time: float = 0
+@export var minimum_mouse_stroke: float = 6
+@export var hooked_sway_camera_scale: float = 0.45
+@export var show_fight_coaching: bool = true
+var motion = FishFightMotion.new()
+var mouse_stroke_axis: float = 0
+var mouse_stroke_distance: float = 0
+var fight_best_move: int = 0
+var fight_anchor: Vector3
+var fight_roll: float = 0
 var fight_active: bool = false
 var fight_pressure: float = 0
 var fight_gain: float = 0
@@ -97,6 +106,10 @@ func _ready() -> void:
 	$CollisionShape3D.shape = $CollisionShape3D.shape.duplicate()
 	_body_radius = $CollisionShape3D.shape.radius
 	feeding = FishFeeding.new(self)
+	if locally_owned:
+		var references = FishFightReferences.new()
+		references.fish = self
+		add_child(references)
 	update_growth_collision()
 	$CameraPivot/SpringArm3D.add_excluded_object(get_rid())
 	GameControls.install()
@@ -118,7 +131,12 @@ func _unhandled_input(event: InputEvent) -> void:
 			suppress_bite_until_release = true
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		_camera_yaw -= event.relative.x * mouse_sensitivity
+		if fight_active:
+			mouse_stroke_distance += event.relative.x
+			if absf(mouse_stroke_distance) >= minimum_mouse_stroke:
+				mouse_stroke_axis = signf(mouse_stroke_distance)
+				mouse_stroke_distance = 0
+		_camera_yaw -= event.relative.x * mouse_sensitivity * (hooked_sway_camera_scale if fight_active else 1.0)
 		_camera_pitch = clampf(_camera_pitch - event.relative.y * mouse_sensitivity, -1.35, 1.35)
 		pivot.rotation = Vector3(_camera_pitch, _camera_yaw, 0.0)
 	if not networked and not is_instance_valid(fight) and event.is_action_pressed("reset"):
@@ -134,6 +152,7 @@ func read_local_input() -> FishInput:
 	var intent = FishInput.new(Input.get_axis("back", "forward"), Input.get_axis("left", "right"),
 		Input.get_axis("dive", "rise"), -pivot.global_basis.z, Input.is_action_pressed("boost"),
 		Input.is_action_pressed("bite") and not suppress_bite_until_release)
+	intent.stroke_axis = mouse_stroke_axis if fight_active else 0
 	# Aim correction is useful for the bite; regular swimming follows camera direction.
 	if feeding.is_charging:
 		intent.aim_direction = aim_through_crosshair()
@@ -164,10 +183,12 @@ func _physics_process(delta: float) -> void:
 	if not intent.boost: sprint_exhausted = false
 	if stamina < 1: sprint_exhausted = true
 	if not free_bursts and (sprint_exhausted or sprint_locked): intent.boost = false
+	if in_fight: motion.step(delta,intent,heading,velocity.length()/maxf(0.1,effective_swim_speed()),stamina,touching_bottom())
 	var sprinting = intent.boost and intent.throttle > 0 and not free_bursts
 	if in_fight and sprinting: fatigue(sprint_endurance_drain*delta)
 	var regeneration = stamina_regen*(fight_regen_multiplier*fight_regen_scale if in_fight else 1.0)
 	stamina = clampf(stamina+(-sprint_drain if sprinting else regeneration)*delta,0,endurance if in_fight else stamina_capacity)
+	if in_fight and motion.diving: stamina = maxf(0,stamina-motion.dive_stamina_drain*delta)
 	var bite_start = global_position
 	feeding.update_attack(intent, delta)
 	boosting = intent.boost and intent.throttle > 0.0 and not feeding.is_charging and not feeding.is_dashing()
@@ -184,10 +205,11 @@ func _physics_process(delta: float) -> void:
 		heading = FishInput.steer_heading(heading, intent, forward_turn_rate, pitch_turn_rate,
 			manual_steering_strength, idle_pivot_multiplier, delta)
 		var swim = FishInput.new(intent.throttle, intent.steering, intent.vertical, intent.aim_direction, boosting)
-		var speed = effective_swim_speed() * (charge_swim_multiplier if feeding.is_charging else 1.0)
+		var speed = effective_swim_speed() * (motion.multiplier() if in_fight else 1.0) * (charge_swim_multiplier if feeding.is_charging else 1.0)
 		var response = charge_response_multiplier if feeding.is_charging else 1.0
 		velocity = FishInput.next_velocity(velocity, heading, swim, speed, fight_boost_multiplier(),
-			reverse_speed_multiplier, acceleration * response * (fight_boost_multiplier() if in_fight and boosting else 1.0), reverse_acceleration * response, water_drag * response, vertical_speed_multiplier, delta)
+			reverse_speed_multiplier, acceleration * response * (motion.multiplier() if in_fight else 1.0) * (fight_boost_multiplier() if in_fight and boosting else 1.0), reverse_acceleration * response, water_drag * response, vertical_speed_multiplier, delta)
+		if in_fight and motion.diving: velocity.y -= motion.dive_acceleration*motion.dive_power*delta
 		apply_line_force(delta)
 		if in_fight: fight.constrain_velocity(delta)
 		move_and_slide()
@@ -201,7 +223,7 @@ func _physics_process(delta: float) -> void:
 		feeding.sweep_bite(bite_start, global_position)
 	# Heading, not velocity, owns facing. Backpedaling cannot flip the model.
 	var facing = FishInput.angles(heading)
-	visual.rotation = Vector3(facing.x, facing.y, 0.0)
+	visual.rotation = Vector3(facing.x, facing.y, fight_roll if fight_active else 0.0)
 	visual.scale = Vector3.ONE * size_multiplier()
 	visual.swim_intensity = velocity.length() / maxf(0.1, swim_speed)
 	visual.charge_intensity = feeding.charge_fraction()
@@ -266,7 +288,7 @@ func fatigue(amount: float) -> void:
 
 func fight_boost_multiplier() -> float:
 	# Only fight sprint output fades; ordinary swim speed and turns remain available.
-	return lerpf(1.25,boost_multiplier,endurance/stamina_capacity) if is_instance_valid(fight) else boost_multiplier
+	return 1+(lerpf(1.25,boost_multiplier,endurance/stamina_capacity)-1)*motion.run_build*(0.65+0.35*motion.swim_drive/maxf(0.01,motion.sustainable_max)) if is_instance_valid(fight) else boost_multiplier
 
 func apply_line_force(delta: float) -> void:
 	# Measure fish-driven upward intent before adding any line acceleration.
@@ -279,3 +301,9 @@ func apply_line_force(delta: float) -> void:
 	velocity += line_force*delta
 	var added_excess = maxf(0,velocity.dot(inward)-maxf(before,fight.maximum_pull_speed))
 	velocity -= inward*added_excess
+
+func touching_bottom() -> bool:
+	# Fish use floating CharacterBody mode, so is_on_floor() is not sufficient.
+	for i in range(get_slide_collision_count()):
+		if get_slide_collision(i).get_normal().y > 0.55: return true
+	return false

@@ -1,6 +1,7 @@
 class_name FisherView
 extends Node3D
 ## Owner-only camera, rod/line art and HUD. Never moves a gameplay actor.
+@export var show_fight_coaching: bool = true
 @export var rod_mouse_response: float = 0.0035
 @export var rod_stick_response: float = 1.2
 @export var fight_camera_response: float = 5
@@ -156,7 +157,7 @@ func sample() -> FisherIntent:
 	return intent
 
 func _process(delta: float) -> void:
-	if data.size() != 52: return
+	if data.size() != 55: return
 	apply_look(GameControls.look()*rod_stick_response*delta)
 	var origin = Vector3(data[0],data[1],data[2])
 	boat.position = origin
@@ -209,7 +210,10 @@ func _process(delta: float) -> void:
 	readings.text = "LINE %.1f / %.0f m\n%s | %s\nSlack %.1f m | Line rate %+.1f m/s\nTension %.0f | Drag limit %.0f\nSaved retrieve %d%% | %s" % [data[12],data[48],pressure,pull_direction if fighting else "READY",data[31],data[35],data[13],data[33],roundi(data[7]*5),"POWER" if data[15] > 0 else "NORMAL"]
 	if fighting:
 		readings.text += "\n"+("FISH TAKING LINE" if data[35] > 0.15 else "GAINING LINE" if data[35] < -0.15 else "HOLDING")
-		if data[51] > 0.2: readings.text += " | ROD COUNTERING"
+		if data[51] > 0.2: readings.text += " | GOOD COUNTER"
+		elif absf(data[46]) > 0.4: readings.text += " | POOR ANGLE"
+		if show_fight_coaching: readings.text += "\nBEST COUNTER: "+FightContest.counter_text(roundi(data[52]))
+		if data[54] > 0: readings.text += "\nDIVE — "+("PULL UP" if roundi(data[52]) == FightContest.Counter.UP else "COMMITTED: LET DRAG WORK")
 		if data[50] > 0.9: readings.text += "\nHIGH TENSION !" if sin(Time.get_ticks_msec()*0.009) > 0 else "\nHIGH TENSION"
 	bars["Tension"].max_value = data[45]
 	bars["Tension"].value = data[13]
@@ -222,7 +226,7 @@ func _process(delta: float) -> void:
 	drag_value.text = "%d%%" % roundi(drag_setting*100)
 
 func apply_look(movement: Vector2) -> void:
-	if data.size() == 52 and roundi(data[4]) == FisherActor.State.FIGHT:
+	if data.size() == 55 and roundi(data[4]) == FisherActor.State.FIGHT:
 		if data[16] <= 0:
 			rod_horizontal = clampf(rod_horizontal+movement.x,-1,1)
 			rod_vertical = clampf(rod_vertical-movement.y,-1,1)

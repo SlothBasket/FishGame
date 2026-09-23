@@ -2,6 +2,7 @@ class_name FishInput
 extends RefCounted
 ## Intent only. The motor never needs to read a camera, keyboard, or mouse.
 
+var stroke_axis: float = 0 # Signed mouse-stroke intent; shares cadence with steering.
 var throttle: float = 0.0 # W = +1, S = -1
 var steering: float = 0.0 # A = -1, D = +1; no strafe
 var vertical: float = 0.0

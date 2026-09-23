@@ -39,7 +39,7 @@ var power_exhausted: bool = false
 @export var lateral_force: float = 30
 @export var propulsion_load_scale: float = 0.85
 @export var pressure_endurance_drain: float = 0.18
-@export var leverage_endurance_drain: float = 0.65
+@export var leverage_endurance_drain: float = 0.95
 @export var yield_bonus: float = 2
 @export var resistance_fatigue: float = 13
 @export var safe_load: float = 35
@@ -57,6 +57,7 @@ var power_exhausted: bool = false
 @export var vertical_pull_fraction: float = 0.15
 @export var maximum_pull_speed: float = 7
 var counter_pressure: float = 0
+var best_counter: int = 0
 var fisher: FisherActor
 var fish: FishPlayer
 var bait: BaitActor
@@ -85,6 +86,7 @@ func _ready() -> void:
 	spool = spool.duplicate()
 	update_rod(0.016)
 	line_length = fish.position.distance_to(neutral_tip)
+	fish.motion = FishFightMotion.new()
 	fish.endurance = fish.stamina_capacity
 	fish.fight_regen_scale = 1
 	_previous_heading = fish.heading
@@ -148,18 +150,24 @@ func _physics_process(delta: float) -> void:
 	var effort = maxf(0,fish.command.throttle)
 	# Heading projects propulsion onto the line: sideways swimming keeps its speed,
 	# but supplies little outward pull and exposes the flank to counter pressure.
-	var alignment = maxf(0,fish.heading.dot(outward))
-	var drive = alignment*effort*fish.acceleration*mass*propulsion_load_scale
-	if fish.boosting: drive *= fish.fight_boost_multiplier()
-	var side_heading = fish.heading.dot(right)
-	var counter = maxf(0,-side_heading*rod_horizontal)
-	var vertical_counter = maxf(0,-fish.heading.y*rod_vertical)
+	var contest = FightContest.evaluate(fish.heading,outward,right,rod_horizontal,rod_vertical)
+	var alignment = contest.x
+	var drive = alignment*fish.motion.propulsion*fish.acceleration*mass*propulsion_load_scale
+	var counter = contest.y
+	var vertical_counter = contest.z
 	var broadside = 1-absf(fish.heading.dot(outward))
 	var leverage = counter*(0.35+0.65*broadside)+vertical_counter*0.7
-	var movement_load = drive
+	var movement_load = drive+fish.motion.dive_power*35
 	jerk_wait = maxf(0,jerk_wait-delta)
 	spike = maxf(0,spike-jerk_spike*delta*3)
-	var diving = fish.velocity.y < -2 and fish.command.vertical < 0
+	var diving = fish.motion.diving
+	var late_dive = diving and fish.motion.dive_power >= fish.motion.dive_counter_window
+	best_counter = FightContest.best_counter(fish.heading,right,diving,late_dive)
+	if diving and rod_vertical > 0.7:
+		spike = maxf(spike,35+fish.motion.dive_power*40)
+		if not late_dive: fish.motion.interrupt_dive()
+	fish.fight_best_move = FightContest.best_move(rod_horizontal,rod_vertical)
+	fish.fight_anchor = fisher.position
 	var resistance = leverage*effort
 	if pressed and not fisher.vision_active and jerk_wait <= 0 and fisher.stamina >= jerk_cost:
 		jerk_wait = jerk_cooldown
@@ -179,6 +187,7 @@ func _physics_process(delta: float) -> void:
 	fish.line_force = -outward*minf(tension,critical_load*2)/mass+lateral
 	var yielding = maxf(0,-fish.heading.dot(outward))*effort
 	fish.line_force += -outward*yielding*yield_bonus*contact
+	fish.fight_roll = lerpf(fish.fight_roll,-rod_horizontal*counter*deg_to_rad(16),1-exp(-delta*5))
 	var exertion = alignment*effort
 	fish.line_force = controlled_force(fish.line_force)
 	counter_pressure = resistance*pressure
@@ -225,7 +234,7 @@ func update_rod(delta: float) -> void:
 	# Lowering below center releases upward pressure; left/right still load the rod.
 	rod_pull = minf(1,Vector2(rod_horizontal,maxf(0,rod_vertical)).length())
 	var unloaded_tip = rod_hand+rod_direction*rod_length
-	rod_tip = unloaded_tip+(fish.position-unloaded_tip).normalized()*rod_bend*clampf(tension/spool.strength,0,1)
+	rod_tip = unloaded_tip+(fish.position-unloaded_tip).normalized()*rod_bend*clampf(tension/spool.strength,0,1)*(1+minf(1,counter_pressure)*0.65)
 
 func finish(result: int) -> void:
 	if is_instance_valid(fisher) and fisher.session.fight_smoke: print("FIGHT OUTCOME ",result)

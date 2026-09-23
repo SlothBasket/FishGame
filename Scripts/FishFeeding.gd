@@ -83,6 +83,7 @@ func advance_dash(delta: float) -> void:
 		sweep_bite(start, fish.global_position)
 		# Skim along floor slopes; a frontal wall still ends the attack.
 		if collision != null and collision.get_normal().y > 0.55:
+			if is_instance_valid(fish.fight) and fish.motion.diving: fish.motion.interrupt_dive()
 			var tangent: Vector3 = fish.velocity.slide(collision.get_normal())
 			if tangent.length() > fish.effective_dash_speed() * 0.15:
 				var skim_start: Vector3 = fish.global_position

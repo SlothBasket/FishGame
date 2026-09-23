@@ -1,3 +1,5 @@
+> Latest fish-side rules: [SWIM_DRIVE_GUIDE.md](SWIM_DRIVE_GUIDE.md) supersedes the earlier fixed propulsion, always-away leverage, snapshot counts and dive-counter descriptions below. It documents Swim Drive, shared coaching, run buildup, committed dives, finite payout overload and current validation. The spatial and line-risk rules below remain in place.
+
 # Fight controls, endurance and line pressure
 
 All gameplay is server-owned. Human and AI drivers supply the same intents; cameras and HUD remain local. Both network instances must use this revision: fish snapshots now include endurance (29 floats), while fisher snapshots now contain 52 floats (capacity, lateral motion, warning ratio and counter pressure appended).

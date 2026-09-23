@@ -1,3 +1,5 @@
+> Fish-side movement and counterplay: [SWIM_DRIVE_GUIDE.md](SWIM_DRIVE_GUIDE.md) maps the new FishFightMotion, FightContest and local FishFightReferences components, tunables and authoritative input/state flow. Current payloads: 7 fish input floats, 39 fish snapshot floats, 55 fisher snapshot floats.
+
 > Current spatial fight rules are in [FIGHT_GUIDE.md](FIGHT_GUIDE.md): fixed boat anchor, 250 m spool, bounded elastic span and recovery, controlled horizontal pull, post-move landing, non-sprint regeneration and role-specific feedback. Network payloads are now 29 fish / 52 fisher / 19 reliable bait fields.
 
 > Rod pumping update: [FIGHT_GUIDE.md](FIGHT_GUIDE.md) documents temporary 2 m take-up, 15-force rod buffer, 100 m spool, ordinary-load smoothing, 50-float fisherman snapshots, and anchored 1920 × 1080 HUD layout.

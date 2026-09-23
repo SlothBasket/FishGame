@@ -3,6 +3,45 @@ extends RefCounted
 ## Bounded deterministic contracts, called once by the existing two-peer fight smoke.
 static func run(fight: FightSession) -> bool:
 	var ok = true
+	var rhythm = FishFightMotion.new()
+	var mouse = FishFightMotion.new()
+	var both = FishFightMotion.new()
+	for i in range(12):
+		var stroke = FishInput.new(1,1 if i%2 == 0 else -1)
+		rhythm.step(0.48,stroke,Vector3.FORWARD,1,100,false)
+		stroke.stroke_axis = stroke.steering
+		both.step(0.48,stroke,Vector3.FORWARD,1,100,false)
+		stroke.steering = 0
+		mouse.step(0.48,stroke,Vector3.FORWARD,1,100,false)
+	ok = verify(rhythm.swim_drive > 0.9 and is_equal_approx(mouse.swim_drive,rhythm.swim_drive) and is_equal_approx(both.swim_drive,rhythm.swim_drive),"Ideal keyboard/mouse cadence sustains the same non-stacking Drive") and ok
+	var stored = rhythm.swim_drive
+	for i in range(3): rhythm.step(0.16,FishInput.new(1,1 if i%2 == 0 else -1),Vector3.FORWARD,1,100,false)
+	ok = verify(rhythm.overdrive > 0 and rhythm.overdrive <= rhythm.overdrive_max and rhythm.swim_drive < stored,"Fast cadence gives bounded overdrive and consumes stored Drive") and ok
+	var run = FishFightMotion.new()
+	run.step(0.1,FishInput.new(1,0,0,Vector3.FORWARD,true),Vector3.FORWARD,1,100,false)
+	ok = verify(run.run_build > 0 and run.run_build < 0.3,"Sprint builds rather than switching instantly") and ok
+	var right = Vector3.RIGHT
+	var aligned = FightContest.evaluate(Vector3.LEFT,Vector3.FORWARD,right,-1,0)
+	var opposed = FightContest.evaluate(Vector3.LEFT,Vector3.FORWARD,right,1,0)
+	ok = verify(aligned.x > 0.9 and aligned.y == 0 and opposed.y > 0.9 and FightContest.best_move(-1,0) == FightContest.Move.LEFT and FightContest.best_counter(Vector3.LEFT,right,false,false) == FightContest.Counter.RIGHT,"Coaching and forces agree on same-side defense / opposite counter") and ok
+	var dive = FishFightMotion.new()
+	var dive_input = FishInput.new(1,0,-1,Vector3.DOWN,true)
+	dive.step(0.4,dive_input,Vector3.DOWN,1,100,false)
+	ok = verify(dive.diving and dive.dive_power < dive.dive_counter_window,"Dive commitment has an early counter window") and ok
+	dive.interrupt_dive()
+	ok = verify(not dive.diving and dive.dive_blocked,"Early counter interrupts until a fresh sprint") and ok
+	dive.dive_blocked = false
+	dive.step(0.4,dive_input,Vector3.DOWN,1,100,false)
+	dive.step(0.3,dive_input,Vector3.DOWN,1,100,false)
+	ok = verify(dive.dive_power > dive.dive_counter_window and FightContest.best_counter(Vector3.DOWN,right,true,true) == FightContest.Counter.LET_RUN,"Committed dive coaching changes to let drag work") and ok
+	dive.step(0.1,dive_input,Vector3.DOWN,1,100,true)
+	ok = verify(not dive.diving,"Bottom contact ends dive") and ok
+	var limited = FightLine.new()
+	limited.maximum_payout = 1
+	limited.line_out = 40
+	limited.fish_load = 100
+	limited.step(0.2,42,10,100,0,0.4,false,35)
+	ok = verify(limited.payout <= 1.001 and limited.tension > limited.drag_threshold,"Finite payout leaves stretch / counter load above nominal drag") and ok
 	var line = FightLine.new()
 	line.line_out = 40
 	line.step(0.1,32,-8,0,0,0.4,false)
@@ -11,7 +50,7 @@ static func run(fight: FightSession) -> bool:
 	ok = verify(line.line_out < 40 and line.line_rate < 0,"Retrieve recovers slack continuously") and ok
 	line.line_out = 40
 	for i in range(12): line.step(0.05,40+(i+1)*0.3,6,60,0,0.4,false)
-	ok = verify(line.line_out > 40 and line.payout > 0 and line.tension < line.drag_threshold*1.1,"Normal drag pays out and limits sustained tension") and ok
+	ok = verify(line.line_out > 40 and line.payout > 0 and line.tension < line.drag_threshold+line.maximum_extension*line.elasticity,"Normal drag pays out with bounded elastic overload") and ok
 	var before = line.line_out
 	for i in range(6): line.step(0.05,before-1,8,80,1,0.4,true)
 	ok = verify(line.line_out < before and line.payout == 0 and line.tension > line.drag_threshold,"Power recovers line above drag without payout") and ok

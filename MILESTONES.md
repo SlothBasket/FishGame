@@ -22,3 +22,5 @@ Validation for the pacing milestone: 97 checks passed. Standalone 75-second grap
 - **Add rod pumping, finite spool and anchored fight HUD** — temporary take-up/buffer layered on existing drag, 100 m spool-out, ordinary load smoothing, subtle direction feedback, centered hook timing and separate fish/network status.
 
 - **Keep fight span consistent and cap pull forces** — 250 m spool, span-limited recovery and movement, post-move landing, controlled horizontal acceleration, breach-intent filtering, non-sprint recovery, fight feedback and minnow test markers/attack timing.
+
+- **Add fish Swim Drive and shared directional dive counterplay** — unified mouse/A-D rhythm, bounded overdrive, run ramp, shared contest/coaching/AI, body bank and rod feedback, optional spatial aids, committed dives and finite payout overload. Local-only milestone.

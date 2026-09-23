@@ -7,6 +7,10 @@ extends Node3D
 var _fish
 var _fish_hud: Control
 var _energy: Label
+var _drive_bar: ProgressBar
+var _dive_bar: ProgressBar
+var _drive_caption: Label
+var _dive_caption: Label
 var network_session: NetworkSession
 var _telemetry: Label
 var _status: Label
@@ -220,6 +224,16 @@ func build_hud() -> void:
 	_energy = hud_text(root, "", 18, cream, Vector2.ZERO)
 	anchor(_energy, Control.PRESET_TOP_RIGHT, Rect2(-390,180,352,160))
 	_energy.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_drive_caption = hud_text(root,"SWIM DRIVE",16,cream,Vector2.ZERO)
+	anchor(_drive_caption,Control.PRESET_TOP_RIGHT,Rect2(-390,390,352,24))
+	_drive_bar = ProgressBar.new()
+	root.add_child(_drive_bar)
+	anchor(_drive_bar,Control.PRESET_TOP_RIGHT,Rect2(-390,418,352,20))
+	_dive_caption = hud_text(root,"DIVE POWER",16,cream,Vector2.ZERO)
+	anchor(_dive_caption,Control.PRESET_TOP_RIGHT,Rect2(-390,448,352,24))
+	_dive_bar = ProgressBar.new()
+	root.add_child(_dive_bar)
+	anchor(_dive_bar,Control.PRESET_TOP_RIGHT,Rect2(-390,476,352,20))
 	_score = hud_text(root, "", 20, cream, Vector2.ZERO)
 	anchor(_score, Control.PRESET_TOP_RIGHT, Rect2(-300, 92, 262, 63))
 	_score.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
@@ -244,7 +258,15 @@ func build_hud() -> void:
 func _process(delta: float) -> void:
 	_fish_hud.visible = network_session == null or network_session.fisher_view == null
 	_energy.text = "STAMINA %.0f / %.0f\nENDURANCE %.0f%%" % [_fish.stamina,_fish.endurance,100*_fish.endurance/_fish.stamina_capacity]
+	_drive_bar.visible = _fish.fight_active
+	_drive_caption.visible = _fish.fight_active
+	_drive_bar.value = _fish.motion.swim_drive*100
+	_drive_caption.text = "SWIM DRIVE"+(" — OVERDRIVE" if _fish.motion.overdrive > 0.05 and _fish.motion.swim_drive > 0.05 else "")
+	_dive_bar.visible = _fish.fight_active and _fish.motion.diving
+	_dive_caption.visible = _dive_bar.visible
+	_dive_bar.value = _fish.motion.dive_power*100
 	if _fish.fight_active:
+		if _fish.show_fight_coaching: _energy.text += "\nBEST MOVE: "+FightContest.move_text(_fish.fight_best_move)
 		var pressure = "CRITICAL" if _fish.fight_pressure > 1 else "HIGH" if _fish.fight_pressure > 0.75 else "WORKING" if _fish.fight_pressure > 0.2 else "LIGHT"
 		_energy.text += "\n"+("SLACK" if _fish.fight_slack else pressure+" PRESSURE")
 		_energy.text += "\n"+("GAINING LINE" if _fish.fight_gain > 0.15 else "LOSING LINE" if _fish.fight_gain < -0.15 else "HOLDING DISTANCE")

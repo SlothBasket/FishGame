@@ -13,7 +13,7 @@ const DEFAULT_CAPACITY: float = 250
 @export var power_retrieve: float = 7
 @export var drag_curve: float = 1.0
 @export var payout_response: float = 6
-@export var maximum_payout: float = 22
+@export var maximum_payout: float = 14
 @export var tension_response: float = 12
 @export var contact_tolerance: float = 0.25
 @export var shock_retention: float = 0.18
@@ -79,7 +79,7 @@ func step(delta: float, required_distance: float, outward_speed: float, movement
 	slipping = not power and (fish_load > holding_threshold+0.5 or extension*elasticity > holding_threshold) and contact > 0
 	var payout_target = 0.0
 	if slipping:
-		payout_target = minf(maximum_payout,maxf(0,outward_speed)+recovery+maxf(0,extension-holding_threshold/elasticity)*payout_response)
+		payout_target = minf(maximum_payout,maxf(0,outward_speed)+recovery+maxf(0,extension+(fish_load-holding_threshold)/elasticity)*payout_response)
 	payout = lerpf(payout,payout_target,1-exp(-payout_response*delta)) if slipping else 0.0
 	# Only release line actually demanded by separation; never manufacture slack
 	# ahead of the fish using a predicted velocity. Power mode never pays out.
@@ -91,7 +91,9 @@ func step(delta: float, required_distance: float, outward_speed: float, movement
 	payout = released_line/maxf(0.0001,delta)
 	slack = maxf(0,line_out-loaded_distance)
 	line_rate = (line_out-before)/maxf(0.0001,delta)
-	var target_tension = requested_load if power else minf(requested_load,holding_threshold+shock*shock_retention)
+	# Unreleased elastic stretch remains real load when finite payout falls behind.
+	var residual_stretch = maxf(0,loaded_distance-line_out)
+	var target_tension = requested_load if power else minf(requested_load,holding_threshold+residual_stretch*elasticity+transient_load+shock*shock_retention)
 	if slack > contact_tolerance: target_tension = 0
 	var response = tension_response if sharp else 1/maxf(0.01,ordinary_response_time)
 	tension = lerpf(tension,target_tension,1-exp(-response*delta))
