@@ -1,4 +1,4 @@
-param([switch]$Editor, [switch]$Test, [switch]$Check, [switch]$HostGame, [string]$JoinIP, [ValidateRange(1024,65535)][int]$Port = 24567, [ValidateSet("fish","fisher")][string]$Role = "fish", [ValidateSet("","fish","fisher","both")][string]$AI = "")
+param([switch]$Editor, [switch]$Test, [switch]$Check, [switch]$HostGame, [switch]$AIVsAI, [string]$JoinIP, [ValidateRange(1024,65535)][int]$Port = 24567, [ValidateSet("fish","fisher")][string]$Role = "fish", [ValidateSet("","fish","fisher","both")][string]$AI = "")
 $ErrorActionPreference = 'Stop'
 $projectPath = $PSScriptRoot
 $workspacePath = Split-Path (Split-Path $projectPath -Parent) -Parent
@@ -27,8 +27,10 @@ if ($Test) {
 }
 $launchArgs = @('--path', ('"' + $projectPath + '"'))
 if ($Editor) { $launchArgs += '--editor' }
+if ($AIVsAI) { $HostGame = $false; $launchArgs += @('--','--ai-vs-ai',"--port=$Port") }
 if ($HostGame -and $JoinIP) { throw 'Choose HostGame or JoinIP, not both.' }
 if ($HostGame) { $launchArgs += @('--','--host',"--port=$Port","--role=$Role","--ai=$AI") }
+if ($AIVsAI -and $JoinIP) { throw 'AIVsAI is a local spectator session.' }
 if ($JoinIP) {
     $parsedIP = $null
     if (-not [Net.IPAddress]::TryParse($JoinIP,[ref]$parsedIP)) { throw 'JoinIP must be an IP address (localhost is 127.0.0.1).' }

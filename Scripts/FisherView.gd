@@ -212,8 +212,8 @@ func _process(delta: float) -> void:
 		readings.text += "\n"+("FISH TAKING LINE" if data[35] > 0.15 else "GAINING LINE" if data[35] < -0.15 else "HOLDING")
 		if data[51] > 0.2: readings.text += " | GOOD COUNTER"
 		elif absf(data[46]) > 0.4: readings.text += " | POOR ANGLE"
-		if show_fight_coaching: readings.text += "\nBEST COUNTER: "+FightContest.counter_text(roundi(data[52]))
-		if data[54] > 0: readings.text += "\nDIVE — "+("PULL UP" if roundi(data[52]) == FightContest.Counter.UP else "COMMITTED: LET DRAG WORK")
+		if show_fight_coaching: readings.text += "\n"+FightDecisions.fisher_text(roundi(data[52]))
+		if data[54] > 0: readings.text += "\nDIVE — "+("PULL UP" if roundi(data[52]) == FightDecisions.FisherAction.UP else "COMMITTED: LET DRAG WORK")
 		if data[50] > 0.9: readings.text += "\nHIGH TENSION !" if sin(Time.get_ticks_msec()*0.009) > 0 else "\nHIGH TENSION"
 	bars["Tension"].max_value = data[45]
 	bars["Tension"].value = data[13]

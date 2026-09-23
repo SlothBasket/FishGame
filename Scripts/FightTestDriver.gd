@@ -1,42 +1,31 @@
 class_name FightTestDriver
 extends RefCounted
 ## Deliberately simple server test pilots. No force/outcome cheats in normal AI.
-var rng = RandomNumberGenerator.new()
 var clock: float = 0
-var wait: float = 0
-var mode: int = 0
 var cast_serial: int = 0
 var cast_sent: bool = false
-var outward_bias: float = 0.7
-var inward_charge_chance: float = 0.06
-var inward_charge_duration: float = 1.5
-var side_change_min: float = 3
-var side_change_max: float = 5
-var side: float = 1
-var reversal: bool = false
-var resting: bool = false
-var sprinting: bool = false
-
-func _init() -> void:
-	rng.randomize()
 
 func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 	clock += delta
-	wait -= delta
-	if wait <= 0:
-		var roll = rng.randf()
-		mode = 1 if reversal else 5 if roll < inward_charge_chance else 0 if roll < outward_bias else 2 if roll < 0.84 else 3 if roll < 0.93 else 4
-		reversal = mode == 5
-		if rng.randf() < 0.55: side *= -1
-		wait = inward_charge_duration if mode == 5 else rng.randf_range(side_change_min,side_change_max)
 	var aim = fish.heading
-	var bite = false
-	var vertical = 0.0
 	if is_instance_valid(fish.fight):
-		var toward = (fish.fight.fisher.position-fish.position).normalized()
-		aim = toward if mode == 5 else BaitMotion.horizontal(-toward).rotated(Vector3.UP,side*(0.6 if mode == 2 else 0.15))
-		vertical = -1 if mode == 3 else 1 if mode == 4 else 0
-		bite = mode in [1,4] and fmod(clock,4.5) < 0.45
+		var f = fish.fight
+		var action = f.fish_action
+		var outward = BaitMotion.horizontal(fish.position-f.fisher.position)
+		var right = outward.cross(Vector3.UP)
+		aim = outward
+		if action == FightDecisions.FishAction.LEFT: aim = (outward-right*1.3).normalized()
+		if action == FightDecisions.FishAction.RIGHT: aim = (outward+right*1.3).normalized()
+		if action == FightDecisions.FishAction.DIVE: aim = (outward+Vector3.DOWN*1.5).normalized()
+		if action == FightDecisions.FishAction.JUMP: aim = (outward+Vector3.UP*1.8).normalized()
+		if action == FightDecisions.FishAction.CHARGE: aim = -outward
+		var resting = action == FightDecisions.FishAction.REST
+		var sprint = not resting and fish.stamina > fish.endurance*0.3
+		var stroke = 0.4 if int(clock/0.53)%2 == 0 else -0.4
+		var input = FishInput.new(0.25 if resting else 1,0 if resting else stroke,0,aim,sprint)
+		input.bite_held = action == FightDecisions.FishAction.JUMP and (not fish.feeding.is_charging or fish.feeding._charge_time < 0.25)
+		input.cancel_bite = fish.feeding.is_charging and action != FightDecisions.FishAction.JUMP
+		return input
 	else:
 		var nearest: BaitActor
 		var distance: float = INF
@@ -57,25 +46,7 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 			var cancel = FishInput.new()
 			cancel.cancel_bite = true
 			return cancel
-	if is_instance_valid(fish.fight):
-		if fish.stamina < fish.endurance*0.2: resting = true; sprinting = false
-		if fish.stamina > fish.endurance*0.75: resting = false
-		if not resting and fish.stamina > fish.endurance*0.7 and mode != 5: sprinting = true
-		if fish.stamina < fish.endurance*0.25: sprinting = false
-		if resting:
-			aim = (fish.fight.fisher.position-fish.position).normalized()
-			return FishInput.new(0.2,0,0,aim,false,false)
-		var outward = BaitMotion.horizontal(fish.position-fish.fight.fisher.position)
-		var right = outward.cross(Vector3.UP)
-		var choice = FightContest.best_move(fish.fight.rod_horizontal,fish.fight.rod_vertical)
-		if mode != 5:
-			if choice == FightContest.Move.LEFT: aim = (outward-right*1.3).normalized()
-			elif choice == FightContest.Move.RIGHT: aim = (outward+right*1.3).normalized()
-			if mode == 3 or choice == FightContest.Move.DIVE: aim = (outward+Vector3.DOWN*1.5).normalized()
-		# Legal alternating steering: slightly imperfect cadence, no direct Drive grant.
-		var stroke = 0.4 if int(clock/0.53)%2 == 0 else -0.4
-		return FishInput.new(1,stroke,vertical,aim,sprinting,bite and fish.stamina > fish.dash_cost*1.5)
-	return FishInput.new(1,0,vertical,aim,mode == 1 or mode == 4,bite)
+	return FishInput.new()
 
 func fisher_input(actor: FisherActor, delta: float) -> FisherIntent:
 	clock += delta
@@ -92,20 +63,12 @@ func fisher_input(actor: FisherActor, delta: float) -> FisherIntent:
 		if fight.phase == FightSession.Phase.CANDIDATE: input.jerk = fight.phase_time > 0.7
 		elif fight.phase == FightSession.Phase.METER: input.jerk = fight.meter < 0.72
 		else:
-			var forward = BaitMotion.horizontal(fight.fish.position-actor.position)
-			var right = forward.cross(Vector3.UP)
-			var motion = fight.fish.motion
-			var choice = FightContest.best_counter(fight.fish.heading,right,motion.diving,motion.dive_power >= motion.dive_counter_window)
-			input.rod_horizontal = -0.8 if choice == FightContest.Counter.LEFT else 0.8 if choice == FightContest.Counter.RIGHT else 0
-			input.rod_vertical = -0.7 if fight.fish.airborne else 0.8 if fight.fish.velocity.y < -2 else 0.05
+			var action = fight.fisher_action
+			input.rod_horizontal = -0.8 if action == FightDecisions.FisherAction.LEFT else 0.8 if action == FightDecisions.FisherAction.RIGHT else 0
+			input.rod_vertical = 1 if action == FightDecisions.FisherAction.UP else -0.6 if action in [FightDecisions.FisherAction.LOWER,FightDecisions.FisherAction.LET_RUN] else 0.1
 			input.drag = 0.3 if fight.spool.condition < 0.6 else 0.4
-			input.retrieve = 0.95 if fight.spool.slack > 1 else 0.0 if fight.spool.slipping or fight.spool.fish_load > fight.spool.drag_threshold else 0.6
-			input.power = fmod(clock,9) < 1 and not fight.spool.slipping and fight.spool.slack < 0.5 and fight.fish.stamina < fight.fish.endurance*0.5
-			input.jerk = fmod(clock,4.2) < 0.15 and fight.spool.slack < 0.5
-			if choice == FightContest.Counter.UP: input.rod_vertical = 1
-			if choice == FightContest.Counter.LET_RUN:
-				input.rod_vertical = -0.4
-				input.retrieve = 0
-				input.power = false
+			input.retrieve = 0.8 if action == FightDecisions.FisherAction.REEL else 0.25 if action in [FightDecisions.FisherAction.LEFT,FightDecisions.FisherAction.RIGHT] else 0
+			input.power = action == FightDecisions.FisherAction.REEL and fight.fish.stamina < fight.fish.endurance*0.4 and fight.spool.slack < 0.5
+			input.jerk = action == FightDecisions.FisherAction.UP and fight.jerk_wait <= 0
 
 	return input

@@ -58,6 +58,9 @@ var power_exhausted: bool = false
 @export var maximum_pull_speed: float = 7
 var counter_pressure: float = 0
 var best_counter: int = 0
+var fish_action: int = 0
+var fisher_action: int = 4
+var decision_wait: float = 0
 var fisher: FisherActor
 var fish: FishPlayer
 var bait: BaitActor
@@ -107,6 +110,12 @@ func _physics_process(delta: float) -> void:
 	if not is_instance_valid(fish) or not is_instance_valid(fisher): finish(Outcome.DISCONNECT); return
 	phase_time += delta
 	update_rod(delta)
+	decision_wait -= delta
+	if decision_wait <= 0:
+		fish_action = FightDecisions.fish_choice(self,fish_action)
+		fisher_action = FightDecisions.fisher_choice(self)
+		decision_wait = 0.45 # Shared decision hold avoids AI/coaching flicker.
+	fish.fight_best_move = fish_action
 	var input: FisherIntent = fisher.command
 	var pressed = input.jerk and not _jerk_held
 	var released = not input.jerk and _jerk_held
@@ -166,7 +175,6 @@ func _physics_process(delta: float) -> void:
 	if diving and rod_vertical > 0.7:
 		spike = maxf(spike,35+fish.motion.dive_power*40)
 		if not late_dive: fish.motion.interrupt_dive()
-	fish.fight_best_move = FightContest.best_move(rod_horizontal,rod_vertical)
 	fish.fight_anchor = fisher.position
 	var resistance = leverage*effort
 	if pressed and not fisher.vision_active and jerk_wait <= 0 and fisher.stamina >= jerk_cost:
@@ -240,6 +248,7 @@ func finish(result: int) -> void:
 	if is_instance_valid(fisher) and fisher.session.fight_smoke: print("FIGHT OUTCOME ",result)
 	if phase == Phase.FINISHED: return
 	phase = Phase.FINISHED
+	if is_instance_valid(fisher) and is_instance_valid(fish): fisher.session.publish_fight_result(fish,fisher,result)
 	if is_instance_valid(fish):
 		fish.endurance = fish.stamina_capacity
 		fish.fight_regen_scale = 1

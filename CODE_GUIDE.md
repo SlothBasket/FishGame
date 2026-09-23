@@ -1,3 +1,5 @@
+> Current readability/testing pass: [SPECTATOR_GUIDE.md](SPECTATOR_GUIDE.md) supersedes earlier cadence windows/Overdrive cost and BEST MOVE coaching descriptions. It documents shared state-based AI actions, banners, dive bubbles, natural AI-vs-AI mode and the current 40-float fish snapshot.
+
 > Fish-side movement and counterplay: [SWIM_DRIVE_GUIDE.md](SWIM_DRIVE_GUIDE.md) maps the new FishFightMotion, FightContest and local FishFightReferences components, tunables and authoritative input/state flow. Current payloads: 7 fish input floats, 39 fish snapshot floats, 55 fisher snapshot floats.
 
 > Current spatial fight rules are in [FIGHT_GUIDE.md](FIGHT_GUIDE.md): fixed boat anchor, 250 m spool, bounded elastic span and recovery, controlled horizontal pull, post-move landing, non-sprint regeneration and role-specific feedback. Network payloads are now 29 fish / 52 fisher / 19 reliable bait fields.

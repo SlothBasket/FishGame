@@ -44,6 +44,7 @@ var breach_intent_time: float = 0
 @export var hooked_sway_camera_scale: float = 0.45
 @export var show_fight_coaching: bool = true
 var motion = FishFightMotion.new()
+var dive_particles: CPUParticles3D
 var mouse_stroke_axis: float = 0
 var mouse_stroke_distance: float = 0
 var fight_best_move: int = 0
@@ -105,6 +106,23 @@ func _ready() -> void:
 	wall_min_slide_angle = 0.0
 	$CollisionShape3D.shape = $CollisionShape3D.shape.duplicate()
 	_body_radius = $CollisionShape3D.shape.radius
+	dive_particles = CPUParticles3D.new()
+	dive_particles.amount = 24
+	dive_particles.lifetime = 0.8
+	dive_particles.local_coords = false
+	dive_particles.emitting = false
+	dive_particles.spread = 25
+	dive_particles.gravity = Vector3.UP*1.5
+	var bubble = SphereMesh.new()
+	bubble.radius = 0.06
+	bubble.height = 0.12
+	var bubble_material = StandardMaterial3D.new()
+	bubble_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	bubble_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	bubble_material.albedo_color = Color(0.7,0.9,1,0.4)
+	bubble.material = bubble_material
+	dive_particles.mesh = bubble
+	add_child(dive_particles)
 	feeding = FishFeeding.new(self)
 	if locally_owned:
 		var references = FishFightReferences.new()
@@ -177,6 +195,10 @@ func _physics_process(delta: float) -> void:
 		_camera_pitch = clampf(_camera_pitch-look.y,-1.35,1.35)
 		pivot.rotation = Vector3(_camera_pitch,_camera_yaw,0)
 	breach_intent_time = maxf(0,breach_intent_time-delta)
+	dive_particles.emitting = fight_active and motion.diving
+	dive_particles.direction = -heading
+	dive_particles.initial_velocity_min = 0.7+motion.dive_power
+	dive_particles.initial_velocity_max = 1.5+motion.dive_power*2
 	if replica: return # NetworkSession interpolates state; no client feeding or movement.
 	var intent = command if external_input else read_local_input()
 	var in_fight = is_instance_valid(fight)

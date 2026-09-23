@@ -1,3 +1,5 @@
+> Current readability/testing pass: [SPECTATOR_GUIDE.md](SPECTATOR_GUIDE.md) supersedes earlier cadence windows/Overdrive cost and BEST MOVE coaching descriptions. It documents shared state-based AI actions, banners, dive bubbles, natural AI-vs-AI mode and the current 40-float fish snapshot.
+
 # Fish Swim Drive, directional contest and dives
 
 This pass extends the existing authoritative fight. It keeps the 250 m spool, pump/reel take-up, finite extension safety, landing, line condition/hazard, hook timing, stamina/endurance, minnow test bait and debug marker. No GitHub operations were performed.

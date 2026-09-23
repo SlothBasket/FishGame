@@ -256,17 +256,17 @@ func build_hud() -> void:
 	feeding_hud.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
 func _process(delta: float) -> void:
-	_fish_hud.visible = network_session == null or network_session.fisher_view == null
+	_fish_hud.visible = network_session == null or (network_session.fisher_view == null and not network_session.spectator_mode)
 	_energy.text = "STAMINA %.0f / %.0f\nENDURANCE %.0f%%" % [_fish.stamina,_fish.endurance,100*_fish.endurance/_fish.stamina_capacity]
 	_drive_bar.visible = _fish.fight_active
 	_drive_caption.visible = _fish.fight_active
 	_drive_bar.value = _fish.motion.swim_drive*100
-	_drive_caption.text = "SWIM DRIVE"+(" — OVERDRIVE" if _fish.motion.overdrive > 0.05 and _fish.motion.swim_drive > 0.05 else "")
+	_drive_caption.text = "%s %.0f%%  %s" % ["OVERDRIVE" if _fish.motion.overdrive > 0 else "SWIM DRIVE",_fish.motion.swim_drive*100,["","GOOD","FAST","LATE"][clampi(_fish.motion.cadence_grade,0,3)]]
 	_dive_bar.visible = _fish.fight_active and _fish.motion.diving
 	_dive_caption.visible = _dive_bar.visible
 	_dive_bar.value = _fish.motion.dive_power*100
 	if _fish.fight_active:
-		if _fish.show_fight_coaching: _energy.text += "\nBEST MOVE: "+FightContest.move_text(_fish.fight_best_move)
+		if _fish.show_fight_coaching: _energy.text += "\n"+FightDecisions.fish_text(_fish.fight_best_move)
 		var pressure = "CRITICAL" if _fish.fight_pressure > 1 else "HIGH" if _fish.fight_pressure > 0.75 else "WORKING" if _fish.fight_pressure > 0.2 else "LIGHT"
 		_energy.text += "\n"+("SLACK" if _fish.fight_slack else pressure+" PRESSURE")
 		_energy.text += "\n"+("GAINING LINE" if _fish.fight_gain > 0.15 else "LOSING LINE" if _fish.fight_gain < -0.15 else "HOLDING DISTANCE")

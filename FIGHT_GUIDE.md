@@ -1,3 +1,5 @@
+> Current readability/testing pass: [SPECTATOR_GUIDE.md](SPECTATOR_GUIDE.md) supersedes earlier cadence windows/Overdrive cost and BEST MOVE coaching descriptions. It documents shared state-based AI actions, banners, dive bubbles, natural AI-vs-AI mode and the current 40-float fish snapshot.
+
 > Latest fish-side rules: [SWIM_DRIVE_GUIDE.md](SWIM_DRIVE_GUIDE.md) supersedes the earlier fixed propulsion, always-away leverage, snapshot counts and dive-counter descriptions below. It documents Swim Drive, shared coaching, run buildup, committed dives, finite payout overload and current validation. The spatial and line-risk rules below remain in place.
 
 # Fight controls, endurance and line pressure
