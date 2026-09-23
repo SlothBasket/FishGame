@@ -26,3 +26,5 @@ Validation for the pacing milestone: 97 checks passed. Standalone 75-second grap
 - **Add fish Swim Drive and shared directional dive counterplay** — unified mouse/A-D rhythm, bounded overdrive, run ramp, shared contest/coaching/AI, body bank and rod feedback, optional spatial aids, committed dives and finite payout overload. Local-only milestone.
 
 - **Improve Drive readability and add natural AI spectator mode** — forgiving stored cadence, sustained Overdrive, shared state-based action coaching, dive bubbles, reliable outcome banners and a true two-AI observer with three camera views.
+
+- **Give powered fish resistance line risk and delayed fisher perception** — removes charge-boat AI, banks/spends legal Drive, adds powered resistance/turn load, measured damage feedback and delayed visible-state fisher decisions with normal Focus use.

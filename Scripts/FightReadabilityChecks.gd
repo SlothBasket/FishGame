@@ -40,8 +40,33 @@ static func run() -> bool:
 	fish.position.y = 20
 	fight.tension = 100
 	fight.spool.distance = 30
-	ok = check(FightDecisions.fish_choice(fight,0) == FightDecisions.FishAction.CHARGE,"Taut pressured distance chooses CHARGE BOAT") and ok
-	ok = check(FightDecisions.fisher_choice(fight) == FightDecisions.FisherAction.LET_RUN,"Dangerous load chooses LET RUN") and ok
+	ok = check(FightDecisions.fish_choice(fight,0) in [FightDecisions.FishAction.RUN,FightDecisions.FishAction.LEFT,FightDecisions.FishAction.RIGHT],"Taut pressured distance stays in outward strategies") and ok
+	ok = check(FightDecisions.fisher_choice(fight.perception.capture(fight)) == FightDecisions.FisherAction.LET_RUN,"Dangerous load chooses LET RUN") and ok
+	var passive = fight.resistance_load(0,0,1,3.2,3,1)
+	var hard = fight.resistance_load(2.2,1,1,3.2,1.5,1)
+	ok = check(passive == Vector2.ZERO and hard.x > 70 and hard.y > 25,"Only powered resistance/turns create meaningful extra load") and ok
+	var threatened = FightLine.new()
+	threatened.line_out = 40
+	threatened.fish_load = hard.x
+	threatened.step(0.4,42,12,hard.x,0,0.4,false,hard.y,1)
+	ok = check(threatened.tension > threatened.strength*threatened.wear_start and threatened.condition < 1,"Achievable hard run/turn enters wear range") and ok
+	var exceptional = FightLine.new()
+	exceptional.line_out = 40
+	exceptional.fish_load = hard.x+35
+	exceptional.step(0.4,42.4,18,hard.x+35,0,0.4,false,hard.y+50,1)
+	ok = check(exceptional.tension > exceptional.break_threshold() and exceptional.break_hazard() > 0,"Exceptional powered turn/dive crosses probabilistic risk threshold") and ok
+	var ordinary = FightLine.new()
+	ordinary.line_out = 40
+	ordinary.step(0.1,40,1,20,0,0.4,false)
+	ok = check(ordinary.tension < ordinary.strength*ordinary.wear_start and ordinary.condition > 0.999,"Ordinary swim remains below meaningful wear") and ok
+	var perception = FisherPerception.new()
+	perception.reaction_jitter = 0
+	perception.late_reaction_chance = 0
+	perception.tick(0.1,fight)
+	ok = check(perception.observation.is_empty(),"Fisher cannot act on a fresh observation immediately") and ok
+	perception.tick(0.31,fight)
+	ok = check(not perception.observation.is_empty() and perception.age() >= 0.3 and not perception.observation.has("stamina") and not perception.observation.has("drive") and not perception.observation.has("dive_power"),"Delivered perception is delayed and contains no hidden fish resources") and ok
+	print("FORCE RANGE hard=",hard," tension=",threatened.tension," exceptional=",exceptional.tension," fresh risk=",exceptional.break_threshold())
 	fight.free()
 	fish.free()
 	fisher.free()

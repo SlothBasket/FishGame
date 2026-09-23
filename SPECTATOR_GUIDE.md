@@ -1,3 +1,5 @@
+> Latest escape/AI rules: [ESCAPE_BALANCE_GUIDE.md](ESCAPE_BALANCE_GUIDE.md) documents powered resistance load, measured line damage and delayed fisherman perception. CHARGE BOAT is removed; older policy descriptions below are historical. Current snapshots: 41 fish / 56 fisherman floats.
+
 # Readability, cadence and natural AI spectator mode
 
 This pass preserves core fight forces, directional leverage, pump/reel, drag/payout, risk, endurance, run/dive, landing and 250 m spool. It changes cadence storage, development decisions/presentation and testing tools. No GitHub operations were used.

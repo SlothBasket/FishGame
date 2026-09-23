@@ -61,6 +61,14 @@ var best_counter: int = 0
 var fish_action: int = 0
 var fisher_action: int = 4
 var decision_wait: float = 0
+var perception = FisherPerception.new()
+@export var directional_load_scale: float = 1.1
+@export var turn_shock_scale: float = 18
+@export var maximum_turn_shock: float = 36
+@export var turn_shock_decay_time: float = 0.18
+var directional_load: float = 0
+var turn_shock: float = 0
+var line_damage_rate: float = 0
 var fisher: FisherActor
 var fish: FishPlayer
 var bait: BaitActor
@@ -110,10 +118,11 @@ func _physics_process(delta: float) -> void:
 	if not is_instance_valid(fish) or not is_instance_valid(fisher): finish(Outcome.DISCONNECT); return
 	phase_time += delta
 	update_rod(delta)
+	perception.tick(delta,self)
+	fisher_action = FightDecisions.fisher_choice(perception.observation)
 	decision_wait -= delta
 	if decision_wait <= 0:
 		fish_action = FightDecisions.fish_choice(self,fish_action)
-		fisher_action = FightDecisions.fisher_choice(self)
 		decision_wait = 0.45 # Shared decision hold avoids AI/coaching flicker.
 	fish.fight_best_move = fish_action
 	var input: FisherIntent = fisher.command
@@ -166,7 +175,12 @@ func _physics_process(delta: float) -> void:
 	var vertical_counter = contest.z
 	var broadside = 1-absf(fish.heading.dot(outward))
 	var leverage = counter*(0.35+0.65*broadside)+vertical_counter*0.7
-	var movement_load = drive+fish.motion.dive_power*35
+	var turn_rate = fish.heading.angle_to(_previous_heading)/maxf(0.001,delta)
+	var connected_line = clampf(1-spool.slack/slack_tolerance,0,1)
+	var struggle = resistance_load(fish.motion.propulsion,effort,leverage,mass,turn_rate,connected_line)
+	directional_load = struggle.x
+	turn_shock = maxf(turn_shock*exp(-delta/maxf(0.01,turn_shock_decay_time)),struggle.y)
+	var movement_load = drive+directional_load+fish.motion.dive_power*35
 	jerk_wait = maxf(0,jerk_wait-delta)
 	spike = maxf(0,spike-jerk_spike*delta*3)
 	var diving = fish.motion.diving
@@ -184,7 +198,8 @@ func _physics_process(delta: float) -> void:
 		spike = jerk_spike*(1.4 if dive_counter else 1)
 		if spool.slack < slack_tolerance:
 			fish.stamina = maxf(0,fish.stamina-jerk_damage*(1.4 if dive_counter else resistance))
-	spool.step(delta,fish.position.distance_to(neutral_tip),radial_speed,movement_load,input.retrieve,fisher.drag_setting,power_active,spike,rod_pull)
+	var condition_before = spool.condition
+	spool.step(delta,fish.position.distance_to(neutral_tip),radial_speed,movement_load,input.retrieve,fisher.drag_setting,power_active,spike+turn_shock,rod_pull)
 	if check_spooled(): return
 	tension = spool.tension
 	condition = spool.condition
@@ -226,6 +241,9 @@ func _physics_process(delta: float) -> void:
 		var lowered = rod_vertical < -0.25
 		hook_hazard += jump_throw_rate*(lowered_rod_reduction if lowered else 1)*(1+1-hook_security)
 		if not lowered: spool.condition = maxf(0.02,spool.condition-0.008*delta*tension/spool.strength)
+	line_damage_rate = maxf(0,(condition_before-spool.condition)/maxf(0.0001,delta))
+	condition = spool.condition
+	fish.damaging_line = line_damage_rate > 0.00001
 	if rng.randf() < 1-exp(-hook_hazard*delta): finish(Outcome.THROWN); return
 	if rng.randf() < 1-exp(-spool.break_hazard()*delta): finish(Outcome.LINE_BROKE); return
 
@@ -296,3 +314,11 @@ func after_fish_move(delta: float) -> void:
 		landing_time += delta
 		if landing_time >= landing_confirmation: finish(Outcome.LANDED)
 	else: landing_time = 0
+
+func resistance_load(propulsion: float, effort: float, leverage: float, mass: float, turn_rate: float, contact: float) -> Vector2:
+	var powered = maxf(0,propulsion)*maxf(0,effort)*clampf(contact,0,1)
+	var sustained = powered*maxf(0,leverage)*mass*fish.acceleration*propulsion_load_scale*directional_load_scale
+	# Ordinary unpowered steering cannot make a shock. Fast hard turns need built
+	# propulsion and an opposing rod; the transient is bounded independently.
+	var shock_load = minf(maximum_turn_shock,maxf(0,powered-0.9)*maxf(0,leverage)*minf(turn_rate,3)*turn_shock_scale)
+	return Vector2(sustained,shock_load)

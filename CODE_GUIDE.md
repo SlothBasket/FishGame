@@ -1,3 +1,5 @@
+> Latest escape/AI rules: [ESCAPE_BALANCE_GUIDE.md](ESCAPE_BALANCE_GUIDE.md) documents powered resistance load, measured line damage and delayed fisherman perception. CHARGE BOAT is removed; older policy descriptions below are historical. Current snapshots: 41 fish / 56 fisherman floats.
+
 > Current readability/testing pass: [SPECTATOR_GUIDE.md](SPECTATOR_GUIDE.md) supersedes earlier cadence windows/Overdrive cost and BEST MOVE coaching descriptions. It documents shared state-based AI actions, banners, dive bubbles, natural AI-vs-AI mode and the current 40-float fish snapshot.
 
 > Fish-side movement and counterplay: [SWIM_DRIVE_GUIDE.md](SWIM_DRIVE_GUIDE.md) maps the new FishFightMotion, FightContest and local FishFightReferences components, tunables and authoritative input/state flow. Current payloads: 7 fish input floats, 39 fish snapshot floats, 55 fisher snapshot floats.

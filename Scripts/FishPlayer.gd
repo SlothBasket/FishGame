@@ -50,6 +50,7 @@ var mouse_stroke_distance: float = 0
 var fight_best_move: int = 0
 var fight_anchor: Vector3
 var fight_roll: float = 0
+var damaging_line: bool = false
 var fight_active: bool = false
 var fight_pressure: float = 0
 var fight_gain: float = 0

@@ -266,7 +266,9 @@ func _process(delta: float) -> void:
 	_dive_caption.visible = _dive_bar.visible
 	_dive_bar.value = _fish.motion.dive_power*100
 	if _fish.fight_active:
-		if _fish.show_fight_coaching: _energy.text += "\n"+FightDecisions.fish_text(_fish.fight_best_move)
+		if _fish.show_fight_coaching:
+			_energy.text += "\n"+FightDecisions.fish_text(_fish.fight_best_move)
+			if _fish.damaging_line: _energy.text += "\nDAMAGING LINE"
 		var pressure = "CRITICAL" if _fish.fight_pressure > 1 else "HIGH" if _fish.fight_pressure > 0.75 else "WORKING" if _fish.fight_pressure > 0.2 else "LIGHT"
 		_energy.text += "\n"+("SLACK" if _fish.fight_slack else pressure+" PRESSURE")
 		_energy.text += "\n"+("GAINING LINE" if _fish.fight_gain > 0.15 else "LOSING LINE" if _fish.fight_gain < -0.15 else "HOLDING DISTANCE")

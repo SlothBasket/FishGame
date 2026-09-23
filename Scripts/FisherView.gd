@@ -9,6 +9,7 @@ var rod_horizontal: float = 0
 var rod_vertical: float = 0
 var drag_setting: float = 0.4
 var centered_focus: Vector3
+var damage_flash: float = 0
 var bars: Dictionary = {}
 var drag_slider: HSlider
 var readings: Label
@@ -157,7 +158,7 @@ func sample() -> FisherIntent:
 	return intent
 
 func _process(delta: float) -> void:
-	if data.size() != 55: return
+	if data.size() != 56: return
 	apply_look(GameControls.look()*rod_stick_response*delta)
 	var origin = Vector3(data[0],data[1],data[2])
 	boat.position = origin
@@ -218,6 +219,10 @@ func _process(delta: float) -> void:
 	bars["Tension"].max_value = data[45]
 	bars["Tension"].value = data[13]
 	bars["Line condition"].value = data[14]*100
+	readings.text += "\nLINE CONDITION: %.1f%%" % (data[14]*100)
+	damage_flash = 0.35 if data[55] > 0.00001 else maxf(0,damage_flash-delta)
+	bars["Line condition"].modulate = Color(1,0.3,0.15) if damage_flash > 0 and sin(Time.get_ticks_msec()*0.02) > 0 else Color.WHITE
+	if damage_flash > 0: readings.text += "\nLINE DAMAGE!"
 	bars["Retrieve"].value = data[37]*100
 	bars["Power stamina"].value = data[8]
 	bars["Focus"].value = data[9]
@@ -226,7 +231,7 @@ func _process(delta: float) -> void:
 	drag_value.text = "%d%%" % roundi(drag_setting*100)
 
 func apply_look(movement: Vector2) -> void:
-	if data.size() == 55 and roundi(data[4]) == FisherActor.State.FIGHT:
+	if data.size() == 56 and roundi(data[4]) == FisherActor.State.FIGHT:
 		if data[16] <= 0:
 			rod_horizontal = clampf(rod_horizontal+movement.x,-1,1)
 			rod_vertical = clampf(rod_vertical-movement.y,-1,1)
