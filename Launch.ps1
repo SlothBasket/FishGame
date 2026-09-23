@@ -1,4 +1,4 @@
-param([switch]$Editor, [switch]$Test, [switch]$Check, [switch]$HostGame, [switch]$AIVsAI, [string]$JoinIP, [ValidateRange(1024,65535)][int]$Port = 24567, [ValidateSet("fish","fisher")][string]$Role = "fish", [ValidateSet("","fish","fisher","both")][string]$AI = "")
+param([switch]$Editor, [switch]$Test, [switch]$Check, [switch]$HostGame, [switch]$AIVsAI, [string]$JoinIP, [ValidateRange(1024,65535)][int]$Port = 24567, [ValidateSet("fish","fisher")][string]$Role = "fish", [ValidateSet("","fish","fisher","both")][string]$AI = "", [double]$FishSkill = -1, [double]$FisherSkill = -1)
 $ErrorActionPreference = 'Stop'
 $projectPath = $PSScriptRoot
 $workspacePath = Split-Path (Split-Path $projectPath -Parent) -Parent
@@ -35,5 +35,10 @@ if ($JoinIP) {
     $parsedIP = $null
     if (-not [Net.IPAddress]::TryParse($JoinIP,[ref]$parsedIP)) { throw 'JoinIP must be an IP address (localhost is 127.0.0.1).' }
     $launchArgs += @('--',"--join=$JoinIP","--port=$Port","--role=$Role")
+}
+if ($FishSkill -ge 0 -or $FisherSkill -ge 0) {
+    if (-not ($AIVsAI -or $HostGame)) { throw 'Skill overrides require AIVsAI or HostGame.' }
+    if ($FishSkill -ge 0) { $launchArgs += "--fish-skill=$($FishSkill.ToString([Globalization.CultureInfo]::InvariantCulture))" }
+    if ($FisherSkill -ge 0) { $launchArgs += "--fisher-skill=$($FisherSkill.ToString([Globalization.CultureInfo]::InvariantCulture))" }
 }
 Start-Process -FilePath $enginePath -ArgumentList $launchArgs -WindowStyle Hidden

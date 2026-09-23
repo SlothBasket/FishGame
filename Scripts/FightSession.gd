@@ -61,6 +61,15 @@ var best_counter: int = 0
 var fish_action: int = 0
 var fisher_action: int = 4
 var decision_wait: float = 0
+var fish_skill: float = 1
+var fisher_skill: float = 1
+var jump_cooldown: float = 0
+var jump_commit: float = 0
+@export var directional_wear_scale: float = 0.0015
+@export var pressure_dead_zone: float = 0.12
+@export var pressure_bank_degrees: float = 27
+var previous_pressure: float = 0
+var reversal_bank: float = 0
 var perception = FisherPerception.new()
 @export var directional_load_scale: float = 1.1
 @export var turn_shock_scale: float = 18
@@ -94,6 +103,14 @@ var rng = RandomNumberGenerator.new()
 func _ready() -> void:
 	process_physics_priority = -10
 	rng.randomize()
+	fish_skill = rng.randf_range(0.6,1.0)
+	fisher_skill = rng.randf_range(0.6,1.0)
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--fish-skill="): fish_skill = clampf(arg.get_slice("=",1).to_float(),0.6,1)
+		if arg.begins_with("--fisher-skill="): fisher_skill = clampf(arg.get_slice("=",1).to_float(),0.6,1)
+	perception.reaction_delay = lerpf(0.6,0.24,fisher_skill)
+	perception.reaction_jitter = lerpf(0.28,0.06,fisher_skill)
+	perception.late_reaction_chance = lerpf(0.5,0.08,fisher_skill)
 	spool = spool.duplicate()
 	update_rod(0.016)
 	line_length = fish.position.distance_to(neutral_tip)
@@ -120,10 +137,15 @@ func _physics_process(delta: float) -> void:
 	update_rod(delta)
 	perception.tick(delta,self)
 	fisher_action = FightDecisions.fisher_choice(perception.observation)
+	jump_cooldown = maxf(0,jump_cooldown-delta)
+	jump_commit = maxf(0,jump_commit-delta)
 	decision_wait -= delta
 	if decision_wait <= 0:
 		fish_action = FightDecisions.fish_choice(self,fish_action)
-		decision_wait = 0.45 # Shared decision hold avoids AI/coaching flicker.
+		if fish_action == FightDecisions.FishAction.JUMP and jump_commit <= 0:
+			jump_commit = 2.2
+			jump_cooldown = 12
+		decision_wait = lerpf(0.9,0.35,fish_skill)
 	fish.fight_best_move = fish_action
 	var input: FisherIntent = fisher.command
 	var pressed = input.jerk and not _jerk_held
@@ -210,7 +232,18 @@ func _physics_process(delta: float) -> void:
 	fish.line_force = -outward*minf(tension,critical_load*2)/mass+lateral
 	var yielding = maxf(0,-fish.heading.dot(outward))*effort
 	fish.line_force += -outward*yielding*yield_bonus*contact
-	fish.fight_roll = lerpf(fish.fight_roll,-rod_horizontal*counter*deg_to_rad(16),1-exp(-delta*5))
+	# Publish the actual lateral acceleration after the same force cap as the body.
+	var force_scale = controlled_force(fish.line_force).length()/maxf(0.001,Vector3(fish.line_force.x,clampf(fish.line_force.y*vertical_pull_fraction,-maximum_vertical_acceleration,maximum_vertical_acceleration),fish.line_force.z).length())
+	fish.directional_pressure = lateral.dot(right)*force_scale/lateral_force
+	var signed_pressure = fish.directional_pressure
+	if previous_pressure*signed_pressure < -0.02: reversal_bank = 0.2
+	reversal_bank = maxf(0,reversal_bank-delta)
+	previous_pressure = signed_pressure
+	var bank = pow(clampf((absf(signed_pressure)-pressure_dead_zone)/0.35,0,1),0.7)
+	fish.fight_roll = lerpf(fish.fight_roll,-signf(signed_pressure)*deg_to_rad(pressure_bank_degrees)*bank*(1+reversal_bank),1-exp(-delta*7))
+	# Additional wear only for built, powered resistance above ordinary wear onset.
+	var wear = directional_wear_rate(fish.motion.swim_drive,fish.motion.run_build,fish.motion.propulsion,leverage,pressure)
+	spool.condition = maxf(0.02,spool.condition-wear*delta)
 	var exertion = alignment*effort
 	fish.line_force = controlled_force(fish.line_force)
 	counter_pressure = resistance*pressure
@@ -273,6 +306,7 @@ func finish(result: int) -> void:
 		fish.sprint_exhausted = false
 		fish.fight_active = false
 		fish.line_force = Vector3.ZERO
+		fish.directional_pressure = 0
 		fish.free_bursts = false
 		fish.sprint_locked = false
 		fish.feeding.sweep_bite_disabled = false
@@ -322,3 +356,6 @@ func resistance_load(propulsion: float, effort: float, leverage: float, mass: fl
 	# propulsion and an opposing rod; the transient is bounded independently.
 	var shock_load = minf(maximum_turn_shock,maxf(0,powered-0.9)*maxf(0,leverage)*minf(turn_rate,3)*turn_shock_scale)
 	return Vector2(sustained,shock_load)
+
+func directional_wear_rate(drive: float, run: float, propulsion: float, leverage: float, pressure: float) -> float:
+	return directional_wear_scale*clampf((drive-0.6)/0.4,0,1)*clampf(run,0,1)*clampf(propulsion-0.9,0,1)*clampf(leverage,0,1)*clampf((pressure-spool.wear_start)/0.35,0,1)

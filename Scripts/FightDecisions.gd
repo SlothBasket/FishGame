@@ -8,23 +8,48 @@ static func fish_choice(f: FightSession, previous: int) -> int:
 	var energy = fish.stamina/maxf(1,fish.endurance)
 	var depth = fish.water_height-fish.position.y
 	var pressure = f.tension/f.spool.strength
+	if f.jump_commit > 0: return FishAction.JUMP
 	if fish.motion.diving: return FishAction.DIVE
 	if energy < 0.22 or (previous == FishAction.REST and energy < 0.7): return FishAction.REST
-	var scores = [2.0+energy+fish.motion.swim_drive,0.0,0.0,-10.0,-10.0,0.0]
-	if f.rod_horizontal < -0.2: scores[FishAction.LEFT] = 3+absf(f.rod_horizontal)*3
-	if f.rod_horizontal > 0.2: scores[FishAction.RIGHT] = 3+absf(f.rod_horizontal)*3
-	if fish.position.y > 7 and energy > 0.55 and f.rod_vertical < 0.5 and not fish.motion.dive_blocked:
-		scores[FishAction.DIVE] = 2.5+fish.motion.swim_drive*2+pressure+(0.6 if f.spool.payout < 0.5 else 0)
-	if depth < 5 and depth > 0 and energy > 0.45 and f.rod_vertical >= 0:
-		scores[FishAction.JUMP] = 3+pressure*3+(0.6 if f.rod_vertical > 0.3 else 0)
-	# A central rod plus strong pressure rewards changing the current side.
-	if absf(f.rod_horizontal) < 0.2 and pressure > 0.55:
-		var right = BaitMotion.horizontal(fish.position-f.fisher.position).cross(Vector3.UP)
-		scores[FishAction.LEFT if fish.heading.dot(right) >= 0 else FishAction.RIGHT] = 3.8+fish.motion.swim_drive*0.8
-	var best = FishAction.RUN
-	for i in range(scores.size()):
-		if scores[i] > scores[best]: best = i
-	return best
+	var scores = [2.0+energy+fish.motion.swim_drive,1.0,1.0,-10.0,-10.0,-10.0]
+	# Same signed acceleration supplied to the human's chevrons and body bank.
+	var pull = fish.directional_pressure
+	if absf(pull) > f.pressure_dead_zone:
+		scores[FishAction.LEFT if pull < 0 else FishAction.RIGHT] = 4+absf(pull)*5
+	if fish.position.y > 7 and energy > 0.55 and not fish.motion.dive_blocked:
+		scores[FishAction.DIVE] = 2.5+fish.motion.swim_drive*2+pressure
+	if depth < 5 and depth > -0.5 and energy > 0.5 and f.jump_cooldown <= 0:
+		scores[FishAction.JUMP] = 4+pressure*4+maxf(0,fish.line_force.y)*0.4
+	var outward = (fish.position-f.fisher.position).normalized()
+	for i in range(5):
+		var heading = heading_for(f,i)
+		var point = fish.position+heading*12
+		var gain = point.distance_to(f.fisher.position)-fish.position.distance_to(f.fisher.position)
+		scores[i] += gain*0.06+heading.dot(outward)*0.2
+		if is_instance_valid(f.fisher.session):
+			var edge = f.fisher.session.world.arena_width*0.5-4
+			scores[i] -= maxf(0,absf(point.x)-edge)+maxf(0,absf(point.z)-edge)
+	var order = [0,1,2,3,4,5]
+	order.sort_custom(func(a,b): return scores[a] > scores[b])
+	if f.rng.randf() < (1-f.fish_skill)*0.35 and scores[order[1]] > scores[order[0]]-1: return order[1]
+	return order[0]
+
+static func heading_for(f: FightSession, action: int) -> Vector3:
+	var away = BaitMotion.horizontal(f.fish.position-f.fisher.position)
+	var right = away.cross(Vector3.UP)
+	var aim = away
+	if action == FishAction.LEFT: aim = (away-right*1.3).normalized()
+	if action == FishAction.RIGHT: aim = (away+right*1.3).normalized()
+	if action == FishAction.DIVE: aim = (away+Vector3.DOWN*1.5).normalized()
+	if action == FishAction.JUMP: aim = (away+Vector3.UP*2.5).normalized()
+	# Project ahead, bend along a wall, and resolve corners toward open water.
+	if is_instance_valid(f.fisher.session):
+		var edge = f.fisher.session.world.arena_width*0.5-lerpf(5,12,f.fish_skill)
+		var projected = f.fish.position+aim*18
+		for axis in [0,2]:
+			if absf(projected[axis]) > edge:
+				aim[axis] = -signf(projected[axis])*0.35
+	return aim.normalized()
 
 static func fisher_choice(observed: Dictionary) -> int:
 	# Deliberately no FightSession argument: AI/coaching can only use delayed observations.

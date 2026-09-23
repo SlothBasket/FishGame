@@ -5,6 +5,11 @@ var session: NetworkSession
 var mode: int = 2
 var camera: Camera3D
 var debug: Label
+var boat: Node3D
+var rod_mesh: MeshInstance3D
+var line_mesh: MeshInstance3D
+var art_material: StandardMaterial3D
+var damage_label: Label
 var yaw: float = 0
 var pitch: float = -0.3
 func _ready() -> void:
@@ -14,6 +19,18 @@ func _ready() -> void:
 	camera.rotation = Vector3(pitch,yaw,0)
 	camera.make_current()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	boat = Node3D.new()
+	add_child(boat)
+	Geometry.sphere(boat,"Hull",Vector3(0,-0.35,0),Vector3(1.8,0.7,3.4),Geometry.material("785d40"))
+	Geometry.sphere(boat,"Deck",Vector3(0,0.12,0),Vector3(1.7,0.15,3.2),Geometry.material("e2c797"))
+	art_material = Geometry.material("fff1b5")
+	art_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	rod_mesh = MeshInstance3D.new()
+	rod_mesh.mesh = ImmediateMesh.new()
+	add_child(rod_mesh)
+	line_mesh = MeshInstance3D.new()
+	line_mesh.mesh = ImmediateMesh.new()
+	add_child(line_mesh)
 	var layer = CanvasLayer.new()
 	add_child(layer)
 	debug = Label.new()
@@ -21,6 +38,12 @@ func _ready() -> void:
 	debug.position = Vector2(24,24)
 	debug.add_theme_font_size_override("font_size",18)
 	debug.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	damage_label = Label.new()
+	layer.add_child(damage_label)
+	damage_label.position = Vector2(24,225)
+	damage_label.add_theme_font_size_override("font_size",24)
+	damage_label.modulate = Color(1,0.35,0.18)
+	damage_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode in [KEY_1,KEY_2,KEY_3]:
@@ -36,6 +59,10 @@ func _process(delta: float) -> void:
 	var fish: FishPlayer = session.players[-1].entity
 	var fisher: FisherActor = session.players[-2].entity
 	var fight = fisher.fight
+	boat.position = fisher.position
+	boat.rotation.y = fisher.boat_yaw
+	draw_equipment(fisher,fish)
+	damage_label.text = "LINE DAMAGE -%.2f%%/s" % (fight.line_damage_rate*100) if is_instance_valid(fight) and fight.line_damage_rate > 0.00001 else ""
 	if mode == 2:
 		camera.rotation = Vector3(pitch,yaw,0)
 		var move = Vector3(float(Input.is_physical_key_pressed(KEY_D))-float(Input.is_physical_key_pressed(KEY_A)),0,float(Input.is_physical_key_pressed(KEY_S))-float(Input.is_physical_key_pressed(KEY_W)))
@@ -49,5 +76,39 @@ func _process(delta: float) -> void:
 	debug.text = "AI vs AI — OBSERVER ONLY\n1 Fisher | 2 Fish | 3 Overview (WASD, Q/E, RMB look)\nView: %s | Participants: %d\nDrive %.0f%% %s | Stamina %.0f / %.0f" % [["Fisher","Fish","Overview"][mode],session.players.size(),fish.motion.swim_drive*100,"OVERDRIVE" if fish.motion.overdrive > 0 else "",fish.stamina,fish.endurance]
 	if is_instance_valid(fight):
 		debug.text += "\nFish: %s | Fisher: %s\n%s | Line %.1f / %.0f m | Tension %.1f | Drag %.0f%%" % [FightDecisions.fish_text(fight.fish_action),FightDecisions.fisher_text(fight.fisher_action),FightSession.Phase.keys()[fight.phase],fight.spool.line_out,fight.spool.maximum_line_out,fight.tension,fisher.drag_setting*100]
-		debug.text += "\nLINE CONDITION: %.1f%% | DAMAGE -%.3f%%/s\nVision: %s | Perception age %.2fs | Resistance %.1f | Turn shock %.1f" % [fight.spool.condition*100,fight.line_damage_rate*100,"ON" if fisher.vision_active else "OFF",fight.perception.age(),fight.directional_load,fight.turn_shock]
+		var age = fight.perception.age()
+		var perceived = "CURRENT" if age < 0.18 else "%.2fs OLD" % age
+		debug.text += "\nLINE CONDITION: %.1f%%\nVISION: %s | FOCUS: %.0f%% | AI PERCEPTION: %s\nFish Skill: %.0f%% | Fisher Skill: %.0f%%" % [fight.spool.condition*100,"ON" if fisher.vision_active else "OFF",fisher.focus/fisher.focus_capacity*100,perceived,fight.fish_skill*100,fight.fisher_skill*100]
 	else: debug.text += "\n%s | Last result: %s" % [FisherActor.State.keys()[fisher.state],FightSession.Outcome.keys()[fisher.outcome]]
+
+func draw_equipment(fisher: FisherActor, fish: FishPlayer) -> void:
+	var f = fisher.fight
+	var hand = fisher.position+Vector3.UP*1.3
+	var direction = Vector3(0,0.6,-0.8).rotated(Vector3.UP,fisher.boat_yaw)
+	var tip = hand+direction*3
+	var target = fisher.lure.position if is_instance_valid(fisher.lure) else tip
+	var slack: float = 0
+	if is_instance_valid(f):
+		hand = f.rod_hand
+		direction = f.rod_direction
+		tip = f.rod_tip
+		target = fish.position
+		slack = f.spool.slack
+	var control = hand+direction*2
+	var rod: Array = []
+	var line: Array = []
+	for i in range(13):
+		var t = i/12.0
+		rod.append(hand*(1-t)*(1-t)+control*2*t*(1-t)+tip*t*t)
+		line.append(tip.lerp(target,t)-Vector3.UP*sin(t*PI)*minf(8,slack*0.3))
+	draw_ribbon(rod_mesh,rod,0.065)
+	draw_ribbon(line_mesh,line,0.018)
+
+func draw_ribbon(node: MeshInstance3D, points: Array, thickness: float) -> void:
+	var mesh: ImmediateMesh = node.mesh
+	mesh.clear_surfaces()
+	mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES,art_material)
+	var width = camera.global_basis.x*thickness
+	for i in range(points.size()-1):
+		for point in [points[i]-width,points[i]+width,points[i+1]+width,points[i]-width,points[i+1]+width,points[i+1]-width]: mesh.surface_add_vertex(point)
+	mesh.surface_end()

@@ -1,7 +1,7 @@
 class_name FightLine
 extends Resource
 ## Spool accounting in metres; force values are prototype Newton-like units.
-const DEFAULT_CAPACITY: float = 250
+const DEFAULT_CAPACITY: float = 150
 @export var maximum_extension: float = 2.5
 @export var maximum_line_out: float = DEFAULT_CAPACITY
 @export var maximum_rod_take_up: float = 2.0

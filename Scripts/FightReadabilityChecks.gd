@@ -23,14 +23,15 @@ static func run() -> bool:
 	fight.fish = fish
 	fight.fisher = fisher
 	fish.position = Vector3(20,20,0)
+	fisher.position.y = fish.water_height
 	fish.stamina = 10
 	ok = check(FightDecisions.fish_choice(fight,0) == FightDecisions.FishAction.REST,"Low stamina chooses REST") and ok
 	fish.stamina = 100
-	fight.rod_horizontal = -0.8
-	ok = check(FightDecisions.fish_choice(fight,0) == FightDecisions.FishAction.LEFT,"Left rod chooses LEFT") and ok
-	fight.rod_horizontal = 0.8
-	ok = check(FightDecisions.fish_choice(fight,0) == FightDecisions.FishAction.RIGHT,"Right rod chooses RIGHT") and ok
-	fight.rod_horizontal = 0
+	fish.directional_pressure = -0.8
+	ok = check(FightDecisions.fish_choice(fight,0) == FightDecisions.FishAction.LEFT,"Left physical pressure chooses LEFT") and ok
+	fish.directional_pressure = 0.8
+	ok = check(FightDecisions.fish_choice(fight,0) == FightDecisions.FishAction.RIGHT,"Right physical pressure chooses RIGHT") and ok
+	fish.directional_pressure = 0
 	fish.motion.swim_drive = 1
 	ok = check(FightDecisions.fish_choice(fight,0) == FightDecisions.FishAction.DIVE,"Depth and Drive opportunity chooses DIVE") and ok
 	fish.position.y = 30
@@ -39,9 +40,16 @@ static func run() -> bool:
 	ok = check(FightDecisions.fish_choice(fight,0) == FightDecisions.FishAction.JUMP,"Near-surface pressure chooses JUMP") and ok
 	fish.position.y = 20
 	fight.tension = 100
+	fish.motion.dive_blocked = true
 	fight.spool.distance = 30
 	ok = check(FightDecisions.fish_choice(fight,0) in [FightDecisions.FishAction.RUN,FightDecisions.FishAction.LEFT,FightDecisions.FishAction.RIGHT],"Taut pressured distance stays in outward strategies") and ok
 	ok = check(FightDecisions.fisher_choice(fight.perception.capture(fight)) == FightDecisions.FisherAction.LET_RUN,"Dangerous load chooses LET RUN") and ok
+	ok = check(FightLine.DEFAULT_CAPACITY == 150,"Spool defaults to 150m") and ok
+	ok = check(fight.directional_wear_rate(0.4,1,2,1,1) == 0 and fight.directional_wear_rate(1,1,2,1,1) > 0.001,"Extra directional wear requires high Drive and powered pressure") and ok
+	fight.rod_horizontal = -1
+	var physical_choice = FightDecisions.fish_choice(fight,0)
+	fight.rod_horizontal = 1
+	ok = check(FightDecisions.fish_choice(fight,0) == physical_choice,"Raw rod side cannot change fish choice") and ok
 	var passive = fight.resistance_load(0,0,1,3.2,3,1)
 	var hard = fight.resistance_load(2.2,1,1,3.2,1.5,1)
 	ok = check(passive == Vector2.ZERO and hard.x > 70 and hard.y > 25,"Only powered resistance/turns create meaningful extra load") and ok

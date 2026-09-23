@@ -5,6 +5,10 @@ extends Node3D
 @export var charge_wiggle_degrees: float = 3.0
 @export var charge_tail_amplitude: float = 0.3
 @export var charge_frequency: float = 24.0
+@export var drive_body_degrees: float = 9
+@export var overdrive_body_degrees: float = 10
+var drive: float = 0
+var overdrive: float = 0
 var swim_intensity: float = 0.0
 var charge_intensity: float = 0.0
 var biting: bool = false
@@ -47,9 +51,9 @@ func _ready() -> void:
 	Geometry.triangle(_tail, Vector3.ZERO, Vector3(0, 0, 0.65), Vector3(0, -0.7, 0.95), gold)
 
 func _process(delta: float) -> void:
-	_phase += delta * (3.0 + swim_intensity * 8.0 + charge_intensity * charge_frequency)
-	_body.rotation.y = sin(_phase) * deg_to_rad(charge_wiggle_degrees) * charge_intensity
-	_tail.rotation.y = sin(_phase) * (0.14 + swim_intensity * 0.18 + charge_intensity * charge_tail_amplitude)
+	_phase += delta * (3.0 + swim_intensity * 8.0 + charge_intensity * charge_frequency + drive*7 + overdrive*20)
+	_body.rotation.y = sin(_phase) * deg_to_rad(charge_wiggle_degrees*charge_intensity+drive_body_degrees*drive+overdrive_body_degrees*overdrive)
+	_tail.rotation.y = sin(_phase) * (0.14 + swim_intensity * 0.18 + charge_intensity * charge_tail_amplitude + drive*0.35 + overdrive*0.5)
 	_left_fin.rotation.z = sin(_phase * 0.6) * 0.18
 	_right_fin.rotation.z = -_left_fin.rotation.z
 	_mouth.visible = biting

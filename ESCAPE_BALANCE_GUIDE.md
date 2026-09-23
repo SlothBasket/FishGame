@@ -1,3 +1,5 @@
+> Current physical-cue/AI pass: [FIGHT_READABILITY_GUIDE.md](FIGHT_READABILITY_GUIDE.md) supersedes historical defaults below: **150 m spool, 42-float fish snapshots**, physical-pressure cues, skill overrides, visible spectator equipment and powered directional wear.
+
 # Powered resistance, escape AI and delayed fisher perception
 
 This pass keeps line strength, condition/break-risk formulas, drag/payout, spool capacity, physical acceleration caps, dive rules, landing and server authority. Your local spectator editor arguments were checkpointed as `d8b3d4f`. No GitHub operations were performed.

@@ -45,6 +45,10 @@ var breach_intent_time: float = 0
 @export var show_fight_coaching: bool = true
 var motion = FishFightMotion.new()
 var dive_particles: CPUParticles3D
+var overdrive_particles: CPUParticles3D
+var maneuver_burst: CPUParticles3D
+var was_diving: bool = false
+var was_overdriving: bool = false
 var mouse_stroke_axis: float = 0
 var mouse_stroke_distance: float = 0
 var fight_best_move: int = 0
@@ -56,6 +60,7 @@ var fight_pressure: float = 0
 var fight_gain: float = 0
 var fight_leverage: float = 0
 var fight_counter: float = 0
+var directional_pressure: float = 0
 var fight_slack: bool = false
 @export_group("Growth")
 @export var starting_size: float = 0.58
@@ -108,22 +113,36 @@ func _ready() -> void:
 	$CollisionShape3D.shape = $CollisionShape3D.shape.duplicate()
 	_body_radius = $CollisionShape3D.shape.radius
 	dive_particles = CPUParticles3D.new()
-	dive_particles.amount = 24
-	dive_particles.lifetime = 0.8
+	dive_particles.amount = 96
+	dive_particles.lifetime = 1.2
 	dive_particles.local_coords = false
 	dive_particles.emitting = false
 	dive_particles.spread = 25
 	dive_particles.gravity = Vector3.UP*1.5
 	var bubble = SphereMesh.new()
-	bubble.radius = 0.06
-	bubble.height = 0.12
+	bubble.radius = 0.10
+	bubble.radial_segments = 8
+	bubble.rings = 4
+	bubble.height = 0.20
 	var bubble_material = StandardMaterial3D.new()
 	bubble_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	bubble_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	bubble_material.albedo_color = Color(0.7,0.9,1,0.4)
+	bubble_material.albedo_color = Color(0.7,0.9,1,0.7)
 	bubble.material = bubble_material
 	dive_particles.mesh = bubble
 	add_child(dive_particles)
+	overdrive_particles = dive_particles.duplicate()
+	overdrive_particles.amount = 64
+	overdrive_particles.lifetime = 0.65
+	add_child(overdrive_particles)
+	maneuver_burst = dive_particles.duplicate()
+	maneuver_burst.amount = 48
+	maneuver_burst.one_shot = true
+	maneuver_burst.explosiveness = 1
+	maneuver_burst.spread = 100
+	maneuver_burst.initial_velocity_min = 2
+	maneuver_burst.initial_velocity_max = 5
+	add_child(maneuver_burst)
 	feeding = FishFeeding.new(self)
 	if locally_owned:
 		var references = FishFightReferences.new()
@@ -197,9 +216,20 @@ func _physics_process(delta: float) -> void:
 		pivot.rotation = Vector3(_camera_pitch,_camera_yaw,0)
 	breach_intent_time = maxf(0,breach_intent_time-delta)
 	dive_particles.emitting = fight_active and motion.diving
-	dive_particles.direction = -heading
-	dive_particles.initial_velocity_min = 0.7+motion.dive_power
-	dive_particles.initial_velocity_max = 1.5+motion.dive_power*2
+	dive_particles.direction = (-heading+Vector3.UP*0.8).normalized()
+	dive_particles.initial_velocity_min = 2+motion.dive_power*3
+	dive_particles.initial_velocity_max = 4+motion.dive_power*5
+	visual.drive = motion.swim_drive if fight_active else 0.0
+	visual.overdrive = motion.overdrive/maxf(0.01,motion.overdrive_max) if fight_active else 0.0
+	overdrive_particles.emitting = fight_active and motion.overdrive > 0
+	overdrive_particles.direction = -heading
+	overdrive_particles.initial_velocity_min = 2+visual.overdrive*2
+	overdrive_particles.initial_velocity_max = 4+visual.overdrive*4
+	if (dive_particles.emitting and not was_diving) or (overdrive_particles.emitting and not was_overdriving):
+		maneuver_burst.restart()
+		maneuver_burst.emitting = true
+	was_diving = dive_particles.emitting
+	was_overdriving = overdrive_particles.emitting
 	if replica: return # NetworkSession interpolates state; no client feeding or movement.
 	var intent = command if external_input else read_local_input()
 	var in_fight = is_instance_valid(fight)

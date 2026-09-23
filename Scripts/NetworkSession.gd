@@ -12,6 +12,10 @@ var ai_mode: String = ""
 var spectator_mode: bool = false
 var spectator_check: bool = false
 var spectator_saw_fight: bool = false
+var spectator_vision_used: bool = false
+var spectator_vision_recovered: bool = false
+var spectator_min_focus: float = 100
+var spectator_jumped: bool = false
 var outcome_banner: FightOutcomeBanner
 @export var show_test_bait_markers: bool = true
 var smoke_fish_driver = FightTestDriver.new()
@@ -275,6 +279,13 @@ func fish_intent(sequence: int, axes: PackedFloat32Array, flags: int) -> void:
 func _physics_process(delta: float) -> void:
 	clock += delta
 	if spectator_check and spectator_mode:
+		if players.has(-2):
+			var observer_fisher: FisherActor = players[-2].entity
+			spectator_min_focus = minf(spectator_min_focus,observer_fisher.focus)
+			if observer_fisher.vision_active: spectator_vision_used = true
+			if spectator_vision_used and not observer_fisher.vision_active and observer_fisher.focus > spectator_min_focus+2: spectator_vision_recovered = true
+		if players.has(-1) and players[-1].entity.natural_breach: spectator_jumped = true
+		if clock > 39.98: print("OBSERVER Vision used=",spectator_vision_used," recovered=",spectator_vision_recovered," minimum focus=",spectator_min_focus," natural breach=",spectator_jumped)
 		if players.has(-2) and is_instance_valid(players[-2].entity.fight):
 			if players[-2].entity.fight.phase >= FightSession.Phase.IMPACT and not spectator_saw_fight:
 				spectator_saw_fight = true
@@ -362,11 +373,11 @@ func fish_state(actor: FishPlayer) -> PackedFloat32Array:
 	var h = actor.heading
 	var v = actor.velocity
 	var f = actor.feeding
-	return PackedFloat32Array([p.x,p.y,p.z,h.x,h.y,h.z,v.x,v.y,v.z,f.food,f.bait_eaten,f._charge_time,f._dash_remaining,int(actor.airborne),int(actor.boosting),f.cooldown_remaining,f.bite_flash,f.grace_remaining,actor.stamina,actor.line_force.x,actor.line_force.y,actor.line_force.z,actor.endurance,int(actor.fight_active),actor.fight_pressure,actor.fight_gain,actor.fight_leverage,actor.fight_counter,int(actor.fight_slack),actor.motion.swim_drive,actor.motion.overdrive,actor.motion.run_build,actor.motion.dive_power,int(actor.motion.diving),actor.fight_best_move,actor.fight_anchor.x,actor.fight_anchor.y,actor.fight_anchor.z,actor.fight_roll,actor.motion.cadence_grade,int(actor.damaging_line)])
+	return PackedFloat32Array([p.x,p.y,p.z,h.x,h.y,h.z,v.x,v.y,v.z,f.food,f.bait_eaten,f._charge_time,f._dash_remaining,int(actor.airborne),int(actor.boosting),f.cooldown_remaining,f.bite_flash,f.grace_remaining,actor.stamina,actor.line_force.x,actor.line_force.y,actor.line_force.z,actor.endurance,int(actor.fight_active),actor.fight_pressure,actor.fight_gain,actor.fight_leverage,actor.fight_counter,int(actor.fight_slack),actor.motion.swim_drive,actor.motion.overdrive,actor.motion.run_build,actor.motion.dive_power,int(actor.motion.diving),actor.fight_best_move,actor.fight_anchor.x,actor.fight_anchor.y,actor.fight_anchor.z,actor.fight_roll,actor.motion.cadence_grade,int(actor.damaging_line),actor.directional_pressure])
 
 @rpc("authority","call_remote","unreliable_ordered",2)
 func fish_snapshot(peer: int, state: PackedFloat32Array) -> void:
-	if hosting or closed or not players.has(peer) or state.size() != 41: return
+	if hosting or closed or not players.has(peer) or state.size() != 42: return
 	var actor: FishPlayer = players[peer].entity
 	track("f%d" % peer,actor,Vector3(state[0],state[1],state[2]),FishInput.angles(Vector3(state[3],state[4],state[5])),1.0/fish_snapshot_hz,state[38])
 	actor.heading = Vector3(state[3],state[4],state[5])
@@ -401,6 +412,7 @@ func fish_snapshot(peer: int, state: PackedFloat32Array) -> void:
 	actor.fight_best_move = roundi(state[34])
 	actor.fight_anchor = Vector3(state[35],state[36],state[37])
 	actor.fight_roll = state[38]
+	actor.directional_pressure = state[41]
 	actor.motion.cadence_grade = roundi(state[39])
 	actor.damaging_line = state[40] > 0
 	actor.line_force = Vector3(state[19],state[20],state[21])
