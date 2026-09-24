@@ -1,3 +1,5 @@
+> Current Fisher progression pass: [FISHER_PROGRESSION.md](FISHER_PROGRESSION.md) documents 65 m shared casting, physical rod take-up, counter recovery/Drive disruption, nonlinear endurance costs, slower perceived AI decisions and progression telemetry. Fish snapshots now contain **48** values (Drive lockout appended).
+
 > Current line/steering pass: [DRAG_AND_BURSTS.md](DRAG_AND_BURSTS.md) documents total-load drag, Power payout, deliberate AI drag steps, shared side bursts, rod snaps, telemetry and tuning. Base break hazard is **0.008**.
 
 > Batch telemetry: [FIGHT_BATCH_GUIDE.md](FIGHT_BATCH_GUIDE.md) documents editor arguments, per-encounter seeds, CSV/event fields and exact break capture. Current line-risk thresholds are **0.85 fresh / 0.60 damaged**; base hazard and physical strength are unchanged.

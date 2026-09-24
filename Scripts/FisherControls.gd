@@ -37,6 +37,6 @@ static func plan(seen: Dictionary, stamina: float) -> Dictionary:
 				result.jerk = Vector2(0,1) if dive or absf(side) < 0.25 else Vector2(-signf(side),0)
 			result.label = "COUNTER / REEL"
 		else:
-			result.pump = float(seen.get("depth",0)) > 10 and risk < 0.65 and float(seen.get("speed",0)) < 4
+			result.pump = risk < 0.65 and float(seen.get("outward_speed",0)) < 2 and slack < 0.8
 		result.vision = running and absf(side) < 0.5
 	return result

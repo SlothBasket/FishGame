@@ -19,7 +19,7 @@ extends Resource
 @export var dive_angle: float = 35
 @export var dive_commit_time: float = 0.4
 @export var dive_build_time: float = 1.0
-@export var dive_counter_window: float = 0.55
+@export var dive_counter_window: float = 0.8
 @export var dive_stamina_drain: float = 12
 @export var dive_acceleration: float = 9
 var swim_drive: float = 0.2
@@ -49,13 +49,19 @@ var falling: bool = false
 var landed_event: bool = false
 var power_capacity: float = 1
 var dive_hold: float = 0
+var dive_age: float = 0
 var run_age: float = 0
 var counter_recovery: float = 0
-@export var counter_recovery_duration: float = 1.1
+@export var counter_recovery_duration: float = 0.85
+@export var overdrive_recovery_duration: float = 1.4
+@export var dive_recovery_duration: float = 1.5
+@export var drive_counter_lockout: float = 2.25
+var drive_lockout: float = 0
 
 func step(delta: float, input: FishInput, heading: Vector3, speed_fraction: float, stamina: float, bottom: bool, measured_stroke: float = 0, capacity: float = 1, upward_speed: float = 0) -> void:
 	power_capacity = clampf(capacity,0,1)
 	counter_recovery = maxf(0,counter_recovery-delta)
+	drive_lockout = maxf(0,drive_lockout-delta)
 	run_age = run_age+delta if input.boost and input.throttle > 0 and stamina > 1 else 0.0
 	if swim_drive <= overdrive_minimum_drive: overdrive_exhausted = true
 	if swim_drive >= overdrive_rearm_drive: overdrive_exhausted = false
@@ -64,7 +70,7 @@ func step(delta: float, input: FishInput, heading: Vector3, speed_fraction: floa
 	var axis = measured_stroke
 	var side = int(signf(axis)) if absf(axis) > 0.25 else 0
 	if input.throttle > 0 and side != 0 and side != last_side and stroke_age >= minimum_stroke_interval:
-		if last_side != 0:
+		if last_side != 0 and drive_lockout <= 0:
 			var fast_boundary = ideal_stroke_interval-full_credit_window
 			if stroke_age < fast_boundary and swim_drive > overdrive_minimum_drive and not overdrive_exhausted and counter_recovery <= 0:
 				var excess = clampf((fast_boundary-stroke_age)/maxf(0.01,fast_boundary-minimum_stroke_interval),0,1)
@@ -89,15 +95,16 @@ func step(delta: float, input: FishInput, heading: Vector3, speed_fraction: floa
 	swim_drive = maxf(0,swim_drive-(passive_decay+overdrive_consumption*fast_cost)*delta)
 	run_build = move_toward(run_build,1 if input.boost and input.throttle > 0 and stamina > 0 and counter_recovery <= 0 else 0,delta/maxf(0.05,run_build_time))
 	if not input.boost: dive_blocked = false
-	if not input.boost or stamina <= 1 or bottom or power_capacity <= 0.01 or heading.y > 0.25:
+	if not input.boost or stamina <= 1 or bottom or power_capacity <= 0.01 or heading.y > 0.25 or counter_recovery > 0:
 		diving = false
 		dive_power = 0
 		dive_hold = 0
 	elif not diving and not dive_blocked:
 		dive_hold = dive_hold+delta if heading.y < -sin(deg_to_rad(dive_angle)) and input.throttle > 0 else 0
 		if dive_hold >= dive_commit_time: diving = true
+	dive_age = dive_age+delta if diving else 0.0
 	if diving: dive_power = minf(power_capacity,dive_power+delta*power_capacity/maxf(0.1,dive_build_time))
-	var ascending = jump_recovery <= 0 and not was_airborne and input.boost and input.throttle > 0 and stamina > 1 and (heading.y > 0.35 or input.vertical > 0.5) and upward_speed > 1
+	var ascending = counter_recovery <= 0 and jump_recovery <= 0 and not was_airborne and input.boost and input.throttle > 0 and stamina > 1 and (heading.y > 0.35 or input.vertical > 0.5) and upward_speed > 1
 	var ascent_target = power_capacity*clampf(upward_speed/5,0,1)*(0.4+0.6*swim_drive) if ascending else 0.0
 	ascent_power = move_toward(ascent_power,ascent_target,delta/maxf(0.1,ascent_build_time))
 	# Built speed and motor effort share a bounded budget; speed is not added twice.
@@ -113,12 +120,18 @@ func interrupt_dive() -> void:
 	dive_hold = 0
 	dive_blocked = true # Require a new sprint commitment, not repeated instant dives.
 
-func interrupt_run() -> void:
+func interrupt_run(recovery: float = -1, disrupt_drive: bool = false) -> void:
 	overdrive = 0
 	overdrive_remaining = 0
 	run_build = 0
 	propulsion *= 0.5
-	counter_recovery = counter_recovery_duration
+	counter_recovery = counter_recovery_duration if recovery < 0 else recovery
+	side_time = 0
+	if disrupt_drive:
+		swim_drive = 0
+		drive_lockout = drive_counter_lockout
+		fast_cost = 0
+		overdrive_exhausted = true
 
 func track_jump(delta: float, airborne: bool, height: float, vertical_speed: float) -> void:
 	landed_event = was_airborne and not airborne
@@ -140,7 +153,7 @@ func track_jump(delta: float, airborne: bool, height: float, vertical_speed: flo
 @export var side_burst_angle: float = 55
 @export var side_burst_duration: float = 0.75
 @export var side_burst_cooldown: float = 2.5
-@export var side_burst_prepare: float = 0.12
+@export var side_burst_prepare: float = 0.35
 var side_time: float = 0
 var side_wait: float = 0
 var side_hold: float = 0
@@ -160,14 +173,17 @@ func steer_burst(delta: float, input: FishInput, heading: Vector3, allowed: bool
 		side_hold = 0
 		return input
 	var yaw = angle_difference(FishInput.angles(heading).y,FishInput.angles(input.aim_direction).y)
-	var requested = int(signf(input.steering)) if absf(input.steering) > 0.8 else -int(signf(yaw)) if absf(yaw) > deg_to_rad(40) else 0
-	if requested != side_candidate: side_hold = 0
+	var requested = int(signf(input.steering)) if absf(input.steering) > 0.8 else -int(signf(yaw)) if absf(yaw) > deg_to_rad(20 if side_hold > 0 else 40) else 0
+	if requested != side_candidate:
+		side_hold = 0
+		if requested != 0 and side_time <= 0:
+			side_start = heading
+			side_target = heading.rotated(Vector3.UP,-requested*deg_to_rad(side_burst_angle)*lerpf(0.6,1,power_capacity))
 	side_candidate = requested
 	side_hold = side_hold+delta if requested != 0 else 0.0
 	if side_time <= 0 and side_wait <= 0 and side_hold >= side_burst_prepare and swim_drive >= side_burst_drive and run_build >= 0.6:
 		side_sign = requested
-		side_start = heading
-		side_target = heading.rotated(Vector3.UP,-side_sign*deg_to_rad(side_burst_angle))
+		run_age = 0 # A visibly renewed commitment opens its own counter window.
 		side_time = side_burst_duration
 		side_wait = side_burst_cooldown
 		side_reported = false

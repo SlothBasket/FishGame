@@ -15,6 +15,7 @@ var vision_remaining: float = 0
 var vision_cooldown: float = 0
 var drag_wait: float = 0
 var selected_drag: float = 0.4
+var attempted_maneuver: int = -1
 var gesture_phase: float = -1
 var gesture_axis: Vector2 = Vector2.ZERO
 var gesture_wait: float = 0
@@ -107,7 +108,6 @@ func fisher_input(actor: FisherActor, delta: float) -> FisherIntent:
 	input.aim = Vector3.FORWARD.rotated(Vector3.UP,actor.boat_yaw)
 	if actor.state == FisherActor.State.SETUP:
 		if not cast_sent:
-			actor.cast_distance = actor.ai_cast_distance
 			cast_serial += 1; cast_sent = true
 	else: cast_sent = false
 	input.cast_serial = cast_serial
@@ -132,7 +132,8 @@ func fisher_input(actor: FisherActor, delta: float) -> FisherIntent:
 			gesture_wait = maxf(0,gesture_wait-delta)
 			# Ascent/air/fall abort preparation too: do not finish an obsolete UP jerk.
 			if plan.label in ["REEL SLACK","ABSORB FALL"]: gesture_phase = -1
-			if gesture_phase < 0 and gesture_wait <= 0 and plan.jerk != Vector2.ZERO and not actor.vision_active and actor.stamina >= fight.jerk_cost:
+			if gesture_phase < 0 and gesture_wait <= 0 and plan.jerk != Vector2.ZERO and not actor.vision_active and actor.stamina >= fight.jerk_cost and int(seen.get("maneuver_id",0)) != attempted_maneuver:
+				attempted_maneuver = int(seen.get("maneuver_id",0))
 				gesture_axis = plan.jerk
 				gesture_phase = 0
 				gesture_wait = fight.jerk_cooldown+lerpf(1.0,0.25,fight.fisher_skill)
@@ -160,9 +161,9 @@ func fisher_input(actor: FisherActor, delta: float) -> FisherIntent:
 			else: pump_clock = 0
 			vision_cooldown = maxf(0,vision_cooldown-delta)
 			vision_remaining = maxf(0,vision_remaining-delta)
-			if gesture_phase < 0 and gesture_wait < 0.3 and vision_cooldown <= 0 and actor.focus > 55 and (plan.vision or fight.perception.uncertainty or (fight.perception.age() > 0.3 and float(seen.get("tension",0)) > 35) or float(seen.get("depth",0)) > 8 or float(seen.get("payout",0)) > 2 or (fight.fisher_skill < 0.75 and sin(clock) > 0.95)):
-				vision_remaining = lerpf(1.6,1.0,fight.fisher_skill)
-				vision_cooldown = lerpf(11,6,fight.fisher_skill)
+			if gesture_phase < 0 and gesture_wait < 0.3 and vision_cooldown <= 0 and actor.focus > 55 and plan.vision and fight.perception.uncertainty:
+				vision_remaining = lerpf(1.0,0.7,inverse_lerp(0.6,1.0,fight.fisher_skill))
+				vision_cooldown = lerpf(18,12,inverse_lerp(0.6,1.0,fight.fisher_skill))
 			input.vision = vision_remaining > 0
 
 	return input

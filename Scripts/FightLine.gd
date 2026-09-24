@@ -125,9 +125,27 @@ func sync_distance(required_distance: float, delta: float) -> void:
 	var excess = maxf(0,distance+rod_take_up-line_out-maximum_extension)
 	tension = maxf(tension,excess*elasticity*pressure_multiplier)
 
+@export var rod_pull_acceleration: float = 8
+@export var rod_pull_response: float = 4
+func rod_pull_velocity(offset: Vector3, velocity: Vector3, delta: float, maximum_speed: float) -> Vector3:
+	if rod_take_up <= 0 or slack > contact_tolerance or offset.length() < 0.001: return velocity
+	var available = clampf((holding_threshold-fish_load)/maxf(1,holding_threshold),0,1)
+	var error = maxf(0,offset.length()-(line_out-rod_take_up))
+	if error <= 0 or available <= 0: return velocity
+	var outward = offset.normalized()
+	var radial = velocity.dot(outward)
+	var wanted = -minf(maximum_speed,error*rod_pull_response)*available
+	if radial <= wanted: return velocity
+	return velocity+outward*(move_toward(radial,wanted,rod_pull_acceleration*available*delta)-radial)
+
 func constrain_motion(offset: Vector3, motion: Vector3) -> Vector3:
 	# Unilateral velocity constraint at maximum elastic stretch. Keep tangential
 	# movement and never generate a large inward correction for an existing error.
-	var radius = maxf(offset.length(),maxf(0.2,line_out-rod_take_up+maximum_extension))
+	var radius = maxf(0.2,line_out-rod_take_up+maximum_extension)
 	var target = offset+motion
-	return target.limit_length(radius)-offset if target.length() > radius else motion
+	if target.length() <= radius: return motion
+	# Outside a shrinking radius, allow only the inward distance supplied by
+	# physical velocity this tick. No positional teleport or protected old radius.
+	var inward = maxf(0,-motion.dot(offset.normalized()))
+	var reachable = maxf(radius,offset.length()-inward)
+	return target.limit_length(reachable)-offset

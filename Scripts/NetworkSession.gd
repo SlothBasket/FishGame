@@ -392,11 +392,11 @@ func fish_state(actor: FishPlayer) -> PackedFloat32Array:
 	var h = actor.heading
 	var v = actor.velocity
 	var f = actor.feeding
-	return PackedFloat32Array([p.x,p.y,p.z,h.x,h.y,h.z,v.x,v.y,v.z,f.food,f.bait_eaten,f._charge_time,f._dash_remaining,int(actor.airborne),int(actor.boosting),f.cooldown_remaining,f.bite_flash,f.grace_remaining,actor.stamina,actor.line_force.x,actor.line_force.y,actor.line_force.z,actor.endurance,int(actor.fight_active),actor.fight_pressure,actor.fight_gain,actor.fight_leverage,actor.fight_counter,int(actor.fight_slack),actor.motion.swim_drive,actor.motion.overdrive,actor.motion.run_build,actor.motion.dive_power,int(actor.motion.diving),actor.fight_best_move,actor.fight_anchor.x,actor.fight_anchor.y,actor.fight_anchor.z,actor.fight_roll,actor.motion.cadence_grade,int(actor.damaging_line),actor.directional_pressure,actor.head.offset.x,actor.head.offset.y,actor.head.impact_time,actor.motion.ascent_power,actor.head.shake_pressure])
+	return PackedFloat32Array([p.x,p.y,p.z,h.x,h.y,h.z,v.x,v.y,v.z,f.food,f.bait_eaten,f._charge_time,f._dash_remaining,int(actor.airborne),int(actor.boosting),f.cooldown_remaining,f.bite_flash,f.grace_remaining,actor.stamina,actor.line_force.x,actor.line_force.y,actor.line_force.z,actor.endurance,int(actor.fight_active),actor.fight_pressure,actor.fight_gain,actor.fight_leverage,actor.fight_counter,int(actor.fight_slack),actor.motion.swim_drive,actor.motion.overdrive,actor.motion.run_build,actor.motion.dive_power,int(actor.motion.diving),actor.fight_best_move,actor.fight_anchor.x,actor.fight_anchor.y,actor.fight_anchor.z,actor.fight_roll,actor.motion.cadence_grade,int(actor.damaging_line),actor.directional_pressure,actor.head.offset.x,actor.head.offset.y,actor.head.impact_time,actor.motion.ascent_power,actor.head.shake_pressure,actor.motion.drive_lockout])
 
 @rpc("authority","call_remote","unreliable_ordered",2)
 func fish_snapshot(peer: int, state: PackedFloat32Array) -> void:
-	if hosting or closed or not players.has(peer) or state.size() != 47: return
+	if hosting or closed or not players.has(peer) or state.size() != 48: return
 	var actor: FishPlayer = players[peer].entity
 	track("f%d" % peer,actor,Vector3(state[0],state[1],state[2]),FishInput.angles(Vector3(state[3],state[4],state[5])),1.0/fish_snapshot_hz,state[38])
 	actor.heading = Vector3(state[3],state[4],state[5])
@@ -423,6 +423,7 @@ func fish_snapshot(peer: int, state: PackedFloat32Array) -> void:
 	actor.fight_leverage = state[26]
 	actor.fight_counter = state[27]
 	actor.fight_slack = state[28] > 0
+	actor.motion.drive_lockout = state[47]
 	actor.motion.swim_drive = state[29]
 	actor.motion.overdrive = state[30]
 	actor.motion.run_build = state[31]

@@ -81,8 +81,15 @@ var fight_slack: bool = false
 @export var max_tension_camera_roll: float = 0.08
 @export var tension_camera_smoothing: float = 5
 @export var endurance_floor: float = 0.0
-@export var sprint_endurance_drain: float = 0.55
+@export var sprint_endurance_drain: float = 1.2
 @export var dash_endurance_cost: float = 0.8
+@export var overdrive_endurance_drain: float = 1.8
+@export var dive_endurance_drain: float = 2.0
+@export var ascent_endurance_drain: float = 1.6
+@export var side_endurance_cost: float = 1.5
+@export var fatigue_high_multiplier: float = 1.4
+@export var fatigue_low_multiplier: float = 0.12
+@export var fatigue_curve_exponent: float = 1.0
 var endurance: float = 100
 var fight_regen_scale: float = 1
 var sprint_exhausted: bool = false
@@ -229,7 +236,12 @@ func _physics_process(delta: float) -> void:
 	heading = head.step(delta,heading,intent,maxf(0,velocity.dot(heading)))
 	if in_fight: motion.step(delta,intent,heading,velocity.length()/maxf(0.1,effective_swim_speed()),stamina,touching_bottom(),head.stroke,power_capacity(),velocity.y)
 	var sprinting = intent.boost and intent.throttle > 0 and not free_bursts
-	if in_fight and sprinting: fatigue(sprint_endurance_drain*delta)
+	if in_fight:
+		var exertion = sprint_endurance_drain if sprinting else 0.0
+		exertion += overdrive_endurance_drain*clampf(motion.overdrive/maxf(0.01,motion.overdrive_max),0,1)
+		exertion += dive_endurance_drain*motion.dive_power+ascent_endurance_drain*motion.ascent_power
+		fatigue(exertion*delta)
+		if motion.side_event != 0: fatigue(side_endurance_cost)
 	var regeneration = stamina_regen*(fight_regen_multiplier*fight_regen_scale if in_fight else 1.0)
 	stamina = clampf(stamina+(-sprint_drain if sprinting else regeneration)*delta,0,endurance if in_fight else stamina_capacity)
 	if in_fight and motion.diving: stamina = maxf(0,stamina-motion.dive_stamina_drain*delta)
@@ -334,8 +346,11 @@ func spend_dash_stamina() -> bool:
 	return true
 
 func fatigue(amount: float) -> void:
-	endurance = maxf(stamina_capacity*endurance_floor,endurance-maxf(0,amount))
+	endurance = maxf(stamina_capacity*endurance_floor,endurance-maxf(0,amount)*fatigue_multiplier())
 	stamina = minf(stamina,endurance)
+
+func fatigue_multiplier() -> float:
+	return lerpf(fatigue_low_multiplier,fatigue_high_multiplier,pow(clampf(endurance/maxf(1,stamina_capacity),0,1),fatigue_curve_exponent))
 
 func fight_boost_multiplier() -> float:
 	# Only fight sprint output fades; ordinary swim speed and turns remain available.

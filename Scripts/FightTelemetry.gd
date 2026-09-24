@@ -15,6 +15,19 @@ var previous_looseness: float = 1
 var off_waits: Dictionary = {}
 var pump_loaded: bool = false
 var previous_drag: float = -1
+var progression_started: bool = false
+var previous_distance: float = 0
+var previous_line: float = 0
+var previous_take_up: float = 0
+var lift_gain: float = 0
+var pump_recovery: float = 0
+var pending_counters: Array[Dictionary] = []
+var jerk_maneuvers: Dictionary = {}
+var jerk_attempts: int = 0
+var vision_was_active: bool = false
+var last_vision_start: float = -1
+var vision_interval_sum: float = 0
+var vision_intervals: int = 0
 var hook_set_recorded: bool = false
 var ascent_depth_sum: float = 0
 const COUNTS = ["run_starts","overdrive_starts","overdrive_interruptions","dive_starts","dive_cancellations","ascent_attempts","breaches","jump_landings","lateral_course_changes","left_trajectories","right_trajectories","direction_reversals","head_shake_attempts","hook_loosening_events","jerk_up","jerk_left","jerk_right","run_interruptions","vision_activations","power_activations","pump_cycles","side_bursts_left","side_bursts_right","drag_changes"]
@@ -24,6 +37,7 @@ func _init(index: int, seed_value: int) -> void:
 		"final_condition":1.0,"minimum_condition":1.0,"maximum_tension":0.0,"average_tension":0.0,"maximum_break_ratio":0.0,"maximum_line_out":0.0,"final_line_out":0.0,"maximum_payout":0.0,"total_line_recovered":0.0,"maximum_slack":0.0,"slack_time":0.0,
 		"minimum_endurance":100.0,"final_endurance":100.0,"minimum_stamina":100.0,"average_depth":0.0,"maximum_depth":-INF,"minimum_depth":INF,"final_depth":0.0,"minimum_horizontal_distance":INF,"final_horizontal_distance":0.0,"final_distance_3d":0.0,
 		"reeling_time":0.0,"lowering_time":0.0,"high_rod_time":0.0,"lateral_rod_time":0.0,"straight_time":0.0,"left_time":0.0,"right_time":0.0,"maximum_looseness":1.0,"maximum_hook_hazard":0.0,"hook_hazard_time":0.0,"maximum_airborne_hazard":0.0,"maximum_slack_hazard":0.0,"average_ascent_start_depth":0.0,"maximum_ascent_power":0.0}
+	for key in ["starting_line_out","starting_spool_reserve","total_line_paid_out","net_line_change","rod_lift_distance_gain","permanent_pump_recovery","successful_run_counters","successful_overdrive_counters","successful_dive_counters","counter_endurance_damage","drive_lockout_time","vision_total_time","average_vision_interval","jerk_attempts_per_maneuver"]: row[key] = 0.0
 	for key in COUNTS: row[key] = 0
 	for key in BREAK_KEYS: row["break_"+key] = ""
 	for key in ["slack","airborne","shake","looseness","hazard","jump_severity"]: row["throw_"+key] = ""
@@ -47,6 +61,7 @@ func sample(f: FightSession, delta: float) -> void:
 	if f.phase >= FightSession.Phase.IMPACT and f.phase < FightSession.Phase.FINISHED: row.combat_duration += delta
 	sampled_time += delta
 	var s = state(f)
+	sample_progression(f,delta)
 	var p = f.fish
 	if previous_drag >= 0 and not is_equal_approx(previous_drag,f.fisher.drag_setting):
 		event("DRAG_CHANGE",f,"drag_changes")
@@ -141,3 +156,68 @@ func finish(f: FightSession, result: String) -> Dictionary:
 	for key in row:
 		if row[key] is float and not is_finite(row[key]): row[key] = 0.0
 	return row.duplicate()
+
+func record_jerk(f: FightSession) -> void:
+	jerk_attempts += 1
+	var identity = int(f.perception.observation.get("maneuver_id",0))
+	jerk_maneuvers[identity] = true
+	row.jerk_attempts_per_maneuver = float(jerk_attempts)/maxi(1,jerk_maneuvers.size())
+
+func record_counter(f: FightSession) -> void:
+	var details = f.last_counter.duplicate()
+	row.counter_endurance_damage += details.endurance_before-details.endurance_after
+	var key = "successful_dive_counters" if details.maneuver == "DIVE" else "successful_overdrive_counters" if details.maneuver == "OVERDRIVE" else "successful_run_counters"
+	row[key] += 1
+	event("COUNTER_PROGRESS",f)
+	var event_state: Dictionary = events[-1].state
+	event_state.merge(details,true)
+	event_state["distance_after_1s"] = null
+	event_state["line_out_after_1s"] = null
+	pending_counters.append({"due":elapsed+1,"state":event_state})
+
+func sample_progression(f: FightSession, delta: float) -> void:
+	var distance = f.fish.position.distance_to(f.fisher.position)
+	var line = f.spool.line_out
+	var take_up = f.spool.rod_take_up
+	if not progression_started:
+		progression_started = true
+		row.starting_line_out = line
+		row.starting_spool_reserve = f.spool.maximum_line_out-line
+		previous_distance = distance
+		previous_line = line
+		previous_take_up = take_up
+	row.net_line_change = line-row.starting_line_out
+	if delta > 0:
+		# Gross spool release, not net line rate (retrieve may occur simultaneously).
+		row.total_line_paid_out += f.spool.payout*delta
+		row.drive_lockout_time += delta if f.fish.motion.drive_lockout > 0 else 0
+		row.vision_total_time += delta if f.fisher.vision_active else 0
+		if f.fisher.vision_active and not vision_was_active:
+			if last_vision_start >= 0:
+				vision_interval_sum += elapsed-last_vision_start
+				vision_intervals += 1
+				row.average_vision_interval = vision_interval_sum/vision_intervals
+			last_vision_start = elapsed
+		vision_was_active = f.fisher.vision_active
+		# Observational attribution: count inward distance only while rod is loaded;
+		# subtract simultaneous spool recovery, then cap a pump at its available gain.
+		if take_up >= previous_take_up and take_up > 0.15 and f.spool.slack < 0.25:
+			var gain = maxf(0,previous_distance-distance-maxf(0,previous_line-line))
+			lift_gain += gain
+			row.rod_lift_distance_gain += gain
+		if take_up < previous_take_up and f.fisher.command.retrieve > 0:
+			var recovery = minf(maxf(0,previous_line-line),maxf(0,lift_gain-pump_recovery))
+			pump_recovery += recovery
+			row.permanent_pump_recovery += recovery
+		if take_up <= 0.15:
+			lift_gain = 0
+			pump_recovery = 0
+		previous_distance = distance
+		previous_line = line
+		previous_take_up = take_up
+	for item in pending_counters.duplicate():
+		if elapsed >= item.due:
+			item.state["distance_after_1s"] = distance
+			item.state["line_out_after_1s"] = line
+			item.state["followup_delay"] = 1+elapsed-item.due
+			pending_counters.erase(item)

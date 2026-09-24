@@ -107,6 +107,7 @@ func gesture(f: FightSession, direction: int) -> void:
 	if pending: return
 	var names = ["","JERK_LEFT","JERK_RIGHT","JERK_UP"]
 	telemetry.event(names[direction],f,names[direction].to_lower())
+	telemetry.record_jerk(f)
 func counter(f: FightSession, kind: int) -> void:
 	if pending: return
 	telemetry.event(["","RUN_STOPPED","OVERDRIVE_STOPPED","DIVE_STOPPED"][kind],f,["","run_interruptions","overdrive_interruptions","dive_cancellations"][kind])

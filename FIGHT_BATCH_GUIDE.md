@@ -1,3 +1,5 @@
+> Current Fisher progression pass: [FISHER_PROGRESSION.md](FISHER_PROGRESSION.md) documents 65 m shared casting, physical rod take-up, counter recovery/Drive disruption, nonlinear endurance costs, slower perceived AI decisions and progression telemetry. Fish snapshots now contain **48** values (Drive lockout appended).
+
 > Current drag/burst pass: see [DRAG_AND_BURSTS.md](DRAG_AND_BURSTS.md). Total-load drag also works during Power Reel; base break hazard is now **0.008**. The older baseline results below are historical. The pre-hook extension bug is fixed.
 
 # Batch fights and telemetry

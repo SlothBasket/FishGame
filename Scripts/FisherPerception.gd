@@ -2,11 +2,11 @@ class_name FisherPerception
 extends Resource
 ## Delayed observations available to a human fisher. No fish energy/Drive/AI-state reads.
 @export var sample_interval: float = 0.12
-@export var reaction_delay: float = 0.30
+@export var reaction_delay: float = 0.45
 @export var reaction_jitter: float = 0.10
 @export var late_reaction_chance: float = 0.12
 @export var late_reaction_extra: float = 0.20
-@export var vision_reaction_delay: float = 0.08
+@export var vision_reaction_delay: float = 0.25
 var clock: float = 0
 var next_sample: float = 0
 var observation: Dictionary = {}
@@ -14,6 +14,10 @@ var pending: Array[Dictionary] = []
 var descending_time: float = 0
 var uncertainty: bool = false
 var last_air_time: float = -10
+var maneuver_id: int = 0
+var maneuver_key: String = ""
+var pending_maneuver: String = ""
+var maneuver_wait: float = 0
 var rng = RandomNumberGenerator.new()
 func _init() -> void:
 	rng.randomize()
@@ -34,7 +38,10 @@ func tick(delta: float, f: FightSession) -> void:
 	# Side is a delayed coarse visual estimate outside Vision, never an AI action.
 	if observation.get("descending",false): descending_time += delta
 	else: descending_time = 0
-	if not observation.is_empty(): observation["descending_time"] = descending_time
+	if not observation.is_empty():
+		observation["descending_time"] = descending_time
+		track_maneuver(delta)
+		observation["maneuver_id"] = maneuver_id
 func capture(f: FightSession) -> Dictionary:
 	var right = BaitMotion.horizontal(f.fish.position-f.fisher.position).cross(Vector3.UP)
 	var outward = (f.fish.position-f.fisher.position).normalized()
@@ -51,3 +58,22 @@ func capture(f: FightSession) -> Dictionary:
 		"depth":snappedf(f.fish.water_height-f.fish.position.y,4),"line_out":f.spool.line_out,"capacity":f.spool.maximum_line_out,"drag":f.fisher.drag_setting,"distance":f.spool.distance}
 func age() -> float:
 	return clock-float(observation.get("sample_time",clock))
+
+func track_maneuver(delta: float) -> void:
+	var side = float(observation.get("side",0))
+	var running = float(observation.get("outward_speed",0)) > 3 or float(observation.get("payout",0)) > 2
+	var key = "DIVE" if observation.get("descending",false) else "AIR" if observation.get("airborne",false) or observation.get("ascending",false) else ("LEFT" if side < -0.4 else "RIGHT" if side > 0.4 else "RUN") if running else "QUIET"
+	if key != pending_maneuver:
+		pending_maneuver = key
+		maneuver_wait = 0
+	maneuver_wait += delta
+	if key == maneuver_key or maneuver_wait < (0.9 if key == "QUIET" else 0.35): return
+	# A coarse side estimate returning to centre is not a new run. Require rest,
+	# a new dive/air transition, or a real left/right reversal before another try.
+	var lateral = key in ["LEFT","RIGHT"]
+	var old_lateral = maneuver_key in ["LEFT","RIGHT"]
+	if key == "RUN" and old_lateral: return
+	if key == "QUIET": maneuver_key = key; return
+	if maneuver_key == "" or maneuver_key in ["QUIET","AIR"] or key == "DIVE" or maneuver_key == "DIVE" or key == "AIR" or (lateral and key != maneuver_key):
+		maneuver_id += 1
+		maneuver_key = key

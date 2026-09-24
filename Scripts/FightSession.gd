@@ -41,6 +41,11 @@ var power_exhausted: bool = false
 @export var safe_load: float = 35
 @export var critical_load: float = 110
 @export var jerk_damage: float = 15
+@export var dive_counter_stamina_damage: float = 24
+@export var run_counter_endurance: float = 3.5
+@export var overdrive_counter_endurance: float = 7
+@export var dive_counter_endurance: float = 9
+var last_counter: Dictionary = {}
 @export var jerk_spike: float = 35
 @export var jerk_cooldown: float = 1.2
 @export var jerk_cost: float = 14
@@ -92,7 +97,7 @@ var power_locked_sprint: bool = false
 var power_preexisting_sprint: bool = false
 @export var gesture: RodGesture = RodGesture.new()
 @export var jerk_counter_force: float = 65
-@export var early_run_window: float = 0.9
+@export var early_run_window: float = 1.3
 @export var late_jerk_spike: float = 65
 @export var counter_impulse: float = 4
 var jerk_direction: int = 0
@@ -122,8 +127,8 @@ func _ready() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--fish-skill="): fish_skill = clampf(arg.get_slice("=",1).to_float(),0.6,1)
 		if arg.begins_with("--fisher-skill="): fisher_skill = clampf(arg.get_slice("=",1).to_float(),0.6,1)
-	perception.reaction_delay = lerpf(0.6,0.24,fisher_skill)
-	perception.reaction_jitter = lerpf(0.28,0.06,fisher_skill)
+	perception.reaction_delay = lerpf(0.75,0.45,inverse_lerp(0.6,1.0,fisher_skill))
+	perception.reaction_jitter = 0.06
 	perception.late_reaction_chance = lerpf(0.5,0.08,fisher_skill)
 	spool = spool.duplicate()
 	gesture = gesture.duplicate()
@@ -359,6 +364,7 @@ func controlled_force(force: Vector3) -> Vector3:
 
 func constrain_velocity(delta: float) -> void:
 	if phase < Phase.IMPACT or phase == Phase.FINISHED: return
+	fish.velocity = spool.rod_pull_velocity(fish.position-neutral_tip,fish.velocity,delta,maximum_pull_speed)
 	fish.velocity = spool.constrain_motion(fish.position-neutral_tip,fish.velocity*delta)/maxf(0.0001,delta)
 
 func landing_ready() -> bool:
@@ -408,11 +414,10 @@ func jerk_contest(direction: int, heading: Vector3, outward: Vector3, right: Vec
 			matched = (side < 0 and direction == RodGesture.Direction.RIGHT) or (side > 0 and direction == RodGesture.Direction.LEFT)
 		else: matched = direction == RodGesture.Direction.UP and heading.dot(outward) > 0.6
 	if fish.airborne or fish.motion.falling or (fish.motion.ascent_power > 0.1 and fish.velocity.y > 0): matched = false
-	var late = clampf((fish.motion.run_age-early_run_window)/1.5,0,1)
-	if fish.motion.diving: late = clampf(fish.motion.dive_power/maxf(0.01,fish.motion.dive_counter_window),0,1)
+	var late = counter_lateness()
 	var resistance = 25+fish.motion.propulsion*15+fish.motion.swim_drive*12+fish.motion.overdrive*30+fish.motion.dive_power*20
 	var force = jerk_counter_force*(0.65+0.35*rod_pull)
-	return Vector2((jerk_spike+late*late_jerk_spike)*contact,clampf(force/(resistance*(1+late*0.65)),0,1)*contact if matched else 0.0)
+	return Vector2((jerk_spike+late*late_jerk_spike)*contact,clampf(force/resistance,0,1)*lerpf(1,0.15,late)*contact if matched else 0.0)
 
 func apply_directional_jerk(direction: int, outward: Vector3, right: Vector3, contact: float) -> void:
 	jerk_wait = jerk_cooldown
@@ -427,25 +432,45 @@ func apply_directional_jerk(direction: int, outward: Vector3, right: Vector3, co
 	var result = jerk_contest(direction,fish.heading,outward,right,contact)
 	spike = maxf(spike,result.x)
 	if result.y <= 0: return
-	var impulse_direction = Vector3.UP if direction == RodGesture.Direction.UP and fish.motion.diving else -outward
-	fish.velocity += impulse_direction*counter_impulse*result.y
-	fish.stamina = maxf(0,fish.stamina-jerk_damage*result.y)
-	if fish.motion.diving:
-		if result.y >= 0.65:
-			fish.motion.interrupt_dive()
-			fish.motion.interrupt_run()
-			interruption = 3
-		else: fish.motion.dive_power *= 1-result.y*0.5
+	var maneuver = "DIVE" if fish.motion.diving else "OVERDRIVE" if fish.motion.overdrive > 0 else "SIDE_BURST" if fish.motion.side_time > 0 else "RUN"
+	var timing = counter_lateness()
+	var impulse_direction = (Vector3.UP-outward*0.6).normalized() if maneuver == "DIVE" else -outward
+	apply_counter_recovery(maneuver,result.y,impulse_direction,timing)
+	if interruption > 0: fisher.session.publish_fight_counter(fish,fisher,interruption)
+	if fisher.session.batch_runner != null: fisher.session.batch_runner.telemetry.record_counter(self)
+
+func counter_lateness() -> float:
+	var age = fish.motion.dive_age if fish.motion.diving else fish.motion.run_age
+	var window = fish.motion.dive_counter_window if fish.motion.diving else early_run_window
+	return clampf((age-window)/1.5,0,1)
+
+func apply_counter_recovery(maneuver: String, effectiveness: float, impulse: Vector3, lateness: float) -> void:
+	# No line-length awards: gain comes from recoil, lost propulsion and real pull.
+	last_counter = {"maneuver":maneuver,"counter_timing":lateness,"effectiveness":effectiveness,
+		"endurance_before":fish.endurance,"stamina_before":fish.stamina,
+		"distance_before":fish.position.distance_to(neutral_tip),"line_out_before":spool.line_out}
+	var dive = maneuver == "DIVE"
+	var overdrive = maneuver == "OVERDRIVE"
+	var damage = dive_counter_endurance if dive else overdrive_counter_endurance if overdrive else run_counter_endurance
+	fish.stamina = maxf(0,fish.stamina-(dive_counter_stamina_damage if dive else jerk_damage)*effectiveness)
+	fish.fatigue(damage*effectiveness)
+	fish.velocity += impulse*counter_impulse*effectiveness
+	fish.receive_impact(impulse,effectiveness)
+	interruption = 0
+	if effectiveness >= 0.5:
+		if dive: fish.motion.interrupt_dive()
+		var recovery = fish.motion.dive_recovery_duration if dive else fish.motion.overdrive_recovery_duration if overdrive else fish.motion.counter_recovery_duration
+		fish.motion.interrupt_run(recovery,overdrive or dive)
+		interruption = 3 if dive else 2 if overdrive else 1
 	else:
-		if result.y >= 0.65:
-			interruption = 2 if fish.motion.overdrive > 0 else 1
-			fish.motion.interrupt_run()
-		else:
-			fish.motion.overdrive *= 1-result.y*0.5
-			fish.motion.run_build *= 1-result.y*0.3
-	if interruption > 0:
-		fish.receive_impact(impulse_direction+right*(-1 if direction == RodGesture.Direction.LEFT else 1 if direction == RodGesture.Direction.RIGHT else 0),result.y)
-		fisher.session.publish_fight_counter(fish,fisher,interruption)
+		# Late but correct input earns partial physical relief, not a binary stun.
+		fish.motion.dive_power *= 1-effectiveness
+		fish.motion.overdrive *= 1-effectiveness
+		fish.motion.run_build *= 1-effectiveness
+		fish.motion.propulsion *= 1-effectiveness
+		fish.motion.counter_recovery = maxf(fish.motion.counter_recovery,0.85*effectiveness)
+	last_counter["endurance_after"] = fish.endurance
+	last_counter["stamina_after"] = fish.stamina
 
 func fall_load() -> float:
 	if not fish.motion.falling: return 0

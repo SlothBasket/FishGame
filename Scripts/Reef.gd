@@ -270,7 +270,7 @@ func _process(delta: float) -> void:
 	_drive_bar.visible = _fish.fight_active
 	_drive_caption.visible = _fish.fight_active
 	_drive_bar.value = _fish.motion.swim_drive*100
-	_drive_caption.text = "%s %.0f%%  %s" % ["OVERDRIVE" if _fish.motion.overdrive > 0 else "SWIM DRIVE",_fish.motion.swim_drive*100,["","GOOD","FAST","LATE"][clampi(_fish.motion.cadence_grade,0,3)]]
+	_drive_caption.text = "%s %.0f%%  %s" % ["DRIVE DISRUPTED" if _fish.motion.drive_lockout > 0 else "OVERDRIVE" if _fish.motion.overdrive > 0 else "SWIM DRIVE",_fish.motion.swim_drive*100,["","GOOD","FAST","LATE"][clampi(_fish.motion.cadence_grade,0,3)]]
 	_dive_bar.visible = _fish.fight_active and _fish.motion.diving
 	_dive_caption.visible = _dive_bar.visible
 	_dive_bar.value = _fish.motion.dive_power*100

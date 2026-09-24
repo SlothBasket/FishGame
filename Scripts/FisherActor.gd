@@ -3,7 +3,6 @@ extends Node3D
 ## Server-owned boat/bait controller. No cameras, device reads, HUD or local art.
 enum State { SETUP, BAIT, FIGHT }
 @export var boat_speed: float = 12
-@export var ai_cast_distance: float = 95
 @export var cast_distance: float = 65
 @export var cast_variation: float = 0.22
 @export var cast_angle_variation: float = 0.12
