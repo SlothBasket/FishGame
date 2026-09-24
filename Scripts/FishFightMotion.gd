@@ -39,6 +39,14 @@ var cadence_grade: int = 0 # 0 none, 1 GOOD, 2 FAST, 3 LATE
 @export var ascent_build_time: float = 1.2
 @export var ascent_stamina_drain: float = 6
 var ascent_power: float = 0
+@export var jump_recovery_duration: float = 3
+var jump_recovery: float = 0
+var jump_severity: float = 0
+var jump_peak: float = 0
+var airborne_time: float = 0
+var was_airborne: bool = false
+var falling: bool = false
+var landed_event: bool = false
 var power_capacity: float = 1
 var dive_hold: float = 0
 var run_age: float = 0
@@ -89,7 +97,7 @@ func step(delta: float, input: FishInput, heading: Vector3, speed_fraction: floa
 		dive_hold = dive_hold+delta if heading.y < -sin(deg_to_rad(dive_angle)) and input.throttle > 0 else 0
 		if dive_hold >= dive_commit_time: diving = true
 	if diving: dive_power = minf(power_capacity,dive_power+delta*power_capacity/maxf(0.1,dive_build_time))
-	var ascending = input.boost and input.throttle > 0 and stamina > 1 and (heading.y > 0.35 or input.vertical > 0.5) and upward_speed > 1
+	var ascending = jump_recovery <= 0 and not was_airborne and input.boost and input.throttle > 0 and stamina > 1 and (heading.y > 0.35 or input.vertical > 0.5) and upward_speed > 1
 	var ascent_target = power_capacity*clampf(upward_speed/5,0,1)*(0.4+0.6*swim_drive) if ascending else 0.0
 	ascent_power = move_toward(ascent_power,ascent_target,delta/maxf(0.1,ascent_build_time))
 	# Built speed and motor effort share a bounded budget; speed is not added twice.
@@ -111,3 +119,18 @@ func interrupt_run() -> void:
 	run_build = 0
 	propulsion *= 0.5
 	counter_recovery = counter_recovery_duration
+
+func track_jump(delta: float, airborne: bool, height: float, vertical_speed: float) -> void:
+	landed_event = was_airborne and not airborne
+	jump_recovery = maxf(0,jump_recovery-delta)
+	if airborne:
+		if not was_airborne:
+			jump_peak = 0
+			airborne_time = 0
+			jump_severity = clampf(maxf(0,vertical_speed)/9,0,1)*ascent_power
+		airborne_time += delta
+		jump_peak = maxf(jump_peak,height)
+		jump_severity = maxf(jump_severity,clampf(jump_peak/3,0,2))
+	if landed_event: jump_recovery = jump_recovery_duration
+	falling = (airborne and vertical_speed < -0.5) or (jump_recovery > jump_recovery_duration-0.6 and vertical_speed < -0.5)
+	was_airborne = airborne

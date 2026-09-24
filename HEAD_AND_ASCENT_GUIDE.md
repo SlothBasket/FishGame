@@ -1,3 +1,5 @@
+> Latest interaction pass: [FIGHT_INTERACTIONS_GUIDE.md](FIGHT_INTERACTIONS_GUIDE.md) supersedes prior hook-security, overlapping stroke classification, exclusive AI outputs and unlimited payout reconciliation. Current snapshots: **47 fish / 63 fisherman**.
+
 # Head-led swimming, slack shaking and ascent
 
 This pass changes fish execution/readability, not the core line force/drag/jerk balance. See ROD_GESTURE_GUIDE.md for retained pump and gesture rules. Normal ecosystem remains 88 actors; F9 diagnostics remain intact.

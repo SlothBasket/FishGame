@@ -37,10 +37,11 @@ static func run() -> bool:
 	fish.position.y = 30
 	fight.tension = 60
 	fight.rod_vertical = 1
-	ok = check(FightDecisions.fish_choice(fight,0) == FightDecisions.FishAction.JUMP,"Near-surface pressure chooses JUMP") and ok
+	ok = check(FightDecisions.fish_choice(fight,0) != FightDecisions.FishAction.JUMP,"Tiny surface hop is not a preferred attack") and ok
 	fish.position.y = 20
 	fight.tension = 100
 	fish.motion.dive_blocked = true
+	fish.motion.run_age = 5
 	fight.spool.distance = 30
 	ok = check(FightDecisions.fish_choice(fight,0) == FightDecisions.FishAction.JUMP,"Deep pressured fish can choose ascent") and ok
 	ok = check(FightDecisions.fisher_choice(fight.perception.capture(fight)) == FightDecisions.FisherAction.LET_RUN,"Dangerous load chooses LET RUN") and ok
@@ -76,6 +77,7 @@ static func run() -> bool:
 	ok = check(not perception.observation.is_empty() and perception.age() >= 0.3 and not perception.observation.has("stamina") and not perception.observation.has("drive") and not perception.observation.has("dive_power"),"Delivered perception is delayed and contains no hidden fish resources") and ok
 	ok = gesture_and_pump_checks(fight) and ok
 	ok = head_and_ascent_checks(fight) and ok
+	ok = interaction_checks() and ok
 	print("FORCE RANGE hard=",hard," tension=",threatened.tension," exceptional=",exceptional.tension," fresh risk=",exceptional.break_threshold())
 	fight.free()
 	fish.free()
@@ -173,7 +175,7 @@ static func head_and_ascent_checks(f: FightSession) -> bool:
 		a = idle.step(1.0/60,a,input,0)
 		b = moving.step(1.0/60,b,input,8)
 	ok = check(a.angle_to(Vector3.FORWARD) > 0 and a.angle_to(Vector3.FORWARD) < b.angle_to(Vector3.FORWARD)*0.5,"Low-speed steering remains but is much weaker") and ok
-	ok = check(peak_shake > 0 and f.shake_effect(3,peak_shake) > 0 and f.shake_effect(0,peak_shake) == 0,"Alternating head motion exploits real slack, not taut line") and ok
+	ok = check(peak_shake == 0,"Full-body strokes do not simultaneously count as head shaking") and ok
 	var micro = FishFightMotion.new()
 	for i in range(10): micro.step(0.4,FishInput.new(1,1 if i%2 == 0 else -1),Vector3.FORWARD,1,100,false)
 	ok = check(micro.swim_drive <= 0.2,"Input flags alone cannot build Drive") and ok
@@ -193,7 +195,7 @@ static func head_and_ascent_checks(f: FightSession) -> bool:
 	f.fisher.vision_active = false
 	observed = f.perception.capture(f)
 	f.fisher.vision_active = true
-	ok = check(float(observed.side) == 0 and absf(float(f.perception.capture(f).side)) > 0.2,"Only Vision reports lateral direction") and ok
+	ok = check(is_equal_approx(float(observed.side),snappedf(float(observed.side),0.5)) and absf(float(f.perception.capture(f).side)) > 0.2,"Normal direction is coarse observed motion; Vision resolves heading") and ok
 	f.fisher.vision_active = false
 	var line = FightLine.new()
 	line.line_out = 50
@@ -206,4 +208,68 @@ static func head_and_ascent_checks(f: FightSession) -> bool:
 	ok = check(line.line_out < 50 and line.slack < 0.2,"Retrieve collects slack normally") and ok
 	head.knock(Vector2(0.2,0.4),0.3)
 	ok = check(head.impact_time > 0 and head.offset.length() > 0.3,"Counter impact visibly displaces head and temporarily disrupts steering") and ok
+	return ok
+
+static func interaction_checks() -> bool:
+	var ok = true
+	var head = FishSteering.new()
+	ok = check(head.classify_reversal(deg_to_rad(8),deg_to_rad(1),0.15,2) == 1 and head.classify_reversal(deg_to_rad(22),deg_to_rad(7),0.24,3) == 2,"Reversals classify exclusively by amplitude and body participation") and ok
+	var motion = FishFightMotion.new()
+	var heading = Vector3.FORWARD
+	var saw_shake = false
+	for i in range(180):
+		var input = FishInput.new(1,0,0,Vector3.FORWARD.rotated(Vector3.UP,sin(i/60.0*22)*deg_to_rad(9)))
+		heading = head.step(1.0/60,heading,input,8)
+		motion.step(1.0/60,input,heading,1,100,false,head.stroke)
+		if head.classification == 1: saw_shake = true
+	ok = check(saw_shake and motion.swim_drive <= 0.2 and motion.overdrive == 0,"Actual small fast shakes cannot build Drive or Overdrive") and ok
+	head = FishSteering.new()
+	motion = FishFightMotion.new()
+	motion.swim_drive = 1
+	heading = Vector3.FORWARD
+	var saw_overdrive = false
+	for i in range(120):
+		var input = FishInput.new(1,0,0,Vector3.FORWARD.rotated(Vector3.UP,deg_to_rad(26)*(1 if int(i/15.0)%2 == 0 else -1)))
+		heading = head.step(1.0/60,heading,input,8)
+		motion.step(1.0/60,input,heading,1,100,false,head.stroke)
+		if motion.overdrive > 0: saw_overdrive = true
+	ok = check(saw_overdrive,"Fast visible full-body sweeps can activate Overdrive") and ok
+	var hook = HookRisk.new()
+	hook.step(0.1,0,0,false,0,false)
+	ok = check(hook.hazard == 0,"Tight quiet line has no passive hook-loss hazard") and ok
+	hook.step(0.1,2,0,false,0,false)
+	var quiet = hook.hazard
+	hook.step(0.1,2,1,false,0,false)
+	ok = check(quiet > 0 and hook.hazard > quiet*5,"Slack hazard is multiplied only while shaking") and ok
+	hook.step(0.1,0,1,true,1,false)
+	ok = check(hook.hazard > quiet*10,"Airborne shake creates a strong probabilistic opportunity") and ok
+	for i in range(20): hook.violent_landing(1)
+	hook.step(0.1,0,0,false,0,false)
+	ok = check(is_equal_approx(hook.looseness,1.4) and hook.hazard == 0,"Bounded looseness never becomes automatic hook failure") and ok
+	var seen = {"ascending":true,"slack":2,"strength":110,"tension":20,"side":-0.5}
+	var plan = FisherControls.plan(seen,100)
+	ok = check(plan.retrieve == 1 and plan.power and plan.jerk == Vector2.ZERO and plan.horizontal > 0,"Ascent blends lateral rod, hard retrieve and no jerk") and ok
+	seen = {"airborne":true,"jump_fall":true,"slack":0,"tension":70,"strength":110}
+	plan = FisherControls.plan(seen,100)
+	ok = check(plan.vertical < 0 and plan.retrieve == 0 and plan.jerk == Vector2.ZERO,"Falling fish gets low rod and no jerk") and ok
+	seen = {"side":-0.5,"outward_speed":5,"tension":30,"strength":110}
+	plan = FisherControls.plan(seen,100)
+	ok = check(plan.horizontal > 0 and plan.retrieve > 0 and plan.jerk.x > 0,"Lateral run receives simultaneous rod pressure, retrieve and directional gesture") and ok
+	ok = check(not FisherControls.plan({"depth":2,"speed":1},100).pump and FisherControls.plan({"depth":20,"speed":1},100).pump,"Pump is reserved for controlled deep fish") and ok
+	var low = FightLine.new()
+	var high = FightLine.new()
+	for line in [low,high]: line.line_out = 40; line.maximum_payout = 1
+	low.step(0.1,44,20,100,0,0.4,false,80,0,-1)
+	high.step(0.1,44,20,100,0,0.4,false,80,1,1)
+	ok = check(low.holding_threshold < high.holding_threshold and low.tension < high.tension and low.tension > low.break_threshold(),"Low rod softens multiplicatively but cannot make a severe fall safe") and ok
+	var before = high.line_out
+	high.sync_distance(50,0.1)
+	ok = check(high.payout <= high.maximum_payout and high.line_out == before and high.tension > high.break_threshold(),"Post-move reconciliation cannot bypass finite payout") and ok
+	var cycle = FishFightMotion.new()
+	cycle.ascent_power = 0.8
+	cycle.track_jump(0.1,true,2,8)
+	cycle.track_jump(0.1,true,4,-4)
+	ok = check(cycle.falling and cycle.jump_severity > 1,"A high breach becomes a meaningful falling-load event") and ok
+	cycle.track_jump(0.1,false,-0.1,-5)
+	ok = check(cycle.landed_event and cycle.jump_recovery > 0,"Landing starts recovery before another ascent") and ok
 	return ok

@@ -1,3 +1,5 @@
+> Latest interaction pass: [FIGHT_INTERACTIONS_GUIDE.md](FIGHT_INTERACTIONS_GUIDE.md) supersedes prior hook-security, overlapping stroke classification, exclusive AI outputs and unlimited payout reconciliation. Current snapshots: **47 fish / 63 fisherman**.
+
 > Current head/ascent pass: [HEAD_AND_ASCENT_GUIDE.md](HEAD_AND_ASCENT_GUIDE.md) supersedes earlier direct body steering, input-only Drive, 30% endurance floor and directional information without Vision. Current snapshots: **47 fish / 61 fisherman**.
 
 # Directional gestures, pump/reel and lower-load baseline

@@ -102,11 +102,11 @@ static func run(fight: FightSession) -> bool:
 	var tether = FightLine.new()
 	tether.line_out = 5
 	tether.step(0.016,50,0,0,1,0.4,true)
-	ok = verify(tether.line_out >= 50-tether.maximum_extension,"Impossible initial span pays line immediately, including Power") and ok
+	ok = verify(tether.line_out <= 5.001,"Impossible span does not bypass payout under Power") and ok
 	var legal = tether.constrain_motion(Vector3(50,0,0),Vector3(1,0.1,0))
 	ok = verify((Vector3(50,0,0)+legal).length() <= 50.001 and legal.x > -0.01,"Taut guard limits outward motion without an inward teleport") and ok
 	tether.step(1,50,0,0,1,0.4,true)
-	ok = verify(tether.line_out >= 50-tether.maximum_extension,"Blocked Power retrieval cannot shrink line below physical span") and ok
+	ok = verify(tether.line_out >= 5,"Blocked Power cannot shorten an already overextended span") and ok
 	var force = fight.controlled_force(Vector3(100,100,100))
 	ok = verify(force.length() <= fight.maximum_line_acceleration+0.001 and force.y <= fight.maximum_vertical_acceleration,"Line acceleration and upward pressure are bounded") and ok
 	var old_position = fight.fish.position

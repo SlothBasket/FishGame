@@ -324,7 +324,7 @@ func _physics_process(delta: float) -> void:
 			if fight_smoke:
 				input.species = BaitMotion.Kind.MINNOW
 				input.cast_serial = 1
-				if fisher_view.data.size() == 61:
+				if fisher_view.data.size() == 63:
 					input.jerk = roundi(fisher_view.data[10]) == FightSession.Phase.CANDIDATE or (roundi(fisher_view.data[10]) == FightSession.Phase.METER and fisher_view.data[11] < 0.72)
 			if hosting: players[owned_id].entity.command = input
 			elif input_clock <= 0:
@@ -603,11 +603,11 @@ func fisher_state(actor: FisherActor) -> PackedFloat32Array:
 		f.rod_tip.x if has_fight else 0,f.rod_tip.y if has_fight else 0,f.rod_tip.z if has_fight else 0,f.rod_hand.x if has_fight else 0,f.rod_hand.y if has_fight else 0,f.rod_hand.z if has_fight else 0,f.spool.strength if has_fight else 110,f.rod_horizontal if has_fight else 0,f.rod_vertical if has_fight else 0,
 		f.spool.maximum_line_out if has_fight else FightLine.DEFAULT_CAPACITY,
 		v.normalized().dot(BaitMotion.horizontal(p-actor.position).cross(Vector3.UP)) if has_fight and actor.vision_active and v.length() > 0.3 else 0,
-		f.tension/maxf(1,f.spool.break_threshold()) if has_fight else 0,f.counter_pressure if has_fight else 0,f.fisher_action if has_fight else 4,f.fish.motion.dive_power if has_fight else 0,int(f.fish.motion.diving) if has_fight else 0,f.line_damage_rate if has_fight else 0,f.spool.rod_take_up if has_fight else 0,f.recovery_total if has_fight else 0,f.jerk_direction if has_fight else 0,f.jerk_notice_time if has_fight else 0,f.fish.motion.ascent_power if has_fight else 0])
+		f.tension/maxf(1,f.spool.break_threshold()) if has_fight else 0,f.counter_pressure if has_fight else 0,f.fisher_action if has_fight else 4,f.fish.motion.dive_power if has_fight else 0,int(f.fish.motion.diving) if has_fight else 0,f.line_damage_rate if has_fight else 0,f.spool.rod_take_up if has_fight else 0,f.recovery_total if has_fight else 0,f.jerk_direction if has_fight else 0,f.jerk_notice_time if has_fight else 0,f.fish.motion.ascent_power if has_fight else 0,int(f.fish.motion.falling) if has_fight else 0,int(f.fish.airborne) if has_fight else 0])
 
 @rpc("authority","call_remote","unreliable_ordered",2)
 func fisher_snapshot(peer: int, state: PackedFloat32Array) -> void:
-	if hosting or closed or state.size() != 61 or not players.has(peer) or players[peer].role != ROLE_FISHER: return
+	if hosting or closed or state.size() != 63 or not players.has(peer) or players[peer].role != ROLE_FISHER: return
 	players[peer].entity.position = Vector3(state[0],state[1],state[2])
 	if peer == multiplayer.get_unique_id() and fisher_view != null:
 		if fight_smoke and (fisher_view.data.is_empty() or fisher_view.data[10] != state[10]): print("CLIENT FIGHT PHASE ",state[10]," fields=",state.size())
@@ -658,7 +658,7 @@ func fight_smoke_tick() -> void:
 			smoke_connected = clock
 		if smoke_stage == 4 and clock-smoke_connected > 0.4: get_tree().quit(0)
 	else:
-		if fisher_view != null and fisher_view.data.size() == 61:
+		if fisher_view != null and fisher_view.data.size() == 63:
 			if roundi(fisher_view.data[10]) == FightSession.Phase.FIGHT and not smoke_saw_two:
 				smoke_saw_two = true
 				print("FIGHT SMOKE PASS replicated fight/HUD state")

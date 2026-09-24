@@ -164,7 +164,7 @@ func sample() -> FisherIntent:
 	return intent
 
 func _process(delta: float) -> void:
-	if data.size() != 61: return
+	if data.size() != 63: return
 	var stick = GameControls.look()
 	apply_look(stick*stick.length()*rod_stick_response*delta)
 	var origin = Vector3(data[0],data[1],data[2])
@@ -216,7 +216,7 @@ func _process(delta: float) -> void:
 	label.text = "FISHER — %s\nG cast/setup | X species | W/RT retrieve | Wheel/D-pad up/down reel\nMouse/right stick: rod during fight | [ ] / D-pad left/right: drag\nQ/RB hook set; fast rod flick: jerk | Shift/LB Power | V/LS Focus | C/RS bait view" % phase_name
 	if not fighting and data[27] > 0: label.text += "\n"+FightSession.Outcome.keys()[roundi(data[27])]
 	var pressure = "SLACK — REEL!" if data[31] > 0.5 else "CRITICAL" if data[13] > data[45] else "HEAVY" if data[13] > data[45]*0.7 else "DRAG" if data[38] > 0 else "WORKING" if data[13] > data[45]*0.2 else "LIGHT"
-	var pull_direction = "DIVE!" if data[54] > 0 else "JUMP!" if data[60] > 0.1 else "RUN!"
+	var pull_direction = "DIVE!" if data[54] > 0 else "FALL — LOWER ROD" if data[61] > 0 else "ASCENT — REEL" if data[60] > 0.1 or data[62] > 0 else "RUN!"
 	if data[16] > 0: pull_direction += " LEFT" if data[49] < -0.3 else " RIGHT" if data[49] > 0.3 else " AWAY"
 	readings.text = "LINE %.1f / %.0f m\n%s | %s\nSlack %.1f m | Line rate %+.1f m/s\nTension %.0f | Drag limit %.0f\nSaved retrieve %d%% | %s" % [data[12],data[48],pressure,pull_direction if fighting else "READY",data[31],data[35],data[13],data[33],roundi(data[7]*5),"POWER" if data[15] > 0 else "NORMAL"]
 	if fighting:
@@ -242,7 +242,7 @@ func _process(delta: float) -> void:
 	drag_value.text = "%d%%" % roundi(drag_setting*100)
 
 func apply_look(movement: Vector2) -> void:
-	if data.size() == 61 and roundi(data[4]) == FisherActor.State.FIGHT:
+	if data.size() == 63 and roundi(data[4]) == FisherActor.State.FIGHT:
 		if data[16] <= 0:
 			rod_horizontal = clampf(rod_horizontal+movement.x,-1,1)
 			rod_vertical = clampf(rod_vertical-movement.y,-1,1)

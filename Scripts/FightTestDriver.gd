@@ -40,7 +40,7 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 		if burst_remaining <= 0 and sprint and fish.motion.swim_drive > 0.85 and energy > 0.55 and (absf(fish.directional_pressure) > 0.2 or f.spool.line_rate > 0): burst_remaining = 1.5
 		# Bank Drive with efficient legal strokes, spend it during a strong run/turn.
 		stroke_clock += delta
-		var cadence = (lerpf(0.28,0.20,f.fish_skill) if burst_remaining > 0 else fish.motion.ideal_stroke_interval)+(0.03+(1-f.fish_skill)*0.2)*sin(clock*2.7)
+		var cadence = (lerpf(0.29,0.25,f.fish_skill) if burst_remaining > 0 else fish.motion.ideal_stroke_interval)+(0.03+(1-f.fish_skill)*0.2)*sin(clock*2.7)
 		if stroke_clock >= cadence: stroke_clock = 0; stroke_side *= -1
 		if clock > next_lapse:
 			stroke_pause = lerpf(1.7,1.2,f.fish_skill)
@@ -48,15 +48,16 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 		stroke_pause = maxf(0,stroke_pause-delta)
 		shake_wait = maxf(0,shake_wait-delta)
 		shake_until = maxf(0,shake_until-delta)
-		if shake_wait <= 0 and f.spool.slack > 0.8:
+		if shake_wait <= 0 and (f.spool.slack > 0.8 or fish.airborne):
 			shake_wait = lerpf(3,1.4,f.fish_skill)
 			if execution_rng.randf() < 0.45+0.35*f.fish_skill: shake_until = 1.1
 		if shake_until > 0:
-			aim = aim.rotated(Vector3.UP,sin(clock*18)*deg_to_rad(30))
+			aim = fish.heading.rotated(Vector3.UP,sin(clock*22)*deg_to_rad(9))
 		elif stroke_pause <= 0 and not resting:
 			aim = aim.rotated(Vector3.UP,stroke_side*deg_to_rad(24))
 		var input = FishInput.new(0.25 if resting else 1,0,0,aim,sprint)
-		input.vertical = 1 if action == FightDecisions.FishAction.JUMP else 0
+		input.vertical = 1 if action == FightDecisions.FishAction.JUMP and not fish.airborne and fish.motion.jump_recovery <= 0 else 0
+		if fish.motion.jump_recovery > 0: input.boost = false; input.aim_direction.y = -0.25
 		input.cancel_bite = fish.feeding.is_charging
 		return input
 	else:
@@ -99,53 +100,42 @@ func fisher_input(actor: FisherActor, delta: float) -> FisherIntent:
 		if fight.phase == FightSession.Phase.CANDIDATE: input.jerk = fight.phase_time > lerpf(1.3,0.65,fight.fisher_skill)
 		elif fight.phase == FightSession.Phase.METER: input.jerk = fight.meter < 0.75-(1-fight.fisher_skill)*0.3
 		else:
-			var action = fight.fisher_action
-			input.rod_horizontal = -0.8 if action == FightDecisions.FisherAction.LEFT else 0.8 if action == FightDecisions.FisherAction.RIGHT else 0
-			input.rod_horizontal *= lerpf(0.75,1,fight.fisher_skill)
-			input.rod_vertical = 1 if action == FightDecisions.FisherAction.UP else -0.6 if action in [FightDecisions.FisherAction.LOWER,FightDecisions.FisherAction.LET_RUN] else 0.1
 			var seen = fight.perception.observation
+			var plan = FisherControls.plan(seen,actor.stamina)
+			input.rod_horizontal = plan.horizontal*lerpf(0.75,1,fight.fisher_skill)
+			input.rod_vertical = plan.vertical
+			input.retrieve = plan.retrieve
+			input.power = plan.power
 			drag_wait -= delta
 			if drag_wait <= 0:
-				selected_drag = 0.3 if float(seen.get("condition",1)) < 0.6 or action == FightDecisions.FisherAction.LET_RUN else 0.4
-				selected_drag += (1-fight.fisher_skill)*0.12*maxf(0,sin(clock*0.6))
+				selected_drag = plan.drag
 				drag_wait = lerpf(1.4,0.45,fight.fisher_skill)
 			input.drag = selected_drag
-			input.retrieve = 0.8 if action == FightDecisions.FisherAction.REEL else 0.25 if action in [FightDecisions.FisherAction.LEFT,FightDecisions.FisherAction.RIGHT] else 0
-			input.power = action == FightDecisions.FisherAction.REEL and float(seen.get("outward_speed",10)) < 1.5 and float(seen.get("slack",1)) < 0.5 and float(seen.get("tension",110)) < 55 and actor.stamina > 30
-			# Active jerks only use the normal bounded rod inputs; the hook button is idle.
 			input.jerk = false
-			var urgency = clampf((float(seen.get("line_out",0))/maxf(1,float(seen.get("capacity",150)))-0.5)/0.4,0,1)
-			var running = bool(seen.get("descending",false)) or float(seen.get("outward_speed",0)) > 3 or float(seen.get("payout",0)) > 2
-			var risk = float(seen.get("tension",0))/maxf(1,float(seen.get("strength",110)))
-			if running and urgency > 0 and float(seen.get("condition",1)) > 0.35:
-				input.drag = maxf(input.drag,lerpf(0.4,0.7,urgency))
 			gesture_wait = maxf(0,gesture_wait-delta)
-			if gesture_phase < 0 and gesture_wait <= 0 and running and action != FightDecisions.FisherAction.LET_RUN and not actor.vision_active and actor.stamina >= fight.jerk_cost:
-				gesture_axis = Vector2.UP if bool(seen.get("descending",false)) else Vector2.RIGHT if float(seen.get("side",0)) < -0.25 else Vector2.LEFT if float(seen.get("side",0)) > 0.25 else Vector2.UP
-				# Rod Y is up-positive (unlike screen-space Vector2.UP).
-				if gesture_axis == Vector2.UP: gesture_axis = Vector2(0,1)
+			# Ascent/air/fall abort preparation too: do not finish an obsolete UP jerk.
+			if plan.label in ["REEL SLACK","ABSORB FALL"]: gesture_phase = -1
+			if gesture_phase < 0 and gesture_wait <= 0 and plan.jerk != Vector2.ZERO and not actor.vision_active and actor.stamina >= fight.jerk_cost:
+				gesture_axis = plan.jerk
 				gesture_phase = 0
 				gesture_wait = fight.jerk_cooldown+lerpf(1.0,0.25,fight.fisher_skill)
 			if gesture_phase >= 0:
 				gesture_phase += delta
 				var prepare = lerpf(0.65,0.45,fight.fisher_skill)
 				var rod = -gesture_axis*0.35 if gesture_phase < prepare else gesture_axis
-				input.rod_horizontal = rod.x
-				input.rod_vertical = rod.y
-				input.retrieve = 0
+				if gesture_axis.x != 0: input.rod_horizontal = rod.x
+				else: input.rod_vertical = rod.y
 				input.power = false
 				if gesture_phase > prepare+0.4: gesture_phase = -1
 				pump_clock = 0
-			elif not running and risk < 0.72 and not actor.vision_active:
-				# Slow load, short hold, lower while reeling; deliberately below gesture speed.
+			elif plan.pump and not actor.vision_active:
 				pump_clock = fmod(pump_clock+delta,3.8)
-				input.rod_horizontal = 0
 				if pump_clock < 1.6:
 					input.rod_vertical = pump_clock/1.6
-					input.retrieve = 0
+					input.retrieve = 0.15
 				elif pump_clock < 2.0:
 					input.rod_vertical = 1
-					input.retrieve = 0
+					input.retrieve = 0.15
 				else:
 					input.rod_vertical = maxf(0,1-(pump_clock-2.0)/1.4)
 					input.retrieve = lerpf(0.65,1,fight.fisher_skill)
@@ -153,7 +143,7 @@ func fisher_input(actor: FisherActor, delta: float) -> FisherIntent:
 			else: pump_clock = 0
 			vision_cooldown = maxf(0,vision_cooldown-delta)
 			vision_remaining = maxf(0,vision_remaining-delta)
-			if gesture_phase < 0 and gesture_wait < 0.3 and vision_cooldown <= 0 and actor.focus > 55 and (fight.perception.uncertainty or (fight.perception.age() > 0.3 and float(seen.get("tension",0)) > 35) or float(seen.get("depth",0)) > 8 or float(seen.get("payout",0)) > 2 or (fight.fisher_skill < 0.75 and sin(clock) > 0.95)):
+			if gesture_phase < 0 and gesture_wait < 0.3 and vision_cooldown <= 0 and actor.focus > 55 and (plan.vision or fight.perception.uncertainty or (fight.perception.age() > 0.3 and float(seen.get("tension",0)) > 35) or float(seen.get("depth",0)) > 8 or float(seen.get("payout",0)) > 2 or (fight.fisher_skill < 0.75 and sin(clock) > 0.95)):
 				vision_remaining = lerpf(1.6,1.0,fight.fisher_skill)
 				vision_cooldown = lerpf(11,6,fight.fisher_skill)
 			input.vision = vision_remaining > 0

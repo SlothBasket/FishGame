@@ -278,7 +278,13 @@ func _physics_process(delta: float) -> void:
 		limit_breach_velocity()
 	airborne = global_position.y > water_height
 	if not airborne: natural_breach = false
-	if is_instance_valid(fight): fight.after_fish_move(delta)
+	if is_instance_valid(fight):
+		motion.track_jump(delta,airborne,global_position.y-water_height,velocity.y)
+		if motion.landed_event:
+			fight.jump_commit = 0
+			fight.jump_cooldown = 12
+			fight.hook.violent_landing(motion.jump_severity)
+		fight.after_fish_move(delta)
 	if feeding.grace_remaining > 0.0 and not feeding.is_dashing():
 		feeding.sweep_bite(bite_start, global_position)
 	# Heading, not velocity, owns facing. Backpedaling cannot flip the model.

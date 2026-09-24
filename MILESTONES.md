@@ -34,3 +34,5 @@ Validation for the pacing milestone: 97 checks passed. Standalone 75-second grap
 - Milestone subject: `Add physical directional jerks and readable pump recovery` — shared server rod gestures, timed directional counters, simple legal AI counter/pump rhythm and spool urgency, 88-actor baseline, visible F9 save confirmation and editor launch documentation.
 
 - Milestone subject: `Make fish steering, Drive and hook escape physically readable` — head-led body arcs, measured Drive strokes, active slack shakes, directional-information Vision gate, ascent power, zero-endurance fatigue and impact recoil. See HEAD_AND_ASCENT_GUIDE.md.
+
+- Milestone subject: `Separate fish stroke intent and blend jump counterplay` — exclusive head/body stroke classification, bounded hook looseness/hazard, committed jump return, finite payout/elevation response, blended fisher controls and shorter overlapping head geometry.

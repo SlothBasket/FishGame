@@ -46,15 +46,19 @@ var slipping: bool = false
 var shock: float = 0
 var condition: float = 1
 var rod_take_up: float = 0
+@export var low_rod_multiplier: float = 0.65
+@export var high_rod_multiplier: float = 1.3
+var pressure_multiplier: float = 1
 var holding_threshold: float = 0
 var _previous_outward_speed: float = 0
 var _previous_load: float = 0
 
-func step(delta: float, required_distance: float, outward_speed: float, movement_load: float, retrieve: float, drag: float, power: bool, transient_load: float = 0, rod_pull: float = 0) -> void:
+func step(delta: float, required_distance: float, outward_speed: float, movement_load: float, retrieve: float, drag: float, power: bool, transient_load: float = 0, rod_pull: float = 0, rod_elevation: float = 0) -> void:
 	distance = maxf(0,required_distance)
 	drag_threshold = strength*pow(clampf(drag,0,1),drag_curve)
 	rod_take_up = maximum_rod_take_up*clampf(rod_pull,0,1)
-	holding_threshold = drag_threshold+maximum_rod_buffer*clampf(rod_pull,0,1)
+	pressure_multiplier = lerpf(1,high_rod_multiplier,clampf(rod_elevation,0,1)) if rod_elevation >= 0 else lerpf(1,low_rod_multiplier,clampf(-rod_elevation,0,1))
+	holding_threshold = (drag_threshold+maximum_rod_buffer*clampf(rod_pull,0,1))*pressure_multiplier
 	# Temporary rod take-up changes working span, never spool accounting. Use a
 	# neutral-tip distance from FightSession so rod geometry is not counted twice.
 	var loaded_distance = distance+rod_take_up
@@ -72,7 +76,7 @@ func step(delta: float, required_distance: float, outward_speed: float, movement
 	line_out = maxf(minf(line_out,maxf(0.2,loaded_distance-maximum_extension)),line_out-recovery*delta)
 	var extension = maxf(0,loaded_distance-line_out)
 	var contact = clampf(1-maxf(0,line_out-loaded_distance)/contact_tolerance,0,1)
-	requested_load = maxf(0,extension*elasticity+fish_load+reel_pressure*(1.5 if power else retrieve)+transient_load)*contact
+	requested_load = maxf(0,extension*elasticity+fish_load+reel_pressure*(1.5 if power else retrieve)+transient_load)*contact*pressure_multiplier
 	# Load derivative catches real slack-to-taut reversals without a scripted combo.
 	shock = maxf(0,requested_load-_previous_load)
 	_previous_load = requested_load
@@ -84,16 +88,15 @@ func step(delta: float, required_distance: float, outward_speed: float, movement
 	# Only release line actually demanded by separation; never manufacture slack
 	# ahead of the fish using a predicted velocity. Power mode never pays out.
 	var released_line = minf(payout*delta,maxf(0,loaded_distance-line_out))
-	# Resolve unexpected initial/moving-anchor separation by paying real line now,
-	# even under Power; never store impossible extension for a future snap.
-	released_line = maxf(released_line,loaded_distance-line_out-maximum_extension)
+	# Finite payout must not erase a fall impact or moving-anchor overextension.
+	# Unpaid separation stays elastic load; no emergency unlimited payout.
 	line_out = minf(maximum_line_out,line_out+released_line)
 	payout = released_line/maxf(0.0001,delta)
 	slack = maxf(0,line_out-loaded_distance)
 	line_rate = (line_out-before)/maxf(0.0001,delta)
 	# Unreleased elastic stretch remains real load when finite payout falls behind.
 	var residual_stretch = maxf(0,loaded_distance-line_out)
-	var target_tension = requested_load if power else minf(requested_load,holding_threshold+residual_stretch*elasticity+transient_load+shock*shock_retention)
+	var target_tension = requested_load if power else minf(requested_load,holding_threshold+(residual_stretch*elasticity+transient_load)*pressure_multiplier+shock*shock_retention)
 	if slack > contact_tolerance: target_tension = 0
 	var response = tension_response if sharp else 1/maxf(0.01,ordinary_response_time)
 	tension = lerpf(tension,target_tension,1-exp(-response*delta))
@@ -115,15 +118,12 @@ func break_hazard() -> float:
 	return base_break_hazard*excess*excess*(1+damage_hazard_multiplier*pow(1-condition,2))*(1+minf(12,high_load_exposure)*exposure_multiplier)
 
 func sync_distance(required_distance: float, delta: float) -> void:
-	# Post-move safety reconciliation pays line, never teleports the fish. Usually
-	# the pre-move constraint already keeps this within the elastic allowance.
+	# Reconciliation only measures geometry. Payout happens once in step(), at its
+	# finite rate; constrain_motion prevents further impossible separation.
 	distance = maxf(0,required_distance)
-	var needed = maxf(0.2,distance+rod_take_up-maximum_extension)
-	var released = maxf(0,minf(maximum_line_out,needed)-line_out)
-	line_out = minf(maximum_line_out,line_out+released)
-	payout += released/maxf(0.0001,delta)
-	line_rate += released/maxf(0.0001,delta)
 	slack = maxf(0,line_out-distance-rod_take_up)
+	var excess = maxf(0,distance+rod_take_up-line_out-maximum_extension)
+	tension = maxf(tension,excess*elasticity*pressure_multiplier)
 
 func constrain_motion(offset: Vector3, motion: Vector3) -> Vector3:
 	# Unilateral velocity constraint at maximum elastic stretch. Keep tangential
