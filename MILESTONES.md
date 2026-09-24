@@ -38,3 +38,5 @@ Validation for the pacing milestone: 97 checks passed. Standalone 75-second grap
 - Milestone subject: `Separate fish stroke intent and blend jump counterplay` — exclusive head/body stroke classification, bounded hook looseness/hazard, committed jump return, finite payout/elevation response, blended fisher controls and shorter overlapping head geometry.
 
 - Milestone subject: `Add seeded real-fight batch telemetry and modest risk thresholds` — fixed-step accelerated batches, fresh legal AI encounters, exact outcome CSV/event capture, diagnostics for lateral/deep/jump behavior, and risk thresholds 0.85/0.60.
+
+- Milestone subject: `Synchronize pre-hook line span before hook impact` — follows free-moving fish through CANDIDATE/METER and initializes IMPACT geometry including rod take-up, without pre-hook fight forces or risk. Preserves yank and post-hook mechanics. Import plus one 30-second seeded encounter passed; impact extension 0.000 m. Local editor batch arguments separately preserved in `4ee2fb7`.

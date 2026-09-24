@@ -122,7 +122,7 @@ func _ready() -> void:
 	spool = spool.duplicate()
 	gesture = gesture.duplicate()
 	update_rod(0.016)
-	line_length = fish.position.distance_to(neutral_tip)
+	sync_pre_hook_line()
 	fish.motion = FishFightMotion.new()
 	fish.endurance = fish.stamina_capacity
 	fish.fight_regen_scale = 1
@@ -135,6 +135,10 @@ func _ready() -> void:
 	fish.feeding.sweep_bite_disabled = true
 
 func change_phase(next: int) -> void:
+	if next == Phase.IMPACT and phase == Phase.METER:
+		# Hook the current span, never the distance stored when the bait was bitten.
+		sync_pre_hook_line()
+		print("HOOK IMPACT distance=%.3f line_out=%.3f extension=%.3f" % [spool.distance,spool.line_out,maxf(0,spool.distance+spool.rod_take_up-spool.line_out)])
 	if fisher.session.fight_smoke: print("FIGHT PHASE ",next)
 	phase = next
 	phase_time = 0
@@ -144,6 +148,7 @@ func _physics_process(delta: float) -> void:
 	if not is_instance_valid(fish) or not is_instance_valid(fisher): finish(Outcome.DISCONNECT); return
 	phase_time += delta
 	update_rod(delta)
+	if phase in [Phase.CANDIDATE,Phase.METER]: sync_pre_hook_line()
 	jerk_wait = maxf(0,jerk_wait-delta)
 	jerk_notice_time = maxf(0,jerk_notice_time-delta)
 	var gesture_direction = gesture.step(delta,Vector2(rod_horizontal,rod_vertical),phase in [Phase.OPENING,Phase.FIGHT] and not fisher.vision_active and jerk_wait <= 0 and fisher.stamina >= jerk_cost)
@@ -342,7 +347,18 @@ func landing_ready() -> bool:
 	var offset = fish.position-fisher.position
 	return Vector2(offset.x,offset.z).length() <= landing_distance and offset.y >= -landing_depth and offset.y <= 1 and line_length <= landing_depth+landing_distance and spool.slack <= 2.5
 
+func sync_pre_hook_line() -> void:
+	# Unset hook: follow the free-moving fish without running drag, wear or hazard.
+	# Include rod take-up so the first working step cannot manufacture extension.
+	spool.distance = fish.position.distance_to(neutral_tip)
+	spool.rod_take_up = spool.maximum_rod_take_up*rod_pull
+	spool.line_out = spool.distance+spool.rod_take_up
+	spool.slack = 0
+
 func after_fish_move(delta: float) -> void:
+	if phase in [Phase.CANDIDATE,Phase.METER]:
+		sync_pre_hook_line()
+		return
 	if phase < Phase.IMPACT or phase == Phase.FINISHED: return
 	spool.sync_distance(fish.position.distance_to(neutral_tip),delta)
 	if check_spooled(): return
