@@ -225,6 +225,7 @@ func _physics_process(delta: float) -> void:
 	if not intent.boost: sprint_exhausted = false
 	if stamina < 1: sprint_exhausted = true
 	if not free_bursts and (sprint_exhausted or sprint_locked): intent.boost = false
+	if in_fight: intent = motion.steer_burst(delta,intent,heading,not airborne and not motion.diving and motion.ascent_power < 0.1 and head.impact_time <= 0)
 	heading = head.step(delta,heading,intent,maxf(0,velocity.dot(heading)))
 	if in_fight: motion.step(delta,intent,heading,velocity.length()/maxf(0.1,effective_swim_speed()),stamina,touching_bottom(),head.stroke,power_capacity(),velocity.y)
 	var sprinting = intent.boost and intent.throttle > 0 and not free_bursts

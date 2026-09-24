@@ -40,3 +40,5 @@ Validation for the pacing milestone: 97 checks passed. Standalone 75-second grap
 - Milestone subject: `Add seeded real-fight batch telemetry and modest risk thresholds` — fixed-step accelerated batches, fresh legal AI encounters, exact outcome CSV/event capture, diagnostics for lateral/deep/jump behavior, and risk thresholds 0.85/0.60.
 
 - Milestone subject: `Synchronize pre-hook line span before hook impact` — follows free-moving fish through CANDIDATE/METER and initializes IMPACT geometry including rod take-up, without pre-hook fight forces or risk. Preserves yank and post-hook mechanics. Import plus one 30-second seeded encounter passed; impact extension 0.000 m. Local editor batch arguments separately preserved in `4ee2fb7`.
+
+- Milestone subject: `Make drag respond to total load and add readable shared side bursts` — finite payout during Power/transients, hazard 0.008, perceived AI drag management, shared committed body turns, upward hook snap and jerk sweeps, focused telemetry. Import, targeted contracts and one three-fight smoke; no broad balance iteration. Editor launch settings preserved in `3a1912a`.

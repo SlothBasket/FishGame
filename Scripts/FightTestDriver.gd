@@ -1,6 +1,9 @@
 class_name FightTestDriver
 extends RefCounted
 ## Deliberately simple server test pilots. No force/outcome cheats in normal AI.
+var side_wait: float = 2
+var side_aim: Vector3 = Vector3.FORWARD
+var side_hold: float = 0
 var clock: float = 0
 var cast_serial: int = 0
 var cast_sent: bool = false
@@ -55,6 +58,19 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 			aim = fish.heading.rotated(Vector3.UP,sin(clock*22)*deg_to_rad(9))
 		elif stroke_pause <= 0 and not resting:
 			aim = aim.rotated(Vector3.UP,stroke_side*deg_to_rad(24))
+		side_wait = maxf(0,side_wait-delta)
+		side_hold = maxf(0,side_hold-delta)
+		if action in [FightDecisions.FishAction.RUN,FightDecisions.FishAction.LEFT,FightDecisions.FishAction.RIGHT] and sprint and fish.motion.swim_drive >= fish.motion.side_burst_drive and not fish.airborne:
+			if side_wait <= 0 and fish.motion.side_wait <= 0:
+				var side = -1 if execution_rng.randf() < 0.5 else 1
+				side_aim = side_burst_aim(fish.heading,side)
+				var edge = session.world.arena_width*0.5-8
+				var projected = fish.position+side_aim*16
+				if absf(projected.x) > edge or absf(projected.z) > edge: side_aim = side_burst_aim(fish.heading,-side)
+				side_hold = 0.9
+				side_wait = execution_rng.randf_range(3,5)
+			if side_hold > 0: aim = side_aim
+		else: side_hold = 0
 		var input = FishInput.new(0.25 if resting else 1,0,0,aim,sprint)
 		input.vertical = 1 if action == FightDecisions.FishAction.JUMP and not fish.airborne and fish.motion.jump_recovery <= 0 else 0
 		if fish.motion.jump_recovery > 0: input.boost = false; input.aim_direction.y = -0.25
@@ -85,6 +101,7 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 func fisher_input(actor: FisherActor, delta: float) -> FisherIntent:
 	clock += delta
 	var input = FisherIntent.new()
+	input.drag = selected_drag
 	input.species = BaitMotion.Kind.MINNOW
 	input.tier = 12
 	input.aim = Vector3.FORWARD.rotated(Vector3.UP,actor.boat_yaw)
@@ -108,8 +125,8 @@ func fisher_input(actor: FisherActor, delta: float) -> FisherIntent:
 			input.power = plan.power
 			drag_wait -= delta
 			if drag_wait <= 0:
-				selected_drag = plan.drag
-				drag_wait = lerpf(1.4,0.45,fight.fisher_skill)
+				selected_drag = snappedf(move_toward(selected_drag,plan.drag,0.05),0.05)
+				drag_wait = lerpf(1.4,0.9,fight.fisher_skill)
 			input.drag = selected_drag
 			input.jerk = false
 			gesture_wait = maxf(0,gesture_wait-delta)
@@ -149,3 +166,6 @@ func fisher_input(actor: FisherActor, delta: float) -> FisherIntent:
 			input.vision = vision_remaining > 0
 
 	return input
+
+static func side_burst_aim(heading: Vector3, side: int) -> Vector3:
+	return heading.rotated(Vector3.UP,-side*deg_to_rad(60))

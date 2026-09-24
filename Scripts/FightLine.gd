@@ -13,10 +13,10 @@ const DEFAULT_CAPACITY: float = 150
 @export var power_retrieve: float = 7
 @export var drag_curve: float = 1.0
 @export var payout_response: float = 6
+@export var payout_acceleration_response: float = 24
 @export var maximum_payout: float = 14
 @export var tension_response: float = 12
 @export var contact_tolerance: float = 0.25
-@export var shock_retention: float = 0.18
 @export var load_wear: float = 0.035
 @export var slipping_reel_wear: float = 0.022
 @export var shock_wear: float = 0.003
@@ -27,7 +27,7 @@ const DEFAULT_CAPACITY: float = 150
 @export var fresh_risk_threshold: float = 0.85
 @export var damaged_risk_threshold: float = 0.60
 @export var risk_curve: float = 1.1
-@export var base_break_hazard: float = 0.012
+@export var base_break_hazard: float = 0.008
 @export var damage_hazard_multiplier: float = 16
 @export var exposure_gain: float = 1
 @export var exposure_decay: float = 1.5
@@ -80,23 +80,23 @@ func step(delta: float, required_distance: float, outward_speed: float, movement
 	# Load derivative catches real slack-to-taut reversals without a scripted combo.
 	shock = maxf(0,requested_load-_previous_load)
 	_previous_load = requested_load
-	slipping = not power and (fish_load > holding_threshold+0.5 or extension*elasticity > holding_threshold) and contact > 0
-	var payout_target = 0.0
-	if slipping:
-		payout_target = minf(maximum_payout,maxf(0,outward_speed)+recovery+maxf(0,extension+(fish_load-holding_threshold)/elasticity)*payout_response)
-	payout = lerpf(payout,payout_target,1-exp(-payout_response*delta)) if slipping else 0.0
-	# Only release line actually demanded by separation; never manufacture slack
-	# ahead of the fish using a predicted velocity. Power mode never pays out.
-	var released_line = minf(payout*delta,maxf(0,loaded_distance-line_out))
-	# Finite payout must not erase a fall impact or moving-anchor overextension.
-	# Unpaid separation stays elastic load; no emergency unlimited payout.
-	line_out = minf(maximum_line_out,line_out+released_line)
+	# Every load source reaches the same drag clutch, including Power and shocks.
+	var overload = maxf(0,requested_load-holding_threshold)
+	slipping = overload > 0.5 and contact > 0
+	var elastic_rate = elasticity*pressure_multiplier
+	var relief_span = overload/maxf(0.01,elastic_rate)
+	var payout_target = minf(maximum_payout,maxf(0,outward_speed)+recovery+relief_span*payout_response) if slipping else 0.0
+	payout = lerpf(payout,payout_target,1-exp(-payout_acceleration_response*delta)) if slipping else 0.0
+	# A transient can unload rod/line elasticity even before separation grows.
+	# Release is bounded by demanded stretch/load AND the finite spool rate.
+	var released_line = minf(payout*delta,maxf(extension,relief_span))
+	released_line = minf(released_line,maxf(0,maximum_line_out-line_out))
+	line_out += released_line
 	payout = released_line/maxf(0.0001,delta)
 	slack = maxf(0,line_out-loaded_distance)
 	line_rate = (line_out-before)/maxf(0.0001,delta)
-	# Unreleased elastic stretch remains real load when finite payout falls behind.
-	var residual_stretch = maxf(0,loaded_distance-line_out)
-	var target_tension = requested_load if power else minf(requested_load,holding_threshold+(residual_stretch*elasticity+transient_load)*pressure_multiplier+shock*shock_retention)
+	# Finite release relieves only the load it actually unloaded, not a drag clamp.
+	var target_tension = maxf(0,requested_load-released_line*elastic_rate)
 	if slack > contact_tolerance: target_tension = 0
 	var response = tension_response if sharp else 1/maxf(0.01,ordinary_response_time)
 	tension = lerpf(tension,target_tension,1-exp(-response*delta))

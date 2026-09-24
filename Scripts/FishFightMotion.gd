@@ -134,3 +134,49 @@ func track_jump(delta: float, airborne: bool, height: float, vertical_speed: flo
 	if landed_event: jump_recovery = jump_recovery_duration
 	falling = (airborne and vertical_speed < -0.5) or (jump_recovery > jump_recovery_duration-0.6 and vertical_speed < -0.5)
 	was_airborne = airborne
+
+# Side burst commits existing run propulsion to a fixed 55-degree course.
+@export var side_burst_drive: float = 0.55
+@export var side_burst_angle: float = 55
+@export var side_burst_duration: float = 0.75
+@export var side_burst_cooldown: float = 2.5
+@export var side_burst_prepare: float = 0.12
+var side_time: float = 0
+var side_wait: float = 0
+var side_hold: float = 0
+var side_candidate: int = 0
+var side_sign: int = 0
+var side_start: Vector3 = Vector3.FORWARD
+var side_target: Vector3 = Vector3.FORWARD
+var side_reported: bool = false
+var side_event: int = 0
+
+func steer_burst(delta: float, input: FishInput, heading: Vector3, allowed: bool) -> FishInput:
+	side_event = 0
+	side_wait = maxf(0,side_wait-delta)
+	side_time = maxf(0,side_time-delta)
+	if not allowed or not input.boost or input.throttle <= 0 or counter_recovery > 0:
+		side_time = 0
+		side_hold = 0
+		return input
+	var yaw = angle_difference(FishInput.angles(heading).y,FishInput.angles(input.aim_direction).y)
+	var requested = int(signf(input.steering)) if absf(input.steering) > 0.8 else -int(signf(yaw)) if absf(yaw) > deg_to_rad(40) else 0
+	if requested != side_candidate: side_hold = 0
+	side_candidate = requested
+	side_hold = side_hold+delta if requested != 0 else 0.0
+	if side_time <= 0 and side_wait <= 0 and side_hold >= side_burst_prepare and swim_drive >= side_burst_drive and run_build >= 0.6:
+		side_sign = requested
+		side_start = heading
+		side_target = heading.rotated(Vector3.UP,-side_sign*deg_to_rad(side_burst_angle))
+		side_time = side_burst_duration
+		side_wait = side_burst_cooldown
+		side_reported = false
+	if side_time > 0:
+		# Count only an actual body carve, never the intent or a small course offset.
+		if not side_reported and BaitMotion.horizontal(side_start).angle_to(BaitMotion.horizontal(heading)) >= deg_to_rad(40):
+			side_reported = true
+			side_event = side_sign
+		var committed = FishInput.new(input.throttle,0,input.vertical,side_target,input.boost,input.bite_held)
+		committed.cancel_bite = input.cancel_bite
+		return committed
+	return input

@@ -47,7 +47,7 @@ func capture(f: FightSession) -> Dictionary:
 	var falling = f.fish.velocity.y < -0.5 and (airborne or clock-last_air_time < 1)
 	return {"speed":f.fish.velocity.length(),"jump_fall":falling,"side":side,"ascending":f.fish.velocity.y > 3,"descending":f.fish.velocity.y < -3 and not falling,"airborne":f.fish.position.y > f.fish.water_height,
 		"outward_speed":f.fish.velocity.dot(outward),"tension":f.tension,"condition":f.spool.condition,
-		"slack":f.spool.slack,"payout":f.spool.payout,"strength":f.spool.strength,
+		"slack":f.spool.slack,"payout":f.spool.payout,"strength":f.spool.strength,"break_threshold":f.spool.break_threshold(),"shock":f.spool.shock,
 		"depth":snappedf(f.fish.water_height-f.fish.position.y,4),"line_out":f.spool.line_out,"capacity":f.spool.maximum_line_out,"drag":f.fisher.drag_setting,"distance":f.spool.distance}
 func age() -> float:
 	return clock-float(observation.get("sample_time",clock))

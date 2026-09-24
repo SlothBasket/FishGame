@@ -1,3 +1,5 @@
+> Current drag/burst pass: see [DRAG_AND_BURSTS.md](DRAG_AND_BURSTS.md). Total-load drag also works during Power Reel; base break hazard is now **0.008**. The older baseline results below are historical. The pre-hook extension bug is fixed.
+
 # Batch fights and telemetry
 
 ## Godot editor launch arguments

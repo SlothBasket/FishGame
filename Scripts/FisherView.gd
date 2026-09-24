@@ -239,7 +239,7 @@ func _process(delta: float) -> void:
 	bars["Focus"].value = data[9]
 	hook_panel.visible = fighting and phase == FightSession.Phase.METER
 	bars["Hook meter"].value = data[11]*100
-	drag_value.text = "%d%%" % roundi(drag_setting*100)
+	drag_value.text = "%d%%" % roundi(data[32]*100)
 
 func apply_look(movement: Vector2) -> void:
 	if data.size() == 63 and roundi(data[4]) == FisherActor.State.FIGHT:

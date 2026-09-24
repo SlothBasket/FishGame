@@ -14,9 +14,11 @@ var last_course: float = 0
 var previous_looseness: float = 1
 var off_waits: Dictionary = {}
 var pump_loaded: bool = false
+var previous_drag: float = -1
+var hook_set_recorded: bool = false
 var ascent_depth_sum: float = 0
-const COUNTS = ["run_starts","overdrive_starts","overdrive_interruptions","dive_starts","dive_cancellations","ascent_attempts","breaches","jump_landings","lateral_course_changes","left_trajectories","right_trajectories","direction_reversals","head_shake_attempts","hook_loosening_events","jerk_up","jerk_left","jerk_right","run_interruptions","vision_activations","power_activations","pump_cycles"]
-const BREAK_KEYS = ["condition","tension","threshold","ratio","exposure","drag","rod_vertical","rod_horizontal","requested_load","shock","payout","depth","velocity_x","velocity_y","velocity_z","action","following_jerk","falling","dive_power","overdrive"]
+const COUNTS = ["run_starts","overdrive_starts","overdrive_interruptions","dive_starts","dive_cancellations","ascent_attempts","breaches","jump_landings","lateral_course_changes","left_trajectories","right_trajectories","direction_reversals","head_shake_attempts","hook_loosening_events","jerk_up","jerk_left","jerk_right","run_interruptions","vision_activations","power_activations","pump_cycles","side_bursts_left","side_bursts_right","drag_changes"]
+const BREAK_KEYS = ["condition","tension","threshold","ratio","exposure","drag","rod_vertical","rod_horizontal","requested_load","shock","payout","depth","velocity_x","velocity_y","velocity_z","action","following_jerk","falling","dive_power","overdrive","power_active","holding_threshold","drag_threshold"]
 func _init(index: int, seed_value: int) -> void:
 	row = {"fight_index":index,"fight_seed":seed_value,"fish_skill":0.0,"fisher_skill":0.0,"result":"","duration":0.0,"combat_duration":0.0,
 		"final_condition":1.0,"minimum_condition":1.0,"maximum_tension":0.0,"average_tension":0.0,"maximum_break_ratio":0.0,"maximum_line_out":0.0,"final_line_out":0.0,"maximum_payout":0.0,"total_line_recovered":0.0,"maximum_slack":0.0,"slack_time":0.0,
@@ -27,7 +29,7 @@ func _init(index: int, seed_value: int) -> void:
 	for key in ["slack","airborne","shake","looseness","hazard","jump_severity"]: row["throw_"+key] = ""
 func state(f: FightSession) -> Dictionary:
 	var p = f.fish
-	return {"phase":FightSession.Phase.keys()[f.phase],"distance_3d":p.position.distance_to(f.fisher.position),"rod_take_up":f.spool.rod_take_up,"elastic_extension":maxf(0,p.position.distance_to(f.fisher.position)+f.spool.rod_take_up-f.spool.line_out),"fish_load":f.spool.fish_load,"condition":f.spool.condition,"tension":f.spool.tension,"threshold":f.spool.break_threshold(),"ratio":f.spool.tension/maxf(0.01,f.spool.break_threshold()),"exposure":f.spool.high_load_exposure,"drag":f.fisher.drag_setting,"rod_vertical":f.rod_vertical,"rod_horizontal":f.rod_horizontal,"requested_load":f.spool.requested_load,"shock":f.spool.shock,"payout":f.spool.payout,"depth":p.water_height-p.position.y,"velocity_x":p.velocity.x,"velocity_y":p.velocity.y,"velocity_z":p.velocity.z,"action":FightDecisions.fish_text(f.fish_action),"following_jerk":f.jerk_notice_time > 0,"falling":p.motion.falling,"dive_power":p.motion.dive_power,"overdrive":p.motion.overdrive,"line_out":f.spool.line_out,"slack":f.spool.slack,"endurance":p.endurance,"stamina":p.stamina,"airborne":p.airborne,"shake":p.head.shake_pressure,"looseness":f.hook.looseness,"hazard":f.hook.hazard,"jump_severity":p.motion.jump_severity}
+	return {"power_active":f.power_active,"holding_threshold":f.spool.holding_threshold,"drag_threshold":f.spool.drag_threshold,"phase":FightSession.Phase.keys()[f.phase],"distance_3d":p.position.distance_to(f.fisher.position),"rod_take_up":f.spool.rod_take_up,"elastic_extension":maxf(0,p.position.distance_to(f.fisher.position)+f.spool.rod_take_up-f.spool.line_out),"fish_load":f.spool.fish_load,"condition":f.spool.condition,"tension":f.spool.tension,"threshold":f.spool.break_threshold(),"ratio":f.spool.tension/maxf(0.01,f.spool.break_threshold()),"exposure":f.spool.high_load_exposure,"drag":f.fisher.drag_setting,"rod_vertical":f.rod_vertical,"rod_horizontal":f.rod_horizontal,"requested_load":f.spool.requested_load,"shock":f.spool.shock,"payout":f.spool.payout,"depth":p.water_height-p.position.y,"velocity_x":p.velocity.x,"velocity_y":p.velocity.y,"velocity_z":p.velocity.z,"action":FightDecisions.fish_text(f.fish_action),"following_jerk":f.jerk_notice_time > 0,"falling":p.motion.falling,"dive_power":p.motion.dive_power,"overdrive":p.motion.overdrive,"line_out":f.spool.line_out,"slack":f.spool.slack,"endurance":p.endurance,"stamina":p.stamina,"airborne":p.airborne,"shake":p.head.shake_pressure,"looseness":f.hook.looseness,"hazard":f.hook.hazard,"jump_severity":p.motion.jump_severity}
 func event(name: String, f: FightSession, count: String = "") -> void:
 	if not count.is_empty(): row[count] += 1
 	events.append({"fight_index":row.fight_index,"fight_seed":row.fight_seed,"time":elapsed,"event":name,"state":state(f)})
@@ -46,6 +48,16 @@ func sample(f: FightSession, delta: float) -> void:
 	sampled_time += delta
 	var s = state(f)
 	var p = f.fish
+	if previous_drag >= 0 and not is_equal_approx(previous_drag,f.fisher.drag_setting):
+		event("DRAG_CHANGE",f,"drag_changes")
+		events[-1].state["old_drag"] = previous_drag
+		events[-1].state["new_drag"] = f.fisher.drag_setting
+	previous_drag = f.fisher.drag_setting
+	if not hook_set_recorded and f.phase >= FightSession.Phase.IMPACT and f.phase < FightSession.Phase.FINISHED:
+		hook_set_recorded = true
+		event("HOOK_SET_UP",f)
+	if delta > 0 and p.motion.side_event != 0:
+		event("SIDE_BURST_LEFT" if p.motion.side_event < 0 else "SIDE_BURST_RIGHT",f,"side_bursts_left" if p.motion.side_event < 0 else "side_bursts_right")
 	row.fish_skill = f.fish_skill
 	row.fisher_skill = f.fisher_skill
 	tension_sum += s.tension*delta

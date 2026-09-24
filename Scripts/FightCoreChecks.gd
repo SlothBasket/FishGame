@@ -52,16 +52,16 @@ static func run(fight: FightSession) -> bool:
 	for i in range(12): line.step(0.05,40+(i+1)*0.3,6,60,0,0.4,false)
 	ok = verify(line.line_out > 40 and line.payout > 0 and line.tension < line.drag_threshold+line.maximum_extension*line.elasticity,"Normal drag pays out with bounded elastic overload") and ok
 	var before = line.line_out
-	for i in range(6): line.step(0.05,before-1,8,80,1,0.4,true)
-	ok = verify(line.line_out < before and line.payout == 0 and line.tension > line.drag_threshold,"Power recovers line above drag without payout") and ok
+	for i in range(6): line.step(0.05,before,8,80,1,0.4,true)
+	ok = verify(line.slipping and line.payout > 0,"Power retains drag payout under load") and ok
 	ok = verify(line.condition < 1,"Loaded power/reversal wears line") and ok
 	var cruise = FightLine.new()
 	cruise.line_out = 40
 	cruise.fish_load = 35
 	cruise.step(0.1,40,0,35,0.5,0.4,false)
-	ok = verify(is_equal_approx(cruise.drag_threshold,44) and not cruise.slipping and cruise.line_rate < 0 and cruise.requested_load > 35,"40% drag = 44; reel pressure gains line without fish payout") and ok
+	ok = verify(is_equal_approx(cruise.drag_threshold,44) and cruise.slipping and cruise.payout > 0 and cruise.requested_load > 44,"40% drag = 44; total retrieve load can trigger payout") and ok
 	cruise.step(0.1,40,0,35,1,0.4,false)
-	ok = verify(not cruise.slipping and cruise.requested_load > 44 and cruise.line_rate < 0,"Hard retrieve may reach drag without falsely classifying fish-driven slip") and ok
+	ok = verify(cruise.slipping and cruise.payout > 0,"Hard retrieve still respects the drag clutch") and ok
 	cruise.step(0.4,41,6,60,0,0.4,false)
 	ok = verify(cruise.slipping and cruise.payout > 0,"Sprint output takes line") and ok
 	var pulls: Array[float] = []
@@ -75,7 +75,7 @@ static func run(fight: FightSession) -> bool:
 	var pump = FightLine.new()
 	pump.line_out = 40
 	pump.fish_load = 50
-	pump.step(1,40,0,50,0,0.4,false,0,1)
+	pump.step(1,38,0,50,0,0.4,false,0,1)
 	ok = verify(pump.tension > pump.drag_threshold and not pump.slipping and pump.line_out == 40,"Rod holds modest pressure above drag without spool payout") and ok
 	var raised = pump.tension
 	pump.step(1,41,1,50,0,0.4,false,0,0)
@@ -102,7 +102,7 @@ static func run(fight: FightSession) -> bool:
 	var tether = FightLine.new()
 	tether.line_out = 5
 	tether.step(0.016,50,0,0,1,0.4,true)
-	ok = verify(tether.line_out <= 5.001,"Impossible span does not bypass payout under Power") and ok
+	ok = verify(tether.line_out > 5 and tether.line_out <= 5+tether.maximum_payout*0.016+0.001,"Power releases an impossible span only at finite payout") and ok
 	var legal = tether.constrain_motion(Vector3(50,0,0),Vector3(1,0.1,0))
 	ok = verify((Vector3(50,0,0)+legal).length() <= 50.001 and legal.x > -0.01,"Taut guard limits outward motion without an inward teleport") and ok
 	tether.step(1,50,0,0,1,0.4,true)

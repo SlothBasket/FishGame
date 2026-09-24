@@ -12,8 +12,14 @@ static func plan(seen: Dictionary, stamina: float) -> Dictionary:
 	var dive = bool(seen.get("descending",false)) and not fall
 	var result = {"horizontal":-clampf(side*1.1,-0.85,0.85),"vertical":0.15,"retrieve":0.65,"drag":0.4,"power":false,"jerk":Vector2.ZERO,"pump":false,"vision":false,"label":"REEL / PRESSURE"}
 	if risk > 0.85: result.retrieve = 0.15
-	if running and urgency > 0 and float(seen.get("condition",1)) > 0.35: result.drag = lerpf(0.4,0.7,urgency)
-	if float(seen.get("condition",1)) < 0.6: result.drag = minf(result.drag,0.35)
+	var danger = float(seen.get("tension",0))/maxf(1,float(seen.get("break_threshold",93.5)))
+	var condition = float(seen.get("condition",1))
+	if danger > 0.85 or condition < 0.7 or dive or float(seen.get("shock",0)) > 35:
+		result.drag = 0.30 if danger > 1 or condition < 0.5 else 0.35
+	elif danger < 0.65 and condition > 0.8 and running:
+		result.drag = 0.50 if urgency > 0.65 else 0.45
+	elif danger >= 0.65:
+		result.drag = float(seen.get("drag",0.4)) # Hysteresis between safe and danger bands.
 	if fall:
 		result.vertical = -1.0
 		result.retrieve = 0.0 if risk > 0.5 or slack < 1 else 0.25

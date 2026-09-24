@@ -103,6 +103,12 @@ var jerk_wait: float = 0
 var spike: float = 0
 var landing_time: float = 0
 var _jerk_held: bool = false
+var hook_snap_time: float = -1
+@export var hook_snap_rise: float = 0.18
+@export var hook_snap_hold: float = 0.12
+@export var hook_snap_return: float = 0.25
+var rod_sweep_time: float = -1
+var rod_sweep_side: float = 0
 var rng = RandomNumberGenerator.new()
 
 func _ready() -> void:
@@ -158,9 +164,8 @@ func _physics_process(delta: float) -> void:
 	jump_commit = maxf(0,jump_commit-delta)
 	course_wait -= delta
 	if course_wait <= 0:
-		# A course commitment accompanies RUN/Drive, favouring open arena space.
-		var right = BaitMotion.horizontal(fish.position-fisher.position).cross(Vector3.UP)
-		course_offset = deg_to_rad(28)*(1 if fish.position.dot(right) > 0 else -1) if absf(fish.directional_pressure) < 0.2 else 0.0
+		# Preserve the legacy course field for telemetry; bursts own lateral intent.
+		course_offset = 0 # Tactical lateral runs now use shared committed steering.
 		course_wait = 4
 	decision_wait -= delta
 	if decision_wait <= 0:
@@ -184,8 +189,12 @@ func _physics_process(delta: float) -> void:
 			var error = absf(meter-meter_target)
 			quality = 3 if error <= perfect_window else 2 if error <= good_window else 1 if error <= weak_window else 0
 			if quality == 0: finish(Outcome.MISSED); return
-			var yank = (fisher.position-fish.position).normalized()*yank_speed*(0.65+quality*0.25)
-			yank.y = minf(0,yank.y)
+			# Geometry is fresh BEFORE the real impulse; the upward rod snap is local
+			# presentation, not an extra hidden mid-fight jerk/cooldown/stamina cost.
+			sync_pre_hook_line()
+			hook_snap_time = 0
+			var hook_tip = fisher.position+Vector3.UP*(1.3+rod_length*sin(deg_to_rad(60)))
+			var yank = (hook_tip-fish.position).normalized()*yank_speed*(0.65+quality*0.25)
 			fish.velocity += yank
 			fish.receive_impact(yank,quality/3.0)
 			fish.stamina = maxf(0,fish.stamina-hook_stamina_damage*quality/3.0)
@@ -294,6 +303,15 @@ func update_rod(delta: float) -> void:
 	var forward = BaitMotion.horizontal(fish.position-fisher.position)
 	var yaw = FishInput.angles(forward).y-deg_to_rad(rod_horizontal_degrees)*rod_horizontal
 	var pitch = deg_to_rad(rod_up_degrees if rod_vertical >= 0 else rod_down_degrees)*rod_vertical
+	if hook_snap_time >= 0:
+		hook_snap_time += delta
+		var weight = hook_snap_weight(hook_snap_time)
+		pitch = lerpf(pitch,deg_to_rad(60),weight)
+		if hook_snap_time >= hook_snap_rise+hook_snap_hold+hook_snap_return: hook_snap_time = -1
+	if rod_sweep_time >= 0:
+		rod_sweep_time += delta
+		yaw -= rod_sweep_side*deg_to_rad(32)*sin(PI*clampf(rod_sweep_time/0.32,0,1))
+		if rod_sweep_time >= 0.32: rod_sweep_time = -1
 	rod_direction = FishInput.from_angles(pitch,yaw)
 	rod_hand = fisher.position+Vector3.UP*1.3
 	neutral_tip = fisher.position # Stable water-level anchor; rod take-up is separate.
@@ -400,6 +418,9 @@ func apply_directional_jerk(direction: int, outward: Vector3, right: Vector3, co
 	jerk_wait = jerk_cooldown
 	fisher.stamina = maxf(0,fisher.stamina-jerk_cost)
 	jerk_direction = direction
+	if direction in [RodGesture.Direction.LEFT,RodGesture.Direction.RIGHT]:
+		rod_sweep_time = 0
+		rod_sweep_side = -1 if direction == RodGesture.Direction.LEFT else 1
 	jerk_notice_time = 0.8
 	if fisher.session.batch_runner != null: fisher.session.batch_runner.gesture(self,direction)
 	interruption = 0
@@ -430,3 +451,7 @@ func fall_load() -> float:
 	if not fish.motion.falling: return 0
 	var speed = maxf(0,-fish.velocity.y)
 	return speed*speed*0.7*clampf(fish.motion.jump_severity,0,2)*clampf(1-spool.slack/slack_tolerance,0,1)
+
+func hook_snap_weight(time: float) -> float:
+	if time < hook_snap_rise: return smoothstep(0,hook_snap_rise,time)
+	return 1-smoothstep(hook_snap_rise+hook_snap_hold,hook_snap_rise+hook_snap_hold+hook_snap_return,time)
