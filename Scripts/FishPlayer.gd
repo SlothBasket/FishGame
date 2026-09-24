@@ -147,7 +147,7 @@ func _ready() -> void:
 	maneuver_burst.initial_velocity_max = 5
 	add_child(maneuver_burst)
 	feeding = FishFeeding.new(self)
-	if locally_owned:
+	if locally_owned and not FightBatch.requested():
 		var references = FishFightReferences.new()
 		references.fish = self
 		add_child(references)
@@ -218,23 +218,7 @@ func _physics_process(delta: float) -> void:
 		_camera_pitch = clampf(_camera_pitch-look.y,-1.35,1.35)
 		pivot.rotation = Vector3(_camera_pitch,_camera_yaw,0)
 	breach_intent_time = maxf(0,breach_intent_time-delta)
-	dive_particles.emitting = fight_active and motion.diving
-	dive_particles.direction = (-heading+Vector3.UP*0.8).normalized()
-	dive_particles.initial_velocity_min = 2+motion.dive_power*3
-	dive_particles.initial_velocity_max = 4+motion.dive_power*5
-	visual.head_offset = head.offset
-	visual.impact = head.impact_time
-	visual.drive = motion.swim_drive if fight_active else 0.0
-	visual.overdrive = motion.overdrive/maxf(0.01,motion.overdrive_max) if fight_active else 0.0
-	overdrive_particles.emitting = fight_active and motion.overdrive > 0
-	overdrive_particles.direction = -heading
-	overdrive_particles.initial_velocity_min = 2+visual.overdrive*2
-	overdrive_particles.initial_velocity_max = 4+visual.overdrive*4
-	if (dive_particles.emitting and not was_diving) or (overdrive_particles.emitting and not was_overdriving):
-		maneuver_burst.restart()
-		maneuver_burst.emitting = true
-	was_diving = dive_particles.emitting
-	was_overdriving = overdrive_particles.emitting
+	if not FightBatch.requested(): update_fight_presentation()
 	if replica: return # NetworkSession interpolates state; no client feeding or movement.
 	var intent = command if external_input else read_local_input()
 	var in_fight = is_instance_valid(fight)
@@ -380,3 +364,22 @@ func receive_impact(force: Vector3, severity: float) -> void:
 	var body = FishInput.angles(heading)
 	var wanted = FishInput.angles(force.normalized())
 	head.knock(Vector2(wanted.x-body.x,angle_difference(body.y,wanted.y)),0.18+0.18*severity)
+
+func update_fight_presentation() -> void:
+	dive_particles.emitting = fight_active and motion.diving
+	dive_particles.direction = (-heading+Vector3.UP*0.8).normalized()
+	dive_particles.initial_velocity_min = 2+motion.dive_power*3
+	dive_particles.initial_velocity_max = 4+motion.dive_power*5
+	visual.head_offset = head.offset
+	visual.impact = head.impact_time
+	visual.drive = motion.swim_drive if fight_active else 0.0
+	visual.overdrive = motion.overdrive/maxf(0.01,motion.overdrive_max) if fight_active else 0.0
+	overdrive_particles.emitting = fight_active and motion.overdrive > 0
+	overdrive_particles.direction = -heading
+	overdrive_particles.initial_velocity_min = 2+visual.overdrive*2
+	overdrive_particles.initial_velocity_max = 4+visual.overdrive*4
+	if (dive_particles.emitting and not was_diving) or (overdrive_particles.emitting and not was_overdriving):
+		maneuver_burst.restart()
+		maneuver_burst.emitting = true
+	was_diving = dive_particles.emitting
+	was_overdriving = overdrive_particles.emitting

@@ -26,6 +26,14 @@ func _ready() -> void:
 	_fish = $FishPlayer
 	_fish.water_height = water_depth
 	var args = OS.get_cmdline_user_args()
+	if FightBatch.requested():
+		build_reef()
+		visible = false
+		set_process(false)
+		var batch = FightBatch.new()
+		add_child(batch)
+		batch.start(self,_fish)
+		return
 	add_child(PerformanceProbe.new())
 	_capture = "--capture" in args
 	_feeding_preview = "--feeding-preview" in args
@@ -141,6 +149,7 @@ func build_reef() -> void:
 		shape.points = points
 		collision.shape = shape
 		rock.add_child(collision)
+	if FightBatch.requested(): return
 	# One instanced draw for small, non-colliding seabed detail.
 	var pebbles = MultiMeshInstance3D.new()
 	var batch = MultiMesh.new()

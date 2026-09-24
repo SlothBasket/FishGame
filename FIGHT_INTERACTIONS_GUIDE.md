@@ -1,3 +1,5 @@
+> Batch telemetry: [FIGHT_BATCH_GUIDE.md](FIGHT_BATCH_GUIDE.md) documents editor arguments, per-encounter seeds, CSV/event fields and exact break capture. Current line-risk thresholds are **0.85 fresh / 0.60 damaged**; base hazard and physical strength are unchanged.
+
 # Fight interactions: strokes, hook risk, jumps and blended control
 
 This supersedes earlier hook-security/Drive-classification descriptions. Core strength, base drag curve, stamina, endurance, line strength and 150 m spool defaults are unchanged. Full exhaustion and recoil remain. Population remains 88; F9 remains available.

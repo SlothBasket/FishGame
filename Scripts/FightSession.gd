@@ -107,7 +107,10 @@ var rng = RandomNumberGenerator.new()
 
 func _ready() -> void:
 	process_physics_priority = -10
-	rng.randomize()
+	if fisher.session.encounter_seed >= 0:
+		rng.seed = fisher.session.encounter_seed+23
+		perception.rng.seed = fisher.session.encounter_seed+37
+	else: rng.randomize()
 	fish_skill = rng.randf_range(0.6,1.0)
 	fisher_skill = rng.randf_range(0.6,1.0)
 	for arg in OS.get_cmdline_user_args():
@@ -382,6 +385,7 @@ func apply_directional_jerk(direction: int, outward: Vector3, right: Vector3, co
 	fisher.stamina = maxf(0,fisher.stamina-jerk_cost)
 	jerk_direction = direction
 	jerk_notice_time = 0.8
+	if fisher.session.batch_runner != null: fisher.session.batch_runner.gesture(self,direction)
 	interruption = 0
 	var result = jerk_contest(direction,fish.heading,outward,right,contact)
 	spike = maxf(spike,result.x)

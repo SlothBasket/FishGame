@@ -36,3 +36,5 @@ Validation for the pacing milestone: 97 checks passed. Standalone 75-second grap
 - Milestone subject: `Make fish steering, Drive and hook escape physically readable` — head-led body arcs, measured Drive strokes, active slack shakes, directional-information Vision gate, ascent power, zero-endurance fatigue and impact recoil. See HEAD_AND_ASCENT_GUIDE.md.
 
 - Milestone subject: `Separate fish stroke intent and blend jump counterplay` — exclusive head/body stroke classification, bounded hook looseness/hazard, committed jump return, finite payout/elevation response, blended fisher controls and shorter overlapping head geometry.
+
+- Milestone subject: `Add seeded real-fight batch telemetry and modest risk thresholds` — fixed-step accelerated batches, fresh legal AI encounters, exact outcome CSV/event capture, diagnostics for lateral/deep/jump behavior, and risk thresholds 0.85/0.60.

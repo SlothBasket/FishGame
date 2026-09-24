@@ -24,8 +24,8 @@ const DEFAULT_CAPACITY: float = 150
 # Wear starts below break risk. Thresholds are fractions of full line strength.
 @export var reel_pressure: float = 20
 @export var wear_start: float = 0.545
-@export var fresh_risk_threshold: float = 0.773
-@export var damaged_risk_threshold: float = 0.55
+@export var fresh_risk_threshold: float = 0.85
+@export var damaged_risk_threshold: float = 0.60
 @export var risk_curve: float = 1.1
 @export var base_break_hazard: float = 0.012
 @export var damage_hazard_multiplier: float = 16

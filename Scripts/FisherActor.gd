@@ -35,7 +35,8 @@ var rng = RandomNumberGenerator.new()
 func _ready() -> void:
 	drag_setting = default_drag
 	command.drag = default_drag
-	rng.randomize()
+	if session.encounter_seed >= 0: rng.seed = session.encounter_seed+11
+	else: rng.randomize()
 	position = Vector3(90,session.world.water_depth,75)
 	boat_yaw = FishInput.angles(BaitMotion.horizontal(-position)).y
 

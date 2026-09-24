@@ -9,6 +9,8 @@ var requested_role: int = ROLE_FISH
 var pending_peers: Dictionary = {}
 var fisher_view: FisherView
 var ai_mode: String = ""
+var batch_runner: FightBatch
+var encounter_seed: int = -1
 var spectator_mode: bool = false
 var spectator_check: bool = false
 var spectator_saw_fight: bool = false
@@ -200,7 +202,7 @@ func add_server_player(peer: int, role: int = ROLE_FISH, ai: bool = false) -> vo
 		actor = local_fish if peer == 1 or (spectator_mode and peer == -1) else make_fish(false,false)
 		actor.position = Vector3((players.size()%4)*4,15,12)
 		actor.external_input = true
-		actor.feeding.ate_bait.connect(func(bait): blood_event.rpc(bait.global_position))
+		if batch_runner == null: actor.feeding.ate_bait.connect(func(bait): blood_event.rpc(bait.global_position))
 	else:
 		actor = FisherActor.new()
 		actor.session = self
@@ -280,6 +282,11 @@ func fish_intent(sequence: int, axes: PackedFloat32Array, flags: int) -> void:
 
 func _physics_process(delta: float) -> void:
 	clock += delta
+	if batch_runner != null:
+		if closed: return
+		for record in players.values():
+			record.entity.command = record.ai.fish_input(record.entity,self,delta) if record.role == ROLE_FISH else record.ai.fisher_input(record.entity,delta)
+		return
 	if spectator_check and spectator_mode:
 		if players.has(-2):
 			var observer_fisher: FisherActor = players[-2].entity
@@ -439,12 +446,12 @@ func register_bait(actor: BaitActor) -> void:
 	next_actor_id += 1
 	baits[id] = actor
 	actor.network_id = id
-	if is_instance_valid(actor.fisher_owner): add_test_marker(actor)
+	if is_instance_valid(actor.fisher_owner) and batch_runner == null: add_test_marker(actor)
 	last_lifecycle[id] = actor.lifecycle
 	send_bait_event(0,0,id)
 	actor.bitten.connect(func(_bait,_eater): send_bait_event(0,1,id))
 	actor.tree_exiting.connect(func():
-		if not closed: bait_event.rpc(2,id,0,0,PackedFloat32Array())
+		if not closed and batch_runner == null: bait_event.rpc(2,id,0,0,PackedFloat32Array())
 		baits.erase(id)
 		last_lifecycle.erase(id))
 
@@ -456,6 +463,7 @@ func bait_state(id: int, actor: BaitActor) -> PackedFloat32Array:
 	return PackedFloat32Array([id,p.x,p.y,p.z,r.x,r.y,r.z,v.x,v.y,v.z,actor.visual.scale.x,actor.visual.speed,actor.visual.twitch,actor.visual.bird_pose,int(actor.visual.bird_powered),actor.visual.action,clock])
 
 func send_bait_event(peer: int, operation: int, id: int) -> void:
+	if batch_runner != null: return
 	var actor: BaitActor = baits[id]
 	var data = bait_state(id,actor)
 	data.append(actor.lifecycle)
@@ -684,6 +692,9 @@ func add_test_marker(actor: BaitActor) -> void:
 	actor.bitten.connect(func(_bait,_eater): marker.hide())
 
 func publish_fight_result(fish: FishPlayer, fisher: FisherActor, result: int) -> void:
+	if batch_runner != null:
+		batch_runner.completed(fisher.fight,FightSession.Outcome.keys()[result])
+		return
 	var fish_id = 0
 	for id in players:
 		if players[id].entity == fish: fish_id = id
@@ -701,6 +712,9 @@ func present_fight_result(fish_id: int, fisher_id: int, result: int) -> void:
 		outcome_banner.show_result(result,owned == fish_id)
 
 func publish_fight_counter(fish: FishPlayer, fisher: FisherActor, kind: int) -> void:
+	if batch_runner != null:
+		batch_runner.counter(fisher.fight,kind)
+		return
 	var fish_id = 0
 	for id in players:
 		if players[id].entity == fish: fish_id = id
