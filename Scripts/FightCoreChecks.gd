@@ -8,14 +8,14 @@ static func run(fight: FightSession) -> bool:
 	var both = FishFightMotion.new()
 	for i in range(12):
 		var stroke = FishInput.new(1,1 if i%2 == 0 else -1)
-		rhythm.step(0.48,stroke,Vector3.FORWARD,1,100,false)
+		rhythm.step(0.48,stroke,Vector3.FORWARD,1,100,false,stroke.steering)
 		stroke.stroke_axis = stroke.steering
-		both.step(0.48,stroke,Vector3.FORWARD,1,100,false)
+		both.step(0.48,stroke,Vector3.FORWARD,1,100,false,stroke.steering)
 		stroke.steering = 0
-		mouse.step(0.48,stroke,Vector3.FORWARD,1,100,false)
+		mouse.step(0.48,stroke,Vector3.FORWARD,1,100,false,stroke.stroke_axis)
 	ok = verify(rhythm.swim_drive > 0.9 and is_equal_approx(mouse.swim_drive,rhythm.swim_drive) and is_equal_approx(both.swim_drive,rhythm.swim_drive),"Ideal keyboard/mouse cadence sustains the same non-stacking Drive") and ok
 	var stored = rhythm.swim_drive
-	for i in range(3): rhythm.step(0.16,FishInput.new(1,1 if i%2 == 0 else -1),Vector3.FORWARD,1,100,false)
+	for i in range(3): rhythm.step(0.16,FishInput.new(1,1 if i%2 == 0 else -1),Vector3.FORWARD,1,100,false,1 if i%2 == 0 else -1)
 	ok = verify(rhythm.overdrive > 0 and rhythm.overdrive <= rhythm.overdrive_max and rhythm.swim_drive < stored,"Fast cadence gives bounded overdrive and consumes stored Drive") and ok
 	var run = FishFightMotion.new()
 	run.step(0.1,FishInput.new(1,0,0,Vector3.FORWARD,true),Vector3.FORWARD,1,100,false)

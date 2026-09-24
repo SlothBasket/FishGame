@@ -46,7 +46,7 @@ func _ready() -> void:
 	debug.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	damage_label = Label.new()
 	layer.add_child(damage_label)
-	damage_label.position = Vector2(24,275)
+	damage_label.position = Vector2(24,320)
 	damage_label.add_theme_font_size_override("font_size",24)
 	damage_label.modulate = Color(1,0.35,0.18)
 	damage_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -85,6 +85,7 @@ func _process(delta: float) -> void:
 	if is_instance_valid(fight):
 		debug.text += "\nFish: %s | Fisher: %s\n%s | Line %.1f / %.0f m | Tension %.1f | Drag %.0f%%" % [FightDecisions.fish_text(fight.fish_action),FightDecisions.fisher_text(fight.fisher_action),FightSession.Phase.keys()[fight.phase],fight.spool.line_out,fight.spool.maximum_line_out,fight.tension,fisher.drag_setting*100]
 		debug.text += "\nREMAINING %.1f m | TAKE-UP %.1f m | REEL RECOVERY %.1f m" % [maxf(0,fight.spool.maximum_line_out-fight.spool.line_out),fight.spool.rod_take_up,fight.recovery_total]
+		debug.text += "\nDIVE %.0f%% | ASCENT %.0f%% | SLACK %.2f m | HOOK %.0f%%\nHEAD %.1f° / %.1f° | SHAKE %.0f%% | STROKE %s" % [fish.motion.dive_power*100,fish.motion.ascent_power*100,fight.spool.slack,fight.hook_security*100,rad_to_deg(fish.head.offset.y),rad_to_deg(fish.head.offset.x),fish.head.shake_pressure*100,"LEFT" if fish.head.stroke_side > 0 else "RIGHT" if fish.head.stroke_side < 0 else "NEUTRAL"]
 		var age = fight.perception.age()
 		var perceived = "CURRENT" if age < 0.18 else "%.2fs OLD" % age
 		debug.text += "\nLINE CONDITION: %.1f%%\nVISION: %s | FOCUS: %.0f%% | AI PERCEPTION: %s\nFish Skill: %.0f%% | Fisher Skill: %.0f%%" % [fight.spool.condition*100,"ON" if fisher.vision_active else "OFF",fisher.focus/fisher.focus_capacity*100,perceived,fight.fish_skill*100,fight.fisher_skill*100]

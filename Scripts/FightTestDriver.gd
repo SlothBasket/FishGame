@@ -16,6 +16,13 @@ var gesture_phase: float = -1
 var gesture_axis: Vector2 = Vector2.ZERO
 var gesture_wait: float = 0
 var pump_clock: float = 0
+var shake_until: float = 0
+var shake_wait: float = 0
+var stroke_pause: float = 0
+var next_lapse: float = 8
+var execution_rng = RandomNumberGenerator.new()
+func _init() -> void:
+	execution_rng.randomize()
 
 func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 	clock += delta
@@ -33,10 +40,22 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 		if burst_remaining <= 0 and sprint and fish.motion.swim_drive > 0.85 and energy > 0.55 and (absf(fish.directional_pressure) > 0.2 or f.spool.line_rate > 0): burst_remaining = 1.5
 		# Bank Drive with efficient legal strokes, spend it during a strong run/turn.
 		stroke_clock += delta
-		var cadence = (lerpf(0.28,0.20,f.fish_skill) if burst_remaining > 0 else fish.motion.ideal_stroke_interval)+(1-f.fish_skill)*sin(clock*2.7)*0.2
+		var cadence = (lerpf(0.28,0.20,f.fish_skill) if burst_remaining > 0 else fish.motion.ideal_stroke_interval)+(0.03+(1-f.fish_skill)*0.2)*sin(clock*2.7)
 		if stroke_clock >= cadence: stroke_clock = 0; stroke_side *= -1
-		var stroke = stroke_side*0.4
-		var input = FishInput.new(0.25 if resting else 1,stroke,0,aim,sprint)
+		if clock > next_lapse:
+			stroke_pause = lerpf(1.7,1.2,f.fish_skill)
+			next_lapse = clock+execution_rng.randf_range(7,12)*f.fish_skill
+		stroke_pause = maxf(0,stroke_pause-delta)
+		shake_wait = maxf(0,shake_wait-delta)
+		shake_until = maxf(0,shake_until-delta)
+		if shake_wait <= 0 and f.spool.slack > 0.8:
+			shake_wait = lerpf(3,1.4,f.fish_skill)
+			if execution_rng.randf() < 0.45+0.35*f.fish_skill: shake_until = 1.1
+		if shake_until > 0:
+			aim = aim.rotated(Vector3.UP,sin(clock*18)*deg_to_rad(30))
+		elif stroke_pause <= 0 and not resting:
+			aim = aim.rotated(Vector3.UP,stroke_side*deg_to_rad(24))
+		var input = FishInput.new(0.25 if resting else 1,0,0,aim,sprint)
 		input.vertical = 1 if action == FightDecisions.FishAction.JUMP else 0
 		input.cancel_bite = fish.feeding.is_charging
 		return input

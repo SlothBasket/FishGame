@@ -266,6 +266,8 @@ func _process(delta: float) -> void:
 	_dive_caption.visible = _dive_bar.visible
 	_dive_bar.value = _fish.motion.dive_power*100
 	if _fish.fight_active:
+		if _fish.motion.ascent_power > 0.1: _energy.text += "\nASCENT %.0f%%" % (_fish.motion.ascent_power*100)
+		if _fish.fight_slack: _energy.text += "\nSLACK — SHAKE HEAD"
 		if _fish.show_fight_coaching:
 			_energy.text += "\n"+FightDecisions.fish_text(_fish.fight_best_move)
 			if _fish.damaging_line: _energy.text += "\nDAMAGING LINE"

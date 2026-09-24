@@ -1,3 +1,5 @@
+> Current head/ascent pass: [HEAD_AND_ASCENT_GUIDE.md](HEAD_AND_ASCENT_GUIDE.md) supersedes earlier direct body steering, input-only Drive, 30% endurance floor and directional information without Vision. Current snapshots: **47 fish / 61 fisherman**.
+
 > Latest rod-gesture/pump pass: [ROD_GESTURE_GUIDE.md](ROD_GESTURE_GUIDE.md) gives **Godot editor launch arguments**, directional gesture controls, interruption rules, pump audit, 88-actor baseline and current 60-float fisherman snapshots. Supersedes older button-jerk and population descriptions below.
 
 > Current physical-cue/AI pass: [FIGHT_READABILITY_GUIDE.md](FIGHT_READABILITY_GUIDE.md) supersedes historical defaults below: **150 m spool, 42-float fish snapshots**, physical-pressure cues, skill overrides, visible spectator equipment and powered directional wear.

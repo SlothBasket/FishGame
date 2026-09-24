@@ -44,6 +44,9 @@ var breach_intent_time: float = 0
 @export var hooked_sway_camera_scale: float = 0.45
 @export var show_fight_coaching: bool = true
 var motion = FishFightMotion.new()
+var head = FishSteering.new()
+@export var exhausted_swim_fraction: float = 0.55
+@export var endurance_power_exponent: float = 0.8
 var dive_particles: CPUParticles3D
 var overdrive_particles: CPUParticles3D
 var maneuver_burst: CPUParticles3D
@@ -77,7 +80,7 @@ var fight_slack: bool = false
 @export var dash_growth_bonus: float = 0.25
 @export var max_tension_camera_roll: float = 0.08
 @export var tension_camera_smoothing: float = 5
-@export var endurance_floor: float = 0.30
+@export var endurance_floor: float = 0.0
 @export var sprint_endurance_drain: float = 0.55
 @export var dash_endurance_cost: float = 0.8
 var endurance: float = 100
@@ -219,6 +222,8 @@ func _physics_process(delta: float) -> void:
 	dive_particles.direction = (-heading+Vector3.UP*0.8).normalized()
 	dive_particles.initial_velocity_min = 2+motion.dive_power*3
 	dive_particles.initial_velocity_max = 4+motion.dive_power*5
+	visual.head_offset = head.offset
+	visual.impact = head.impact_time
 	visual.drive = motion.swim_drive if fight_active else 0.0
 	visual.overdrive = motion.overdrive/maxf(0.01,motion.overdrive_max) if fight_active else 0.0
 	overdrive_particles.emitting = fight_active and motion.overdrive > 0
@@ -236,12 +241,14 @@ func _physics_process(delta: float) -> void:
 	if not intent.boost: sprint_exhausted = false
 	if stamina < 1: sprint_exhausted = true
 	if not free_bursts and (sprint_exhausted or sprint_locked): intent.boost = false
-	if in_fight: motion.step(delta,intent,heading,velocity.length()/maxf(0.1,effective_swim_speed()),stamina,touching_bottom())
+	heading = head.step(delta,heading,intent,maxf(0,velocity.dot(heading)))
+	if in_fight: motion.step(delta,intent,heading,velocity.length()/maxf(0.1,effective_swim_speed()),stamina,touching_bottom(),head.stroke,power_capacity(),velocity.y)
 	var sprinting = intent.boost and intent.throttle > 0 and not free_bursts
 	if in_fight and sprinting: fatigue(sprint_endurance_drain*delta)
 	var regeneration = stamina_regen*(fight_regen_multiplier*fight_regen_scale if in_fight else 1.0)
 	stamina = clampf(stamina+(-sprint_drain if sprinting else regeneration)*delta,0,endurance if in_fight else stamina_capacity)
 	if in_fight and motion.diving: stamina = maxf(0,stamina-motion.dive_stamina_drain*delta)
+	if in_fight: stamina = maxf(0,stamina-motion.ascent_stamina_drain*motion.ascent_power*delta)
 	var bite_start = global_position
 	feeding.update_attack(intent, delta)
 	boosting = intent.boost and intent.throttle > 0.0 and not feeding.is_charging and not feeding.is_dashing()
@@ -255,14 +262,14 @@ func _physics_process(delta: float) -> void:
 		if velocity.length() > 0.1:
 			heading = FishInput.turn_toward(heading, velocity.normalized(), deg_to_rad(pitch_turn_rate) * delta)
 	else:
-		heading = FishInput.steer_heading(heading, intent, forward_turn_rate, pitch_turn_rate,
-			manual_steering_strength, idle_pivot_multiplier, delta)
+		# Head steering above supplies the physical body heading for this motor tick.
 		var swim = FishInput.new(intent.throttle, intent.steering, intent.vertical, intent.aim_direction, boosting)
 		var speed = effective_swim_speed() * (motion.multiplier() if in_fight else 1.0) * (charge_swim_multiplier if feeding.is_charging else 1.0)
-		var response = charge_response_multiplier if feeding.is_charging else 1.0
+		var response = (charge_response_multiplier if feeding.is_charging else 1.0)*(0.3 if head.impact_time > 0 else 1.0)
 		velocity = FishInput.next_velocity(velocity, heading, swim, speed, fight_boost_multiplier(),
 			reverse_speed_multiplier, acceleration * response * (motion.multiplier() if in_fight else 1.0) * (fight_boost_multiplier() if in_fight and boosting else 1.0), reverse_acceleration * response, water_drag * response, vertical_speed_multiplier, delta)
 		if in_fight and motion.diving: velocity.y -= motion.dive_acceleration*motion.dive_power*delta
+		if in_fight and not airborne: velocity.y += motion.ascent_acceleration*motion.ascent_power*delta
 		apply_line_force(delta)
 		if in_fight: fight.constrain_velocity(delta)
 		move_and_slide()
@@ -320,7 +327,7 @@ func limit_breach_velocity() -> void:
 	velocity = flat + Vector3.UP * minf(velocity.y, max_breach_vertical_speed)
 
 func effective_swim_speed() -> float:
-	return swim_speed*(1+swim_growth_bonus*growth_fraction())
+	return swim_speed*(1+swim_growth_bonus*growth_fraction())*(lerpf(exhausted_swim_fraction,1,power_capacity()) if is_instance_valid(fight) else 1.0)
 
 func effective_dash_speed() -> float:
 	return lunge_speed*(1+dash_growth_bonus*growth_fraction())
@@ -341,7 +348,7 @@ func fatigue(amount: float) -> void:
 
 func fight_boost_multiplier() -> float:
 	# Only fight sprint output fades; ordinary swim speed and turns remain available.
-	return 1+(lerpf(1.25,boost_multiplier,endurance/stamina_capacity)-1)*motion.run_build*(0.65+0.35*motion.swim_drive/maxf(0.01,motion.sustainable_max)) if is_instance_valid(fight) else boost_multiplier
+	return 1+(lerpf(1,boost_multiplier,power_capacity())-1)*motion.run_build*(0.65+0.35*motion.swim_drive/maxf(0.01,motion.sustainable_max)) if is_instance_valid(fight) else boost_multiplier
 
 func apply_line_force(delta: float) -> void:
 	# Measure fish-driven upward intent before adding any line acceleration.
@@ -360,3 +367,10 @@ func touching_bottom() -> bool:
 	for i in range(get_slide_collision_count()):
 		if get_slide_collision(i).get_normal().y > 0.55: return true
 	return false
+
+func power_capacity() -> float:
+	return pow(clampf(endurance/maxf(1,stamina_capacity),0,1),endurance_power_exponent)
+func receive_impact(force: Vector3, severity: float) -> void:
+	var body = FishInput.angles(heading)
+	var wanted = FishInput.angles(force.normalized())
+	head.knock(Vector2(wanted.x-body.x,angle_difference(body.y,wanted.y)),0.18+0.18*severity)

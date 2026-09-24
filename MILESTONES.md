@@ -32,3 +32,5 @@ Validation for the pacing milestone: 97 checks passed. Standalone 75-second grap
 - Milestone subject: `Make fight pressure and AI execution readable to players and spectators` — shared physical cues, Drive/Overdrive/Dive animation, visible boat/rod/line, strategic Vision, 150 m spool, skill settings, wall-aware movement jumps and separate directional wear. See FIGHT_READABILITY_GUIDE.md for tuning and scoped validation.
 
 - Milestone subject: `Add physical directional jerks and readable pump recovery` — shared server rod gestures, timed directional counters, simple legal AI counter/pump rhythm and spool urgency, 88-actor baseline, visible F9 save confirmation and editor launch documentation.
+
+- Milestone subject: `Make fish steering, Drive and hook escape physically readable` — head-led body arcs, measured Drive strokes, active slack shakes, directional-information Vision gate, ascent power, zero-endurance fatigue and impact recoil. See HEAD_AND_ASCENT_GUIDE.md.

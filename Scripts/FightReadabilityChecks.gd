@@ -7,7 +7,7 @@ static func run() -> bool:
 	drive.swim_drive = 0.8
 	drive.last_side = -1
 	drive.stroke_age = 0
-	drive.step(0.75,FishInput.new(1,1),Vector3.FORWARD,1,100,false)
+	drive.step(0.75,FishInput.new(1,1),Vector3.FORWARD,1,100,false,1)
 	ok = check(drive.swim_drive > 0.8,"Late stroke earns partial credit") and ok
 	var before = drive.swim_drive
 	drive.step(0.5,FishInput.new(),Vector3.FORWARD,1,100,false)
@@ -15,7 +15,7 @@ static func run() -> bool:
 	drive.step(1,FishInput.new(),Vector3.FORWARD,1,100,false)
 	ok = check(drive.swim_drive < before and drive.swim_drive > before-0.1,"Idle Drive decays gradually") and ok
 	drive.swim_drive = 1
-	for i in range(10): drive.step(0.2,FishInput.new(1,1 if i%2 == 0 else -1),Vector3.FORWARD,1,100,false)
+	for i in range(10): drive.step(0.2,FishInput.new(1,1 if i%2 == 0 else -1),Vector3.FORWARD,1,100,false,1 if i%2 == 0 else -1)
 	ok = check(drive.swim_drive > 0.25 and drive.overdrive > 0 and drive.multiplier() > 1.22,"Overdrive lasts seconds, spends Drive and exceeds full normal propulsion") and ok
 	var fish = FishPlayer.new()
 	var fisher = FisherActor.new()
@@ -42,7 +42,7 @@ static func run() -> bool:
 	fight.tension = 100
 	fish.motion.dive_blocked = true
 	fight.spool.distance = 30
-	ok = check(FightDecisions.fish_choice(fight,0) in [FightDecisions.FishAction.RUN,FightDecisions.FishAction.LEFT,FightDecisions.FishAction.RIGHT],"Taut pressured distance stays in outward strategies") and ok
+	ok = check(FightDecisions.fish_choice(fight,0) == FightDecisions.FishAction.JUMP,"Deep pressured fish can choose ascent") and ok
 	ok = check(FightDecisions.fisher_choice(fight.perception.capture(fight)) == FightDecisions.FisherAction.LET_RUN,"Dangerous load chooses LET RUN") and ok
 	ok = check(FightLine.DEFAULT_CAPACITY == 150,"Spool defaults to 150m") and ok
 	ok = check(fight.directional_wear_rate(0.4,1,2,1,1) == 0 and fight.directional_wear_rate(1,1,2,1,1) > 0.001,"Extra directional wear requires high Drive and powered pressure") and ok
@@ -75,6 +75,7 @@ static func run() -> bool:
 	perception.tick(0.31,fight)
 	ok = check(not perception.observation.is_empty() and perception.age() >= 0.3 and not perception.observation.has("stamina") and not perception.observation.has("drive") and not perception.observation.has("dive_power"),"Delivered perception is delayed and contains no hidden fish resources") and ok
 	ok = gesture_and_pump_checks(fight) and ok
+	ok = head_and_ascent_checks(fight) and ok
 	print("FORCE RANGE hard=",hard," tension=",threatened.tension," exceptional=",exceptional.tension," fresh risk=",exceptional.break_threshold())
 	fight.free()
 	fish.free()
@@ -141,4 +142,68 @@ static func gesture_and_pump_checks(f: FightSession) -> bool:
 	ok = check(FightDecisions.fisher_choice(observed) == FightDecisions.FisherAction.LET_RUN,"Early spool allows conservative response") and ok
 	observed.line_out = 140
 	ok = check(FightDecisions.fisher_choice(observed) == FightDecisions.FisherAction.UP,"Near spool loss prioritizes active counter") and ok
+	return ok
+
+static func head_and_ascent_checks(f: FightSession) -> bool:
+	var ok = true
+	var head = FishSteering.new()
+	var heading = Vector3.FORWARD
+	var rhythm = FishFightMotion.new()
+	var credits: int = 0
+	var peak_shake: float = 0
+	var peak_head: float = 0
+	var peak_body: float = 0
+	for i in range(180):
+		var side = 1 if int(i/24.0)%2 == 0 else -1
+		var input = FishInput.new(1,0,0,Vector3.FORWARD.rotated(Vector3.UP,side*deg_to_rad(24)))
+		heading = head.step(1.0/60,heading,input,8)
+		peak_head = maxf(peak_head,absf(head.offset.y))
+		peak_body = maxf(peak_body,heading.angle_to(Vector3.FORWARD))
+		peak_shake = maxf(peak_shake,head.shake_pressure)
+		if head.stroke != 0: credits += 1
+		rhythm.step(1.0/60,input,heading,1,100,false,head.stroke)
+	ok = check(peak_head > deg_to_rad(8) and peak_head <= deg_to_rad(head.maximum_yaw),"Head moves independently within its limit") and ok
+	ok = check(peak_body > deg_to_rad(2) and peak_body < deg_to_rad(26) and credits > 3 and rhythm.swim_drive > 0.2,"Real alternating turns create small body arcs and Drive") and ok
+	var idle = FishSteering.new()
+	var moving = FishSteering.new()
+	var a = Vector3.FORWARD
+	var b = a
+	for i in range(20):
+		var input = FishInput.new(1,0,0,Vector3.LEFT)
+		a = idle.step(1.0/60,a,input,0)
+		b = moving.step(1.0/60,b,input,8)
+	ok = check(a.angle_to(Vector3.FORWARD) > 0 and a.angle_to(Vector3.FORWARD) < b.angle_to(Vector3.FORWARD)*0.5,"Low-speed steering remains but is much weaker") and ok
+	ok = check(peak_shake > 0 and f.shake_effect(3,peak_shake) > 0 and f.shake_effect(0,peak_shake) == 0,"Alternating head motion exploits real slack, not taut line") and ok
+	var micro = FishFightMotion.new()
+	for i in range(10): micro.step(0.4,FishInput.new(1,1 if i%2 == 0 else -1),Vector3.FORWARD,1,100,false)
+	ok = check(micro.swim_drive <= 0.2,"Input flags alone cannot build Drive") and ok
+	for direction in [Vector3(0,1,1),Vector3(1,1,0),Vector3(0,1,-1)]:
+		var ascent = FishFightMotion.new()
+		ascent.step(0.8,FishInput.new(1,0,1,direction,true),direction.normalized(),1,100,false,0,1,5)
+		ok = check(ascent.ascent_power > 0.2,"Ascent builds regardless of horizontal direction") and ok
+	f.fish.fatigue(1000)
+	ok = check(f.fish.endurance == 0 and f.fish.power_capacity() == 0,"Endurance can reach genuine exhaustion") and ok
+	var tired = FishFightMotion.new()
+	tired.swim_drive = 1
+	for i in range(8): tired.step(0.2,FishInput.new(1,0,1,Vector3.UP,true),Vector3.UP,1,0,false,1 if i%2 == 0 else -1,0,5)
+	ok = check(tired.overdrive == 0 and tired.ascent_power == 0 and not tired.diving and tired.multiplier() >= 0.65,"Exhaustion removes power moves but preserves base motor") and ok
+	var observed = f.perception.capture(f)
+	f.fish.heading = Vector3.FORWARD
+	f.fish.velocity = Vector3.FORWARD*8
+	f.fisher.vision_active = false
+	observed = f.perception.capture(f)
+	f.fisher.vision_active = true
+	ok = check(float(observed.side) == 0 and absf(float(f.perception.capture(f).side)) > 0.2,"Only Vision reports lateral direction") and ok
+	f.fisher.vision_active = false
+	var line = FightLine.new()
+	line.line_out = 50
+	line.step(0.1,48,0,0,0,0.4,false,0,1)
+	line.step(0.1,48,0,0,0,0.4,false,0,0)
+	ok = check(line.slack > 1.9 and line.line_out == 50,"Lowering a gained pump creates real slack") and ok
+	line.step(0.1,49,2,0,0,0.4,false)
+	ok = check(line.line_out == 50 and line.slack > 0.9,"Fish consumes slack before requiring more spool") and ok
+	line.step(0.2,49,0,0,1,0.4,false)
+	ok = check(line.line_out < 50 and line.slack < 0.2,"Retrieve collects slack normally") and ok
+	head.knock(Vector2(0.2,0.4),0.3)
+	ok = check(head.impact_time > 0 and head.offset.length() > 0.3,"Counter impact visibly displaces head and temporarily disrupts steering") and ok
 	return ok

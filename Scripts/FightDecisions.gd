@@ -9,7 +9,7 @@ static func fish_choice(f: FightSession, previous: int) -> int:
 	var depth = fish.water_height-fish.position.y
 	var pressure = f.tension/f.spool.strength
 	if f.jump_commit > 0: return FishAction.JUMP
-	if fish.motion.diving: return FishAction.DIVE
+	if fish.motion.diving and fish.motion.run_age < 3: return FishAction.DIVE
 	if energy < 0.22 or (previous == FishAction.REST and energy < 0.7): return FishAction.REST
 	var scores = [2.0+energy+fish.motion.swim_drive,1.0,1.0,-10.0,-10.0,-10.0]
 	# Same signed acceleration supplied to the human's chevrons and body bank.
@@ -18,8 +18,14 @@ static func fish_choice(f: FightSession, previous: int) -> int:
 		scores[FishAction.LEFT if pull < 0 else FishAction.RIGHT] = 4+absf(pull)*5
 	if fish.position.y > 7 and energy > 0.55 and not fish.motion.dive_blocked:
 		scores[FishAction.DIVE] = 2.5+fish.motion.swim_drive*2+pressure
-	if depth < 5 and depth > -0.5 and energy > 0.5 and f.jump_cooldown <= 0:
-		scores[FishAction.JUMP] = 4+pressure*4+maxf(0,fish.line_force.y)*0.4
+	if depth < 30 and depth > -0.5 and energy > 0.5 and fish.power_capacity() > 0.2 and f.jump_cooldown <= 0:
+		scores[FishAction.JUMP] = 3.3+pressure*3+maxf(0,fish.line_force.y)*0.4+(1.5 if depth < 5 else 0.8 if fish.motion.run_age > 2 else 0)
+	# Lateral commitment trades radial efficiency for making the fisher track a new course.
+	if fish.motion.run_build > 0.5 and fish.motion.run_age > 0.8 and absf(pull) < f.pressure_dead_zone:
+		var right = BaitMotion.horizontal(fish.position-f.fisher.position).cross(Vector3.UP)
+		var side = fish.heading.dot(right)
+		var choice = FishAction.LEFT if side < -0.1 or (absf(side) <= 0.1 and fish.position.dot(right) > 0) else FishAction.RIGHT
+		scores[choice] = 4.7+fish.motion.swim_drive*0.7
 	var outward = (fish.position-f.fisher.position).normalized()
 	for i in range(5):
 		var heading = heading_for(f,i)

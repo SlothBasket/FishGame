@@ -30,6 +30,7 @@ func tick(delta: float, f: FightSession) -> void:
 		var previous_side = float(observation.get("side",0))
 		observation = pending.pop_front()
 		uncertainty = previous_side*float(observation.side) < -0.08 or bool(observation.descending)
+	if not f.fisher.vision_active and not observation.is_empty(): observation["side"] = 0.0
 	if observation.get("descending",false): descending_time += delta
 	else: descending_time = 0
 	if not observation.is_empty(): observation["descending_time"] = descending_time
@@ -39,8 +40,8 @@ func capture(f: FightSession) -> Dictionary:
 	# Normal view observes coarse motion; Vision resolves body direction sooner.
 	var direction = f.fish.heading if f.fisher.vision_active else f.fish.velocity.normalized()
 	var side = direction.dot(right)
-	if not f.fisher.vision_active: side = snappedf(side,0.25)
-	return {"side":side,"descending":f.fish.velocity.y < -3,"airborne":f.fish.position.y > f.fish.water_height,
+	if not f.fisher.vision_active: side = 0
+	return {"side":side,"ascending":f.fish.velocity.y > 3,"descending":f.fish.velocity.y < -3,"airborne":f.fish.position.y > f.fish.water_height,
 		"outward_speed":f.fish.velocity.dot(outward),"tension":f.tension,"condition":f.spool.condition,
 		"slack":f.spool.slack,"payout":f.spool.payout,"strength":f.spool.strength,
 		"depth":snappedf(f.fish.water_height-f.fish.position.y,4),"line_out":f.spool.line_out,"capacity":f.spool.maximum_line_out,"drag":f.fisher.drag_setting,"distance":f.spool.distance}

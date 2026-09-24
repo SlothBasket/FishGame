@@ -25,6 +25,8 @@ enum Outcome { NONE, MISSED, LINE_BROKE, THROWN, LANDED, DISCONNECT, SPOOLED }
 @export var security_recovery: float = 0.035
 @export var slack_throw_rate: float = 0.035
 @export var landing_confirmation: float = 0.75
+@export var shake_security_drain: float = 0.22
+@export var shake_hook_hazard: float = 0.18
 var hook_security: float = 1
 var slack_time: float = 0
 var rod_horizontal: float = 0
@@ -156,7 +158,7 @@ func _physics_process(delta: float) -> void:
 	if decision_wait <= 0:
 		fish_action = FightDecisions.fish_choice(self,fish_action)
 		if fish_action == FightDecisions.FishAction.JUMP and jump_commit <= 0:
-			jump_commit = 2.2
+			jump_commit = clampf((fish.water_height-fish.position.y)/5+1.5,2.2,7)
 			jump_cooldown = 12
 		decision_wait = lerpf(0.9,0.35,fish_skill)
 	fish.fight_best_move = fish_action
@@ -177,6 +179,7 @@ func _physics_process(delta: float) -> void:
 			var yank = (fisher.position-fish.position).normalized()*yank_speed*(0.65+quality*0.25)
 			yank.y = minf(0,yank.y)
 			fish.velocity += yank
+			fish.receive_impact(yank,quality/3.0)
 			fish.stamina = maxf(0,fish.stamina-hook_stamina_damage*quality/3.0)
 			change_phase(Phase.IMPACT)
 		elif phase_time > opportunity_window: finish(Outcome.MISSED)
@@ -276,11 +279,13 @@ func _physics_process(delta: float) -> void:
 	else:
 		slack_time = 0
 		if tension > 2 and tension < safe_load: hook_security = minf(1,hook_security+security_recovery*delta)
-	var hook_hazard = slack_throw_rate*pow(1-hook_security,2)*(1+minf(2,turn_activity))
+	var shaking = shake_effect(spool.slack,fish.head.shake_pressure)
+	hook_security = maxf(0,hook_security-shaking*shake_security_drain*delta)
+	var hook_hazard = shaking*shake_hook_hazard+slack_throw_rate*pow(1-hook_security,2)*(1+minf(2,turn_activity))
 	if fish.airborne and fish.natural_breach:
 		var lowered = rod_vertical < -0.25
-		hook_hazard += jump_throw_rate*(lowered_rod_reduction if lowered else 1)*(1+1-hook_security)
-		if not lowered: spool.condition = maxf(0.02,spool.condition-0.008*delta*tension/spool.strength)
+		hook_hazard += jump_throw_rate*(lowered_rod_reduction if lowered else 1)*(2-hook_security+fish.motion.ascent_power+shaking)
+		# Breach attacks hook security; line risk still comes from physical tension.
 	line_damage_rate = maxf(0,(condition_before-spool.condition)/maxf(0.0001,delta))
 	condition = spool.condition
 	fish.damaging_line = line_damage_rate > 0.00001
@@ -409,4 +414,9 @@ func apply_directional_jerk(direction: int, outward: Vector3, right: Vector3, co
 		else:
 			fish.motion.overdrive *= 1-result.y*0.5
 			fish.motion.run_build *= 1-result.y*0.3
-	if interruption > 0: fisher.session.publish_fight_counter(fish,fisher,interruption)
+	if interruption > 0:
+		fish.receive_impact(impulse_direction+right*(-1 if direction == RodGesture.Direction.LEFT else 1 if direction == RodGesture.Direction.RIGHT else 0),result.y)
+		fisher.session.publish_fight_counter(fish,fisher,interruption)
+
+func shake_effect(slack: float, shaking: float) -> float:
+	return clampf((slack-slack_tolerance)/2,0,1)*clampf(shaking,0,1)
