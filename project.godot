@@ -24,7 +24,7 @@ window/stretch/mode="canvas_items"
 
 [editor]
 
-run/main_run_args="-- --fight-batch=100 --sim-speed=20 --batch-seed=12345"
+run/main_run_args="-- --host --ai-vs-ai --port=24567"
 
 [rendering]
 
