@@ -46,3 +46,5 @@ Validation for the pacing milestone: 97 checks passed. Standalone 75-second grap
 - Milestone subject: `Give rod lifts and counters lasting fight progression` — shared normal cast range, bounded rod contraction, maneuver fatigue and nonlinear counter endurance loss, Drive lockout feedback, perceptual maneuver gating and restrained Vision, progression telemetry. Import, focused contracts and one three-fight/90 s smoke; no win-rate tuning. Editor settings preserved in `066f2e3`.
 
 - Milestone subject: `Separate renewable Drive and add true lateral burst counterplay` — Drive-first bursts, deliberate stamina escalation, ordered Overdrive/Power punishment, radial effort costs, measured boat-relative sides, procedural cues and free-swim Drive. Scoped contracts and one three-fight smoke, no win-rate tuning. User batch settings checkpointed in `2f45eaf`.
+
+- Milestone subject: `Fix CPU particle intensity control` — replace unsupported particle amount ratio with guarded 32/64 counts while retaining emitting control and existing CPU effect settings. Import and one 1,200-frame normal graphical AI spectator launch passed without particle/script errors; no combat changes.

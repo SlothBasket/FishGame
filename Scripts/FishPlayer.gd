@@ -408,7 +408,10 @@ func update_fight_presentation() -> void:
 	overdrive_particles.direction = -heading
 	overdrive_particles.initial_velocity_min = 2+visual.overdrive*2
 	overdrive_particles.initial_velocity_max = 4+visual.overdrive*4+(3 if motion.side_time > 0 else 0)
-	overdrive_particles.amount_ratio = 1.0 if motion.overdrive > 0 or motion.side_time > 0 else 0.5
+	# CPU particles use discrete counts; update only when active intensity changes.
+	var particle_count = 64 if motion.overdrive > 0 or motion.side_time > 0 else 32
+	if overdrive_particles.emitting and overdrive_particles.amount != particle_count:
+		overdrive_particles.amount = particle_count
 	if (dive_particles.emitting and not was_diving) or (overdrive_particles.emitting and not was_overdriving):
 		maneuver_burst.restart()
 		maneuver_burst.emitting = true
