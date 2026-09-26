@@ -5,6 +5,7 @@ extends Node3D
 @export var charge_wiggle_degrees: float = 3.0
 @export var charge_tail_amplitude: float = 0.3
 @export var charge_frequency: float = 24.0
+var side_bank: float = 0
 var drive: float = 0
 var overdrive: float = 0
 var swim_intensity: float = 0.0
@@ -61,7 +62,7 @@ func _process(delta: float) -> void:
 	_phase += delta * (3.0 + swim_intensity * 8.0 + charge_intensity * charge_frequency + drive*7 + overdrive*20)
 	_head.rotation = Vector3(head_offset.x,head_offset.y,0)*visual_head_fraction
 	_body.rotation.y = lerpf(_body.rotation.y,head_offset.y*0.18+sin(_phase)*deg_to_rad(charge_wiggle_degrees)*charge_intensity,1-exp(-delta*5))
-	_body.rotation.z = lerpf(_body.rotation.z,head_offset.y*impact,1-exp(-delta*10))
+	_body.rotation.z = lerpf(_body.rotation.z,head_offset.y*impact+side_bank,1-exp(-delta*10))
 	tail_follow = lerpf(tail_follow,-head_offset.y*0.35,1-exp(-delta*4))
 	_tail.rotation.y = tail_follow+sin(_phase) * (0.14 + swim_intensity * 0.18 + charge_intensity * charge_tail_amplitude + drive*0.35 + overdrive*0.5)
 	_left_fin.rotation.z = sin(_phase * 0.6) * 0.18

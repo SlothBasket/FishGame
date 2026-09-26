@@ -38,8 +38,9 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 		var resting = action == FightDecisions.FishAction.REST
 		var energy = fish.stamina/maxf(1,fish.endurance)
 		if resting or energy < 0.28: run_committed = false
-		elif energy > 0.7 and fish.motion.swim_drive > 0.55: run_committed = true
+		elif energy > 0.7 and fish.motion.swim_drive >= fish.motion.drive_burst_threshold: run_committed = true
 		var sprint = action == FightDecisions.FishAction.JUMP or run_committed or (not resting and f.spool.distance < 12 and energy > 0.4)
+		if fish.motion.drive_burst_time <= 0 and fish.motion.swim_drive < 0.3 and energy < 0.65: run_committed = false
 		burst_remaining = maxf(0,burst_remaining-delta)
 		if burst_remaining <= 0 and sprint and fish.motion.swim_drive > 0.85 and energy > 0.55 and (absf(fish.directional_pressure) > 0.2 or f.spool.line_rate > 0): burst_remaining = 1.5
 		# Bank Drive with efficient legal strokes, spend it during a strong run/turn.
@@ -64,10 +65,10 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 		if action in [FightDecisions.FishAction.RUN,FightDecisions.FishAction.LEFT,FightDecisions.FishAction.RIGHT] and sprint and fish.motion.swim_drive >= fish.motion.side_burst_drive and not fish.airborne:
 			if side_wait <= 0 and fish.motion.side_wait <= 0:
 				var side = -1 if execution_rng.randf() < 0.5 else 1
-				side_aim = side_burst_aim(fish.heading,side)
+				side_aim = side_burst_aim(BaitMotion.horizontal(fish.position-f.fisher.position),side)
 				var edge = session.world.arena_width*0.5-8
 				var projected = fish.position+side_aim*16
-				if absf(projected.x) > edge or absf(projected.z) > edge: side_aim = side_burst_aim(fish.heading,-side)
+				if absf(projected.x) > edge or absf(projected.z) > edge: side_aim = side_burst_aim(BaitMotion.horizontal(fish.position-f.fisher.position),-side)
 				side_hold = 0.9
 				side_wait = execution_rng.randf_range(3,5)
 			if side_hold > 0: aim = side_aim

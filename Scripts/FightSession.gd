@@ -93,8 +93,12 @@ var tension: float = 0
 var condition: float = 1
 var rod_direction: Vector3 = Vector3.FORWARD
 var power_active: bool = false
-var power_locked_sprint: bool = false
-var power_preexisting_sprint: bool = false
+var power_age: float = 0
+var power_recovery: float = 0
+var seen_overdrive: int = 0
+var power_punishes: int = 0
+@export var power_commit_time: float = 0.25
+@export var power_punish_duration: float = 1.5
 @export var gesture: RodGesture = RodGesture.new()
 @export var jerk_counter_force: float = 65
 @export var early_run_window: float = 1.3
@@ -134,7 +138,6 @@ func _ready() -> void:
 	gesture = gesture.duplicate()
 	update_rod(0.016)
 	sync_pre_hook_line()
-	fish.motion = FishFightMotion.new()
 	fish.endurance = fish.stamina_capacity
 	fish.fight_regen_scale = 1
 	_previous_heading = fish.heading
@@ -158,11 +161,12 @@ func _physics_process(delta: float) -> void:
 	if phase == Phase.FINISHED: return
 	if not is_instance_valid(fish) or not is_instance_valid(fisher): finish(Outcome.DISCONNECT); return
 	phase_time += delta
+	update_power_punish(delta)
 	update_rod(delta)
 	if phase in [Phase.CANDIDATE,Phase.METER]: sync_pre_hook_line()
 	jerk_wait = maxf(0,jerk_wait-delta)
 	jerk_notice_time = maxf(0,jerk_notice_time-delta)
-	var gesture_direction = gesture.step(delta,Vector2(rod_horizontal,rod_vertical),phase in [Phase.OPENING,Phase.FIGHT] and not fisher.vision_active and jerk_wait <= 0 and fisher.stamina >= jerk_cost)
+	var gesture_direction = gesture.step(delta,Vector2(rod_horizontal,rod_vertical),phase in [Phase.OPENING,Phase.FIGHT] and power_recovery <= 0 and not fisher.vision_active and jerk_wait <= 0 and fisher.stamina >= jerk_cost)
 	perception.tick(delta,self)
 	fisher_action = FightDecisions.fisher_choice(perception.observation)
 	jump_cooldown = maxf(0,jump_cooldown-delta)
@@ -212,13 +216,11 @@ func _physics_process(delta: float) -> void:
 	fish.free_bursts = phase == Phase.OPENING
 	if not input.power: power_exhausted = false
 	if fisher.stamina <= 1: power_exhausted = true
-	var wanted_power = input.power and phase == Phase.FIGHT and not power_exhausted
-	if wanted_power and not power_active:
-		power_preexisting_sprint = fish.boosting
-		power_locked_sprint = not power_preexisting_sprint
+	var wanted_power = input.power and phase == Phase.FIGHT and not power_exhausted and power_recovery <= 0
 	power_active = wanted_power
-	if not power_active: power_locked_sprint = false
-	fish.sprint_locked = power_locked_sprint or phase == Phase.IMPACT
+	power_age = power_age+delta if power_active else 0.0
+	# Fish may answer already-committed Power with a legal Overdrive.
+	fish.sprint_locked = phase == Phase.IMPACT
 	if power_active: fisher.stamina = maxf(0,fisher.stamina-power_drain*delta)
 	var outward = (fish.position-neutral_tip).normalized()
 	var view_forward = BaitMotion.horizontal(fish.position-fisher.position)
@@ -252,7 +254,7 @@ func _physics_process(delta: float) -> void:
 		radial_speed = fish.velocity.dot(outward)
 		movement_load = alignment*fish.motion.propulsion*fish.acceleration*mass*propulsion_load_scale+directional_load+fish.motion.dive_power*35
 	var condition_before = spool.condition
-	spool.step(delta,fish.position.distance_to(neutral_tip),radial_speed,movement_load,input.retrieve,fisher.drag_setting,power_active,spike+turn_shock+fall_load(),rod_pull,rod_vertical)
+	spool.step(delta,fish.position.distance_to(neutral_tip),radial_speed,movement_load,(0.0 if power_recovery > 0 else input.retrieve),fisher.drag_setting,power_active,spike+turn_shock+fall_load(),rod_pull,rod_vertical)
 	recovery_total += maxf(0,-spool.line_rate)*delta
 	if check_spooled(): return
 	tension = spool.tension
@@ -283,7 +285,7 @@ func _physics_process(delta: float) -> void:
 	var drain = resistance_fatigue*(resistance+exertion*0.12)*pressure
 	# Resting is optional: ordinary swimming always retains net recovery. Correct
 	# rod resistance still taxes endurance and reduces (rather than erases) regen.
-	if not fish.boosting: drain = minf(drain,fish.stamina_regen*fish.fight_regen_multiplier*0.5)
+	if not fish.boosting or fish.motion.drive_burst_time > 0: drain = minf(drain,fish.stamina_regen*fish.fight_regen_multiplier*0.5)
 	fish.stamina = maxf(0,fish.stamina-drain*delta)
 	fish.fight_pressure = tension/spool.strength
 	fish.fight_gain = spool.line_rate
@@ -302,7 +304,10 @@ func _physics_process(delta: float) -> void:
 	if rng.randf() < 1-exp(-spool.break_hazard()*delta): finish(Outcome.LINE_BROKE); return
 
 func update_rod(delta: float) -> void:
-	if not fisher.vision_active:
+	if power_recovery > 0:
+		rod_horizontal = lerpf(rod_horizontal,0,1-exp(-8*delta))
+		rod_vertical = lerpf(rod_vertical,-0.6,1-exp(-12*delta))
+	elif not fisher.vision_active:
 		rod_horizontal = lerpf(rod_horizontal,clampf(fisher.command.rod_horizontal,-1,1),1-exp(-rod_response*delta))
 		rod_vertical = lerpf(rod_vertical,clampf(fisher.command.rod_vertical,-1,1),1-exp(-rod_response*delta))
 	var forward = BaitMotion.horizontal(fish.position-fisher.position)
@@ -442,7 +447,7 @@ func apply_directional_jerk(direction: int, outward: Vector3, right: Vector3, co
 func counter_lateness() -> float:
 	var age = fish.motion.dive_age if fish.motion.diving else fish.motion.run_age
 	var window = fish.motion.dive_counter_window if fish.motion.diving else early_run_window
-	return clampf((age-window)/1.5,0,1)
+	return clampf(age/maxf(0.1,window+1.0),0,1)
 
 func apply_counter_recovery(maneuver: String, effectiveness: float, impulse: Vector3, lateness: float) -> void:
 	# No line-length awards: gain comes from recoil, lost propulsion and real pull.
@@ -460,7 +465,13 @@ func apply_counter_recovery(maneuver: String, effectiveness: float, impulse: Vec
 	if effectiveness >= 0.5:
 		if dive: fish.motion.interrupt_dive()
 		var recovery = fish.motion.dive_recovery_duration if dive else fish.motion.overdrive_recovery_duration if overdrive else fish.motion.counter_recovery_duration
-		fish.motion.interrupt_run(recovery,overdrive or dive)
+		fish.motion.interrupt_run(recovery,true)
+		if maneuver == "RUN":
+			# A bounded oblique recoil displaces leverage without snapping heading.
+			var right = BaitMotion.horizontal(fish.position-fisher.position).cross(Vector3.UP)
+			var side = -signf(rod_horizontal) if absf(rod_horizontal) > 0.1 else (1.0 if fish.heading.dot(right) >= 0 else -1.0)
+			fish.velocity += right*side*counter_impulse*effectiveness
+			fish.head.knock(Vector2(0,side*deg_to_rad(24)),0.35)
 		interruption = 3 if dive else 2 if overdrive else 1
 	else:
 		# Late but correct input earns partial physical relief, not a binary stun.
@@ -480,3 +491,14 @@ func fall_load() -> float:
 func hook_snap_weight(time: float) -> float:
 	if time < hook_snap_rise: return smoothstep(0,hook_snap_rise,time)
 	return 1-smoothstep(hook_snap_rise+hook_snap_hold,hook_snap_rise+hook_snap_hold+hook_snap_return,time)
+
+func update_power_punish(delta: float) -> void:
+	power_recovery = maxf(0,power_recovery-delta)
+	if fish.motion.overdrive_serial == seen_overdrive: return
+	seen_overdrive = fish.motion.overdrive_serial
+	if phase != Phase.FIGHT or not power_active or power_age < power_commit_time or fish.motion.overdrive < fish.motion.overdrive_max*0.6: return
+	power_active = false
+	power_age = 0
+	power_recovery = power_punish_duration
+	power_punishes += 1
+	if fisher.session.batch_runner != null: fisher.session.batch_runner.telemetry.event("OVERDRIVE_PUNISH_POWER",self)

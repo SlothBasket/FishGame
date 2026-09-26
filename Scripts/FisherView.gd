@@ -12,6 +12,7 @@ var centered_focus: Vector3
 var damage_flash: float = 0
 var bars: Dictionary = {}
 var drag_slider: HSlider
+var power_status: Label
 var readings: Label
 var session
 var data = PackedFloat32Array()
@@ -82,6 +83,9 @@ func _ready() -> void:
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	label.add_theme_font_size_override("font_size",16)
 	box.add_child(label)
+	power_status = Label.new()
+	power_status.add_theme_font_size_override("font_size",20)
+	box.add_child(power_status)
 	readings = Label.new()
 	readings.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	box.add_child(readings)
@@ -164,7 +168,7 @@ func sample() -> FisherIntent:
 	return intent
 
 func _process(delta: float) -> void:
-	if data.size() != 63: return
+	if data.size() != 64: return
 	var stick = GameControls.look()
 	apply_look(stick*stick.length()*rod_stick_response*delta)
 	var origin = Vector3(data[0],data[1],data[2])
@@ -239,10 +243,12 @@ func _process(delta: float) -> void:
 	bars["Focus"].value = data[9]
 	hook_panel.visible = fighting and phase == FightSession.Phase.METER
 	bars["Hook meter"].value = data[11]*100
+	power_status.text = "POWER INTERRUPTED" if data[63] > 0 else "POWER REEL" if data[15] > 0 else "DRAG PAYING OUT" if data[36] > 1 else "REEL READY"
+	power_status.modulate = Color(1,0.45,0.25) if data[63] > 0 else Color(0.5,0.9,1) if data[15] > 0 else Color.WHITE
 	drag_value.text = "%d%%" % roundi(data[32]*100)
 
 func apply_look(movement: Vector2) -> void:
-	if data.size() == 63 and roundi(data[4]) == FisherActor.State.FIGHT:
+	if data.size() == 64 and roundi(data[4]) == FisherActor.State.FIGHT:
 		if data[16] <= 0:
 			rod_horizontal = clampf(rod_horizontal+movement.x,-1,1)
 			rod_vertical = clampf(rod_vertical-movement.y,-1,1)

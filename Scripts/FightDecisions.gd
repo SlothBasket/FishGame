@@ -28,6 +28,9 @@ static func fish_choice(f: FightSession, previous: int) -> int:
 		var point = fish.position+heading*12
 		var gain = point.distance_to(f.fisher.position)-fish.position.distance_to(f.fisher.position)
 		scores[i] += gain*0.06+heading.dot(outward)*0.2
+		# Compare the real resistance cost, not just outward metres gained.
+		if i in [FishAction.RUN,FishAction.LEFT,FishAction.RIGHT]:
+			scores[i] -= (FishFightMotion.opposition_cost(heading,outward,1)-1)*(2.0-energy)
 		if is_instance_valid(f.fisher.session):
 			var edge = f.fisher.session.world.arena_width*0.5-4
 			scores[i] -= maxf(0,absf(point.x)-edge)+maxf(0,absf(point.z)-edge)

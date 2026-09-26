@@ -9,6 +9,9 @@ var depth_sum: float = 0
 var sampled_time: float = 0
 var states: Dictionary = {}
 var waits: Dictionary = {}
+var drive_sum: float = 0
+var resource_baseline: Dictionary = {}
+var active_side_event: Dictionary = {}
 var last_lateral: int = 0
 var last_course: float = 0
 var previous_looseness: float = 1
@@ -38,6 +41,7 @@ func _init(index: int, seed_value: int) -> void:
 		"minimum_endurance":100.0,"final_endurance":100.0,"minimum_stamina":100.0,"average_depth":0.0,"maximum_depth":-INF,"minimum_depth":INF,"final_depth":0.0,"minimum_horizontal_distance":INF,"final_horizontal_distance":0.0,"final_distance_3d":0.0,
 		"reeling_time":0.0,"lowering_time":0.0,"high_rod_time":0.0,"lateral_rod_time":0.0,"straight_time":0.0,"left_time":0.0,"right_time":0.0,"maximum_looseness":1.0,"maximum_hook_hazard":0.0,"hook_hazard_time":0.0,"maximum_airborne_hazard":0.0,"maximum_slack_hazard":0.0,"average_ascent_start_depth":0.0,"maximum_ascent_power":0.0}
 	for key in ["starting_line_out","starting_spool_reserve","total_line_paid_out","net_line_change","rod_lift_distance_gain","permanent_pump_recovery","successful_run_counters","successful_overdrive_counters","successful_dive_counters","counter_endurance_damage","drive_lockout_time","vision_total_time","average_vision_interval","jerk_attempts_per_maneuver"]: row[key] = 0.0
+	for key in ["average_swim_drive","max_drive","total_drive_gained","total_drive_spent","drive_bursts","stamina_spent_normal_drive","stamina_spent_overdrive","straight_run_time","lateral_run_time","radial_energy_cost","lateral_energy_cost","side_burst_lateral_displacement","side_burst_radial_displacement","overdrive_power_counters","counter_effectiveness_early","counter_effectiveness_mid","counter_effectiveness_late"]: row[key] = 0.0
 	for key in COUNTS: row[key] = 0
 	for key in BREAK_KEYS: row["break_"+key] = ""
 	for key in ["slack","airborne","shake","looseness","hazard","jump_severity"]: row["throw_"+key] = ""
@@ -62,6 +66,7 @@ func sample(f: FightSession, delta: float) -> void:
 	sampled_time += delta
 	var s = state(f)
 	sample_progression(f,delta)
+	sample_resources(f,delta)
 	var p = f.fish
 	if previous_drag >= 0 and not is_equal_approx(previous_drag,f.fisher.drag_setting):
 		event("DRAG_CHANGE",f,"drag_changes")
@@ -73,6 +78,10 @@ func sample(f: FightSession, delta: float) -> void:
 		event("HOOK_SET_UP",f)
 	if delta > 0 and p.motion.side_event != 0:
 		event("SIDE_BURST_LEFT" if p.motion.side_event < 0 else "SIDE_BURST_RIGHT",f,"side_bursts_left" if p.motion.side_event < 0 else "side_bursts_right")
+		active_side_event = events[-1].state
+		active_side_event["burst_radial_velocity"] = p.motion.side_radial_velocity
+		active_side_event["burst_lateral_velocity"] = p.motion.side_lateral_velocity
+		active_side_event["boat_relative_burst_angle"] = p.motion.side_angle
 	row.fish_skill = f.fish_skill
 	row.fisher_skill = f.fisher_skill
 	tension_sum += s.tension*delta
@@ -165,6 +174,7 @@ func record_jerk(f: FightSession) -> void:
 
 func record_counter(f: FightSession) -> void:
 	var details = f.last_counter.duplicate()
+	row["counter_effectiveness_early" if details.effectiveness >= 0.7 else "counter_effectiveness_mid" if details.effectiveness >= 0.35 else "counter_effectiveness_late"] += 1
 	row.counter_endurance_damage += details.endurance_before-details.endurance_after
 	var key = "successful_dive_counters" if details.maneuver == "DIVE" else "successful_overdrive_counters" if details.maneuver == "OVERDRIVE" else "successful_run_counters"
 	row[key] += 1
@@ -221,3 +231,27 @@ func sample_progression(f: FightSession, delta: float) -> void:
 			item.state["line_out_after_1s"] = line
 			item.state["followup_delay"] = 1+elapsed-item.due
 			pending_counters.erase(item)
+
+func sample_resources(f: FightSession, delta: float) -> void:
+	var p = f.fish
+	var m = p.motion
+	var totals = {"total_drive_gained":m.drive_gained,"total_drive_spent":m.drive_spent,"drive_bursts":m.drive_bursts,
+		"stamina_spent_normal_drive":p.drive_stamina_spent,"stamina_spent_overdrive":p.overdrive_stamina_spent,
+		"radial_energy_cost":p.radial_energy_spent,"lateral_energy_cost":p.lateral_energy_spent}
+	if resource_baseline.is_empty(): resource_baseline = totals.duplicate()
+	for key in totals: row[key] = totals[key]-resource_baseline[key]
+	drive_sum += m.swim_drive*delta
+	row.average_swim_drive = drive_sum/maxf(0.001,sampled_time)
+	row.max_drive = maxf(row.max_drive,m.swim_drive)
+	row.overdrive_power_counters = f.power_punishes
+	var radial = BaitMotion.horizontal(p.heading).dot(BaitMotion.horizontal(p.position-f.fisher.position))
+	if p.boosting:
+		row.straight_run_time += delta if radial > cos(deg_to_rad(30)) else 0
+		row.lateral_run_time += delta if radial <= cos(deg_to_rad(30)) else 0
+	if not active_side_event.is_empty():
+		active_side_event["lateral_displacement"] = m.side_lateral_displacement
+		active_side_event["outward_displacement"] = m.side_radial_displacement
+		if m.side_time <= 0:
+			row.side_burst_lateral_displacement += absf(m.side_lateral_displacement)
+			row.side_burst_radial_displacement += m.side_radial_displacement
+			active_side_event = {}

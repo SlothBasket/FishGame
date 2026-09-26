@@ -1,3 +1,5 @@
+> Current Drive/lateral pass: [DRIVE_AND_LATERAL.md](DRIVE_AND_LATERAL.md). Renewable Drive bursts, intentional Overdrive, radial effort cost, boat-relative burst telemetry and Power Reel interruption. Snapshot sizes: **51 Fish / 64 Fisher**.
+
 > Current Fisher progression pass: [FISHER_PROGRESSION.md](FISHER_PROGRESSION.md) documents 65 m shared casting, physical rod take-up, counter recovery/Drive disruption, nonlinear endurance costs, slower perceived AI decisions and progression telemetry. Fish snapshots now contain **48** values (Drive lockout appended).
 
 > Current line/steering pass: [DRAG_AND_BURSTS.md](DRAG_AND_BURSTS.md) documents total-load drag, Power payout, deliberate AI drag steps, shared side bursts, rod snaps, telemetry and tuning. Base break hazard is **0.008**.

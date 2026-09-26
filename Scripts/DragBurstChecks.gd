@@ -53,8 +53,9 @@ func _init() -> void:
 		var emitted: int = 0
 		for i in range(65):
 			var intent = driver.fish_input(fish,session,1.0/60)
-			intent = fish.motion.steer_burst(1.0/60,intent,fish.heading,true)
+			intent = fish.motion.steer_burst(1.0/60,intent,fish.heading,true,BaitMotion.horizontal(fish.position-fisher.position))
 			fish.heading = fish.head.step(1.0/60,fish.heading,intent,10)
+			fish.motion.measure_side(1.0/60,fish.heading,fish.heading*10)
 			if fish.motion.side_event != 0: emitted = fish.motion.side_event
 		if emitted != 0: found[emitted] = true
 	check(found.has(-1) and found.has(1),"AI legal aim produces physical LEFT and RIGHT bursts")

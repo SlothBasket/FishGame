@@ -88,6 +88,7 @@ func _process(delta: float) -> void:
 		debug.text += "\nDIVE %.0f%% | ASCENT %.0f%% | SLACK %.2f m\nHOOK LOOSENESS %.2fx | THROW HAZARD %.2f%%/s\nVY %+.1f | %s | %s\nROD %+.2f / %+.2f | REEL %.0f%% | PAYOUT %.1f" % [fish.motion.dive_power*100,fish.motion.ascent_power*100,fight.spool.slack,fight.hook.looseness,(1-exp(-fight.hook.hazard))*100,fish.velocity.y,"FALLING" if fish.motion.falling else "AIRBORNE" if fish.airborne else "SWIMMING",["NEUTRAL","HEAD SHAKE","BODY STROKE"][fish.head.classification],fisher.command.rod_horizontal,fisher.command.rod_vertical,fisher.command.retrieve*100,fight.spool.payout]
 		var age = fight.perception.age()
 		var perceived = "CURRENT" if age < 0.18 else "%.2fs OLD" % age
+		if fight.power_recovery > 0: debug.text += "\nPOWER INTERRUPTED — ROD RECOVERY"
 		debug.text += "\nLINE CONDITION: %.1f%%\nVISION: %s | FOCUS: %.0f%% | AI PERCEPTION: %s\nFish Skill: %.0f%% | Fisher Skill: %.0f%%" % [fight.spool.condition*100,"ON" if fisher.vision_active else "OFF",fisher.focus/fisher.focus_capacity*100,perceived,fight.fish_skill*100,fight.fisher_skill*100]
 	else: debug.text += "\n%s | Last result: %s" % [FisherActor.State.keys()[fisher.state],FightSession.Outcome.keys()[fisher.outcome]]
 

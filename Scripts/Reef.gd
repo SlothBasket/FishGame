@@ -267,10 +267,11 @@ func build_hud() -> void:
 func _process(delta: float) -> void:
 	_fish_hud.visible = network_session == null or (network_session.fisher_view == null and not network_session.spectator_mode)
 	_energy.text = "STAMINA %.0f / %.0f\nENDURANCE %.0f%%" % [_fish.stamina,_fish.endurance,100*_fish.endurance/_fish.stamina_capacity]
-	_drive_bar.visible = _fish.fight_active
-	_drive_caption.visible = _fish.fight_active
+	_drive_bar.visible = true
+	_drive_caption.visible = true
+	if _fish.stamina < 10 or _fish.power_capacity() < 0.4: _energy.text += "\nEXHAUSTED — REDUCED POWER"
 	_drive_bar.value = _fish.motion.swim_drive*100
-	_drive_caption.text = "%s %.0f%%  %s" % ["DRIVE DISRUPTED" if _fish.motion.drive_lockout > 0 else "OVERDRIVE" if _fish.motion.overdrive > 0 else "SWIM DRIVE",_fish.motion.swim_drive*100,["","GOOD","FAST","LATE"][clampi(_fish.motion.cadence_grade,0,3)]]
+	_drive_caption.text = "%s %.0f%%  %s" % ["DRIVE DISRUPTED" if _fish.motion.drive_lockout > 0 else "OVERDRIVE" if _fish.motion.overdrive > 0 else "DRIVE READY" if _fish.motion.swim_drive >= _fish.motion.drive_burst_threshold else "DRIVE BURST" if _fish.motion.drive_burst_time > 0 else "SWIM DRIVE",_fish.motion.swim_drive*100,["","GOOD","FAST","LATE"][clampi(_fish.motion.cadence_grade,0,3)]]
 	_dive_bar.visible = _fish.fight_active and _fish.motion.diving
 	_dive_caption.visible = _dive_bar.visible
 	_dive_bar.value = _fish.motion.dive_power*100
