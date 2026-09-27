@@ -35,6 +35,9 @@ var vision_remaining: float = 0
 var vision_cooldown: float = 0
 var drag_wait: float = 0
 var selected_drag: float = 0.4
+var steady_rod: Vector2 = Vector2.ZERO
+@export var pressure_rod_rate: float = 0.85
+@export var flick_rod_rate: float = 8.0
 var attempted_maneuver: int = -1
 var gesture_phase: float = -1
 var gesture_axis: Vector2 = Vector2.ZERO
@@ -138,6 +141,7 @@ func fisher_input(actor: FisherActor, delta: float) -> FisherIntent:
 		elif fight.phase == FightSession.Phase.METER: input.jerk = fight.meter < 0.75-(1-fight.fisher_skill)*0.3
 		else:
 			var seen = fight.perception.observation
+			var intentional_flick = false
 			progress_window = maxf(0,progress_window-delta)
 			power_push = maxf(0,power_push-delta)
 			power_pause = maxf(0,power_pause-delta)
@@ -168,29 +172,35 @@ func fisher_input(actor: FisherActor, delta: float) -> FisherIntent:
 				attempted_maneuver = int(seen.get("maneuver_id",0))
 				gesture_axis = plan.jerk
 				gesture_phase = 0
-				gesture_wait = fight.jerk_cooldown+lerpf(1.0,0.25,fight.fisher_skill)
+				gesture_wait = maxf(4.0,fight.jerk_cooldown+lerpf(1.0,0.25,fight.fisher_skill))
 			if gesture_phase >= 0:
 				gesture_phase += delta
 				var prepare = lerpf(0.65,0.45,fight.fisher_skill)
 				var rod = -gesture_axis*0.35 if gesture_phase < prepare else gesture_axis
+				intentional_flick = gesture_phase >= prepare and gesture_phase <= prepare+0.2
 				if gesture_axis.x != 0: input.rod_horizontal = rod.x
 				else: input.rod_vertical = rod.y
 				input.power = false
 				if gesture_phase > prepare+0.4: gesture_phase = -1
 				pump_clock = 0
-			elif plan.pump and not actor.vision_active:
-				pump_clock = fmod(pump_clock+delta,3.8)
+			elif (plan.pump or (pump_clock > 0 and not observed_run and float(seen.get("tension",0)) < float(seen.get("break_threshold",93.5))*0.8 and not seen.get("descending",false) and not seen.get("ascending",false) and not seen.get("airborne",false) and not seen.get("jump_fall",false))) and not actor.vision_active:
+				pump_clock += delta
 				if pump_clock < 1.6:
 					input.rod_vertical = pump_clock/1.6
-					input.retrieve = 0.55
+					input.retrieve = minf(plan.retrieve,0.55)
 				elif pump_clock < 2.0:
 					input.rod_vertical = 1
-					input.retrieve = 0.55
+					input.retrieve = minf(plan.retrieve,0.55)
 				else:
 					input.rod_vertical = maxf(0,1-(pump_clock-2.0)/1.4)
-					input.retrieve = lerpf(0.65,1,fight.fisher_skill)
+					input.retrieve = minf(lerpf(0.65,1,fight.fisher_skill),plan.retrieve+0.15)
 				input.power = false
+				if pump_clock >= 3.8: pump_clock = 0
 			else: pump_clock = 0
+			var rod_request = Vector2(input.rod_horizontal,input.rod_vertical)
+			steady_rod = steady_rod.move_toward(rod_request,(flick_rod_rate if intentional_flick else pressure_rod_rate)*delta)
+			input.rod_horizontal = steady_rod.x
+			input.rod_vertical = steady_rod.y
 			vision_cooldown = maxf(0,vision_cooldown-delta)
 			vision_remaining = maxf(0,vision_remaining-delta)
 			if gesture_phase < 0 and gesture_wait < 0.3 and vision_cooldown <= 0 and actor.focus > 55 and plan.vision and fight.perception.uncertainty:

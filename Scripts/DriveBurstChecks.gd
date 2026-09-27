@@ -42,7 +42,7 @@ func _init() -> void:
 	check(sum/100 > 0.65 and sum/100 < 0.85 and low < 0.6 and high > 0.9,"Varied AI commitment budgets average %.1f%%" % sum)
 	var seen = {"distance":30,"tension":30,"strength":110,"break_threshold":100,"condition":1,"payout":0,"outward_speed":0}
 	var plan = FisherControls.plan(seen,80)
-	check(plan.retrieve == 1 and plan.drag >= 0.55 and not plan.pump,"Controlled Fish at 30m gets full retrieve and close-out drag")
+	check(plan.retrieve == 1 and plan.drag >= 0.55 and plan.pump,"Controlled Fish at 30m gets retrieve, leverage and close-out drag")
 	seen.counter_success = true
 	plan = FisherControls.plan(seen,80)
 	check(plan.power and plan.label == "CAPTURE OPENING","Delayed successful counter opens a Power push")

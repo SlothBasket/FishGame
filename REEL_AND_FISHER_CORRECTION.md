@@ -6,9 +6,9 @@ This is the current specification. It supersedes older descriptions of total-loa
 
 Units are explicit prototype force-equivalent units and metres/second, not pounds. Defaults:
 
-- `max_drag_force = 110`; drag resistance D = 110 * selected drag (linear).
-- Outward force accommodation C = `base_outward_capacity` (330) + `capacity_per_released_drag` (2) * (110 - D).
-- Finite payout speed = min(`maximum_payout` 14, C / `force_per_payout_speed` 40). Full drag permits 8.25 m/s, half drag 11 m/s, free spool 13.75 m/s.
+- `max_drag_force = 120`; drag resistance D = 120 * selected drag (linear).
+- Outward force accommodation C = `base_outward_capacity` (330) + `capacity_per_released_drag` (2) * (120 - D).
+- Finite payout speed = min(`maximum_payout` 14, C / `force_per_payout_speed` 40). Full drag permits 8.25 m/s, half drag 11.25 m/s, free spool 14 m/s (absolute cap).
 - Raw load R = max(Fish movement force, elastic extension * 22) + transient jerk/fall/turn load.
 - Connected tension = min(R, D) + max(0, R - D - C), with a separate lower bound for stretch beyond the 2.5 m safety allowance. Slack removes contact. Fish force and drag are opposing, never simply added.
 
@@ -69,3 +69,13 @@ Telemetry events append requested/actual recovery, efficiency/slip, physical out
 Import passed. ReelCorrectionChecks passed 29 focused checks: force examples, no phantom payout, actual separation, useful recovery, AI efficiency response, gestures, retained ascent/launch, under-boat framing, directional counter hierarchy, single powered-Dive recovery, low rod/snap, mouth lead and separate audio triggers. Headless cleanup reported four leaked ObjectDB instances; no script errors. The preceding checkpoint passed 40 Drive/feeding checks.
 
 One normal 28-second AI-vs-AI graphical session ate five natural prey without script errors; its screenshot shows the whole rod. One seven-second controlled human-Fisher hook fixture entered FIGHT with zero initial extension and a readable full rod. One two-encounter batch, seed913, timeout45 seconds at 20x, produced one THROWN and one setup TIMEOUT; no line breaks or script errors. This sample does not establish win rate, long-fight close-out, or multiple lateral opportunities. No large batch. Full subjective rod, audio, counter-star and jump feel remains for manual playtesting; network payload compatibility was updated but no two-client play session was run.
+
+## Follow-up: steady Fisher pressure and stalled close recovery
+
+Manual testing exposed two control-loop problems: the more sensitive gesture detector could interpret abrupt ordinary AI rod-pressure changes (or counter preparation/return) as jerks, and close-range/low-efficiency decisions disabled useful pumping. FightTestDriver now limits normal rod motion to `pressure_rod_rate = 0.85` control-units/s, below the gesture's 2.0 threshold. Only the deliberate counter stroke uses `flick_rod_rate = 8.0`; preparation and return remain slow. Deliberate attempts retain maneuver gating and are at least 4 seconds apart. Human input responsiveness is unchanged.
+
+FisherControls permits safe pumps from 8 m outward when recovery is below 0.8 m/s, including the former 20 m stall. Poor retrieve efficiency still reduces cranking but no longer forbids improving leverage. An ongoing 3.8 s pump completes its lift/lower capture while safe; actual runs, dives, air/fall, dangerous tension and Vision can abort. Lift retrieve respects the useful-speed plan, and lowering probes just 0.15 input higher rather than blindly forcing full retrieve.
+
+Maximum reel drag increased 110 -> 120 (about 9%); line strength and break rules are unchanged. Shared `FightLine.rod_pull_acceleration` increased 8 -> 20. Actual assistance is still multiplied by clamp((holding threshold - Fish load) / holding threshold, 0, 1), requires loaded rod take-up/contact/positional error, and retains the 7 m/s target pull-speed cap. Thus correct rod pressure can overcome ordinary swimming, including the existing strongly moderated vertical line force, while an overpowering Fish gets no free inward movement. No hidden Fish stamina checks or deployed-line awards were added.
+
+Import passed and seven focused FisherSteadyChecks passed. Alternating pressure caused zero accidental jerks; one intentional counter produced one accepted jerk with the existing cooldown. In an eight-second controlled motor/spool fixture starting at 22 m, ordinary swimming ended at 3.81 m horizontally and 18.56 m on a steep downward line while pumping. Strong powered resistance still took line. These isolated results verify useful physical recovery, not a live-fight landing guarantee. No batch or long simulation was run for this follow-up. The user's AI-vs-AI editor launch setting was preserved.

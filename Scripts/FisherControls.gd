@@ -47,7 +47,7 @@ static func plan(seen: Dictionary, stamina: float) -> Dictionary:
 	if safe:
 		result.retrieve = 1.0 if distance < 40 or opportunity else 0.8
 		result.drag = 0.65 if distance < 20 and danger < 0.45 else 0.55 if distance < 40 or opportunity else 0.4
-		result.pump = distance >= 40 and slack < 0.8 and not opportunity
+		result.pump = distance >= 8 and slack < 0.8 and not opportunity and (distance >= 40 or float(seen.get("actual_recovery",0)) < 0.8)
 		result.vertical = 0.4 if distance < 40 else result.vertical
 		result.power = stamina > 25 and (distance < 20 or opportunity) and danger < 0.55
 		result.label = result.stage if not opportunity else "CAPTURE OPENING"
@@ -62,7 +62,8 @@ static func plan(seen: Dictionary, stamina: float) -> Dictionary:
 		var useful = float(seen.get("actual_recovery",0))/4.5
 		result.retrieve = minf(result.retrieve,maxf(0.1,useful+0.05))
 		result.power = false
-		result.pump = false
+		# Weak recovery is a reason to improve rod leverage, not disable a safe pump.
+		result.pump = result.pump and safe
 	elif requested > 0.05:
 		result.retrieve = minf(result.retrieve,requested/4.5+0.10)
 	return result

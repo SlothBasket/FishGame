@@ -10,7 +10,7 @@ const DEFAULT_CAPACITY: float = 150
 @export var elasticity: float = 22
 @export var maximum_retrieve: float = 4.5
 @export var power_retrieve: float = 7
-@export var max_drag_force: float = 110
+@export var max_drag_force: float = 120
 @export var base_outward_capacity: float = 330
 @export var capacity_per_released_drag: float = 2
 @export var force_per_payout_speed: float = 40 # force-equivalent units per m/s
@@ -133,7 +133,7 @@ func sync_distance(required_distance: float, delta: float) -> void:
 	tension = maxf(tension,maxf(0,extension-maximum_extension)*elasticity)
 	_payout_allowance = 0
 
-@export var rod_pull_acceleration: float = 8
+@export var rod_pull_acceleration: float = 20
 @export var rod_pull_response: float = 4
 func rod_pull_velocity(offset: Vector3, velocity: Vector3, delta: float, maximum_speed: float) -> Vector3:
 	if rod_take_up <= 0 or slack > contact_tolerance or offset.length() < 0.001: return velocity
