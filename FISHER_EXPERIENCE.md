@@ -18,14 +18,13 @@ For a hooked Fish, the shared helper uses `FishPlayer.mouth_position()` from the
 
 A rough body sphere (0.85 times Fish scale) detects when tip-to-mouth visually crosses the body. Two flank support points route the line around it. The chosen side has a dead band to avoid small heading changes flipping it. The path terminates exactly at the mouth. This is deliberately approximate visual routing, not rope collision: it never writes line_out, tension, hook state, body position or velocity. Sharp turns may still expose small visual imperfections.
 
-## Optional drag-loop audio
+## Recorded drag audio
 
-No sound asset was supplied or generated. To enable it:
+`ReelDragAudio.gd` receives actual spool payout from the shared presentation. It never changes drag or combat. The supplied `Audio/ReelDrag.mp3` is preserved unchanged. `DragSustain.wav` contains seconds 0–7: the opening plays once, then seconds 2–7 repeat. An 80 ms blend before the loop seam avoids a hard cut. `DragEnd.wav` contains the remaining recorded ending, with an 8 ms edge fade to prevent clicks. Derived files are stereo 44.1 kHz, 16-bit PCM; no normalization or synthetic sound was added.
 
-1. Add a loop file at **`res://Audio/drag_loop.ogg`** (preferred) or **`res://Audio/drag_loop.wav`**, and let Godot import it.
-2. Alternatively add a custom Project Setting **`pelagic/audio/drag_loop`** containing its `res://...` path. The helper also exposes a `drag_loop: AudioStream` property for future scene/Inspector use.
+Payout above 0.08 m/s starts playback; falling below 0.03 m/s starts the recorded ending, crossfading over 80 ms. Hysteresis avoids chatter near zero. Rapid restart during that crossfade retains the current sustain position; otherwise the opening plays again. The ending retains the last payout pitch and volume. Losing the Fisher view or active presentation silences both voices immediately. Each presentation owns its players, so no network or authoritative state is involved.
 
-Each presentation creates one AudioStreamPlayer, duplicates the stream and enables OGG/WAV looping. It starts once when actual payout begins, smooths volume and pitch (0.75 to 1.4 across 0..14 m/s), then fades and stops after payout ends. No asset means silent disabled audio. Human Fisher owns its playback; spectator playback is enabled only in Fisher camera mode. No per-frame restart, downloads or synthesized sound.
+Tune `FULL_SPEED` (14 m/s), `MIN_PITCH`/`MAX_PITCH` (0.75–1.4), `VOLUME` (0.4), and `CROSSFADE_SECONDS` in ReelDragAudio. Pitch follows payout smoothly; slower playback stretches the recording naturally. The volume effort has a 0.15 floor while running so slow drag is still audible. Loop boundary changes require regenerating the seam in the derived WAV as well as adjusting `LOOP_START_SECONDS`. The full natural ending can take about two seconds at normal speed; tune by ear during playtesting.
 
 ## AI reset and food interest
 

@@ -1,15 +1,13 @@
 class_name FishingPresentation
 extends Node3D
-## Local-only reel, striped line and optional drag sound. Never writes actor state.
-@export var drag_loop: AudioStream
+## Local-only reel, striped line and drag sound. Never writes actor state.
 var reel: Node3D
 var spool: Node3D
 var crank: Node3D
 var line: MeshInstance3D
 var material: ShaderMaterial
-var audio: AudioStreamPlayer
+var audio: ReelDragAudio
 var travel: float = 0
-var audio_level: float = 0
 var wrap_side: Vector3 = Vector3.RIGHT
 var last_points: Array[Vector3] = []
 func _ready() -> void:
@@ -29,19 +27,8 @@ func _ready() -> void:
 	add_child(line)
 	material = ShaderMaterial.new()
 	material.shader = load("res://Shaders/FishingLine.gdshader")
-	audio = AudioStreamPlayer.new()
+	audio = ReelDragAudio.new()
 	add_child(audio)
-	if drag_loop == null:
-		var path = str(ProjectSettings.get_setting("pelagic/audio/drag_loop","res://Audio/drag_loop.ogg"))
-		if ResourceLoader.exists(path): drag_loop = load(path) as AudioStream
-		elif ResourceLoader.exists("res://Audio/drag_loop.wav"): drag_loop = load("res://Audio/drag_loop.wav") as AudioStream
-	if drag_loop != null:
-		audio.stream = drag_loop.duplicate()
-		if audio.stream is AudioStreamOggVorbis: audio.stream.loop = true
-		elif audio.stream is AudioStreamWAV:
-			audio.stream.loop_mode = AudioStreamWAV.LOOP_FORWARD
-			if audio.stream.loop_end <= audio.stream.loop_begin: audio.stream.loop_end = maxi(1,int(audio.stream.get_length()*audio.stream.mix_rate))
-		audio.volume_db = -60
 
 static func edge_camera(origin: Vector3, forward: Vector3) -> Vector3:
 	return origin+Vector3.UP*2.05-forward*0.85+forward.cross(Vector3.UP)*0.75
@@ -100,13 +87,4 @@ func update_view(delta: float, camera: Camera3D, hand: Vector3, rod: Vector3, ti
 				mesh.surface_add_vertex(last_points[i+1 if end else i]+width*(1 if j in [1,2] else -1))
 			distance = next
 		mesh.surface_end()
-	update_audio(delta,payout if audible and active else 0)
-
-func update_audio(delta: float, payout: float) -> void:
-	if audio.stream == null: return
-	var level = clampf(payout/14,0,1)
-	audio_level = lerpf(audio_level,level,1-exp(-delta*6))
-	audio.pitch_scale = lerpf(audio.pitch_scale,lerpf(0.75,1.4,level),1-exp(-delta*5))
-	audio.volume_db = linear_to_db(maxf(0.001,audio_level*0.4))
-	if payout > 0.05 and not audio.playing: audio.play()
-	elif payout <= 0.05 and audio_level < 0.005 and audio.playing: audio.stop()
+	audio.update_payout(delta,payout if active else 0,audible and active)

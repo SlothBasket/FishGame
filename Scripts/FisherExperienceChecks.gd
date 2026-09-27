@@ -60,7 +60,7 @@ func run() -> void:
 	check(gear.travel < 0 and gear.spool.rotation.x > 0,"Retrieve pattern travels rodward and spool winds inward")
 	gear.update_view(0.1,cam,Vector3.ZERO,Vector3.FORWARD,Vector3.FORWARD*3,Vector3.FORWARD*10,null,0,8,8,7,true,false)
 	check(gear.travel > 0 and gear.spool.rotation.x < 0 and gear.crank.rotation.x-slow > slow,"Payout reverses spool/stripes; stronger retrieve cranks faster")
-	check(gear.audio.stream == null,"Missing drag asset leaves audio silently disabled")
+	check(gear.audio.sustain.stream != null and not gear.audio.sustain.playing,"Bundled drag recording stays silent without audible payout")
 	lure.free()
 	owner.free()
 	world.queue_free()
