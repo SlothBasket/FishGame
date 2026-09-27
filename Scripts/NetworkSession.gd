@@ -9,6 +9,7 @@ var requested_role: int = ROLE_FISH
 var pending_peers: Dictionary = {}
 var fisher_view: FisherView
 var ai_mode: String = ""
+var ai_test_bait_priority: bool = false
 var batch_runner: FightBatch
 var encounter_seed: int = -1
 var spectator_mode: bool = false
@@ -141,10 +142,16 @@ func start(level: Node3D, fish: FishPlayer, args: PackedStringArray) -> void:
 		show_status("Connecting to %s:%d" % [address,port])
 
 func show_status(message: String) -> void:
-	if status != null: status.text = message+"\nF10 disconnect | Fish / Fisher authority session"
+	if status != null: status.text = message+"\nF8 AI test-bait priority (host) | F10 disconnect"
 	print("NETWORK "+message)
 
 func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F8 and hosting and not closed:
+		ai_test_bait_priority = not ai_test_bait_priority
+		for record in players.values():
+			if record.role == ROLE_FISH and record.ai != null:
+				record.ai.food.set_lure_priority(ai_test_bait_priority)
+		show_status("AI test-bait priority: "+("ON" if ai_test_bait_priority else "OFF"))
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F10:
 		disconnect_session("Disconnected")
 

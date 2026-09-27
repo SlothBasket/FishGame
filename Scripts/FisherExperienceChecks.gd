@@ -39,6 +39,32 @@ func run() -> void:
 	food.lure_reset = 0
 	var approach = food.input(fish,[lure],132,32,0.016)
 	check(food.state == FishFoodInterest.State.NOTICE and not approach.bite_held,"Lure has the same local awareness delay")
+	food.set_lure_priority(true)
+	lure.position = fish.position+fish.heading*80
+	check(food.choose(fish,[lure]) == lure,"Test priority reaches lure beyond natural awareness radius")
+	lure.position = fish.position+fish.heading*10
+	lure.velocity = fish.heading.cross(Vector3.UP)*4
+	var lead = food.intercept_direction(fish,lure,0.8)
+	check(lead.dot(lure.velocity.normalized()) > 0.2,"Feeding aim leads lateral target through charge and travel")
+	lure.velocity = Vector3.ZERO
+	food.target = lure
+	food.state = FishFoodInterest.State.COMMIT
+	food.charge_goal = 0.75
+	fish.feeding.is_charging = true
+	fish.feeding._charge_time = fish.full_charge_time*0.3
+	var charge = food.input(fish,[lure],132,32,0.016)
+	check(charge.bite_held and not charge.cancel_bite,"Charge continues beyond old quarter-power release")
+	fish.feeding._charge_time = fish.full_charge_time*0.8
+	charge = food.input(fish,[lure],132,32,0.016)
+	check(not charge.bite_held and not charge.cancel_bite,"Aligned charged attack releases")
+	fish.feeding.cancel_attack()
+	lure.position = fish.position+fish.heading.cross(Vector3.UP)*3
+	food.state = FishFoodInterest.State.APPROACH
+	var turn = food.input(fish,[lure],132,32,0.016)
+	check(turn.throttle < 0.1,"Close sideways target causes coasting instead of orbiting propulsion")
+	food.set_lure_priority(false)
+	lure.position = fish.position+fish.heading*80
+	check(food.choose(fish,[lure]) == null,"Toggle off restores natural awareness limit")
 	var driver = FightTestDriver.new()
 	driver.execution_rng.seed = 17
 	driver.fisher_was_fighting = true

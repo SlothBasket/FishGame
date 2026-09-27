@@ -92,6 +92,8 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 	if fish_was_fighting:
 		fish_was_fighting = false
 		food.disengage()
+	if food.prioritize_lures != session.ai_test_bait_priority:
+		food.set_lure_priority(session.ai_test_bait_priority)
 	return food.input(fish,session.baits.values(),session.world.arena_width*0.5,session.world.water_depth,delta)
 
 func fisher_input(actor: FisherActor, delta: float) -> FisherIntent:
