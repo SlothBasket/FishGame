@@ -1,3 +1,5 @@
+> Fisher presentation / between-fight AI: [FISHER_EXPERIENCE.md](FISHER_EXPERIENCE.md) covers the close camera, reel/line/audio, local food interest and seeded reset pauses. Fight balance and snapshot formats are unchanged.
+
 > Current Drive/lateral pass: [DRIVE_AND_LATERAL.md](DRIVE_AND_LATERAL.md). Renewable Drive bursts, intentional Overdrive, radial effort cost, boat-relative burst telemetry and Power Reel interruption. Snapshot sizes: **51 Fish / 64 Fisher**.
 
 > Current Fisher progression pass: [FISHER_PROGRESSION.md](FISHER_PROGRESSION.md) documents 65 m shared casting, physical rod take-up, counter recovery/Drive disruption, nonlinear endurance costs, slower perceived AI decisions and progression telemetry. Fish snapshots now contain **48** values (Drive lockout appended).

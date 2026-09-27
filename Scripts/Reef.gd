@@ -105,6 +105,8 @@ func build_water() -> void:
 	var surface = MeshInstance3D.new()
 	var plane = PlaneMesh.new()
 	plane.size = Vector2.ONE * arena_width
+	plane.subdivide_width = 64
+	plane.subdivide_depth = 64
 	surface.mesh = plane
 	surface.position.y = water_depth
 	surface.material_override = water

@@ -48,3 +48,5 @@ Validation for the pacing milestone: 97 checks passed. Standalone 75-second grap
 - Milestone subject: `Separate renewable Drive and add true lateral burst counterplay` — Drive-first bursts, deliberate stamina escalation, ordered Overdrive/Power punishment, radial effort costs, measured boat-relative sides, procedural cues and free-swim Drive. Scoped contracts and one three-fight smoke, no win-rate tuning. User batch settings checkpointed in `2f45eaf`.
 
 - Milestone subject: `Fix CPU particle intensity control` — replace unsupported particle amount ratio with guarded 32/64 counts while retaining emitting control and existing CPU effect settings. Import and one 1,200-frame normal graphical AI spectator launch passed without particle/script errors; no combat changes.
+
+- Milestone subject: `Improve Fisher presentation and between-fight AI behavior` — shared reel/striped mouth-attached visual line, flank routing, close camera, subtle moving water and optional drag audio; seeded AI recast pauses, live/lure food interest and minnow retrieve seam. Import, focused checks, controlled Fisher view and one short natural spectator session. No fight balance changes.

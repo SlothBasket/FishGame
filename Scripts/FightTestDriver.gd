@@ -4,6 +4,13 @@ extends RefCounted
 var side_wait: float = 2
 var side_aim: Vector3 = Vector3.FORWARD
 var side_hold: float = 0
+var food = FishFoodInterest.new()
+var fish_was_fighting: bool = false
+var fisher_was_fighting: bool = false
+var recast_wait: float = 0
+var retrieve_wait: float = 0
+var retrieve_level: float = 0.4
+var food_seeded: bool = false
 var clock: float = 0
 var cast_serial: int = 0
 var cast_sent: bool = false
@@ -32,6 +39,7 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 	clock += delta
 	var aim = fish.heading
 	if is_instance_valid(fish.fight):
+		fish_was_fighting = true
 		var f = fish.fight
 		var action = f.fish_action
 		aim = FightDecisions.heading_for(f,action)
@@ -78,27 +86,13 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 		if fish.motion.jump_recovery > 0: input.boost = false; input.aim_direction.y = -0.25
 		input.cancel_bite = fish.feeding.is_charging
 		return input
-	else:
-		var nearest: BaitActor
-		var distance: float = INF
-		for candidate in session.baits.values():
-			if candidate.claimed or not is_instance_valid(candidate.fisher_owner): continue
-			var d = fish.position.distance_to(candidate.position)
-			if d < distance: nearest = candidate; distance = d
-		if nearest != null:
-			aim = (nearest.position-fish.position).normalized()
-			var aligned = fish.heading.dot(aim) > 0.92
-			var attack = FishInput.new(0.55 if distance < 6 else 1,0,0,aim,false,false)
-			if fish.feeding.is_charging:
-				attack.cancel_bite = not aligned or distance > 10
-				attack.bite_held = not attack.cancel_bite and distance > 3.0 and fish.feeding._charge_time < 0.3
-			else: attack.bite_held = aligned and distance < 7 and distance > 1
-			return attack
-		if fish.feeding.is_charging:
-			var cancel = FishInput.new()
-			cancel.cancel_bite = true
-			return cancel
-	return FishInput.new()
+	if not food_seeded:
+		food.rng.seed = execution_rng.randi()
+		food_seeded = true
+	if fish_was_fighting:
+		fish_was_fighting = false
+		food.disengage()
+	return food.input(fish,session.baits.values(),session.world.arena_width*0.5,session.world.water_depth,delta)
 
 func fisher_input(actor: FisherActor, delta: float) -> FisherIntent:
 	clock += delta
@@ -107,12 +101,18 @@ func fisher_input(actor: FisherActor, delta: float) -> FisherIntent:
 	input.species = BaitMotion.Kind.MINNOW
 	input.tier = 12
 	input.aim = Vector3.FORWARD.rotated(Vector3.UP,actor.boat_yaw)
+	if is_instance_valid(actor.fight): fisher_was_fighting = true
+	elif fisher_was_fighting:
+		fisher_was_fighting = false
+		recast_wait = execution_rng.randf_range(6,9)
+		cast_sent = false
+	recast_wait = maxf(0,recast_wait-delta)
 	if actor.state == FisherActor.State.SETUP:
-		if not cast_sent:
+		if not cast_sent and recast_wait <= 0:
 			cast_serial += 1; cast_sent = true
 	else: cast_sent = false
 	input.cast_serial = cast_serial
-	if actor.state == FisherActor.State.BAIT: input.retrieve = 0 if fmod(clock,7) < 0.8 else 0.4
+	if actor.state == FisherActor.State.BAIT: input.retrieve = bait_retrieve(actor.kind,delta)
 	if is_instance_valid(actor.fight):
 		var fight: FightSession = actor.fight
 		if fight.phase == FightSession.Phase.CANDIDATE: input.jerk = fight.phase_time > lerpf(1.3,0.65,fight.fisher_skill)
@@ -171,3 +171,14 @@ func fisher_input(actor: FisherActor, delta: float) -> FisherIntent:
 
 static func side_burst_aim(heading: Vector3, side: int) -> Vector3:
 	return heading.rotated(Vector3.UP,-side*deg_to_rad(60))
+
+func bait_retrieve(kind: int, delta: float) -> float:
+	# Strategy seam for future species; each output remains a legal retrieve input.
+	retrieve_wait -= delta
+	if retrieve_wait <= 0:
+		match kind:
+			BaitMotion.Kind.MINNOW:
+				retrieve_level = 0.0 if execution_rng.randf() < 0.2 else float(execution_rng.randi_range(3,5))*0.1
+			_: retrieve_level = 0.4
+		retrieve_wait = execution_rng.randf_range(0.6,1.3) if retrieve_level == 0 else execution_rng.randf_range(2,5)
+	return retrieve_level

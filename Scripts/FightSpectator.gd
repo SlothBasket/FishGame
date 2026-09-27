@@ -7,13 +7,15 @@ var camera: Camera3D
 var debug: Label
 var boat: Node3D
 var rod_mesh: MeshInstance3D
-var line_mesh: MeshInstance3D
+var equipment: FishingPresentation
 var art_material: StandardMaterial3D
 var jerk_label: Label3D
 var damage_label: Label
 var yaw: float = 0
 var pitch: float = -0.3
 func _ready() -> void:
+	equipment = FishingPresentation.new()
+	add_child(equipment)
 	camera = Camera3D.new()
 	add_child(camera)
 	camera.position = Vector3(0,48,85)
@@ -34,9 +36,6 @@ func _ready() -> void:
 	rod_mesh = MeshInstance3D.new()
 	rod_mesh.mesh = ImmediateMesh.new()
 	add_child(rod_mesh)
-	line_mesh = MeshInstance3D.new()
-	line_mesh.mesh = ImmediateMesh.new()
-	add_child(line_mesh)
 	var layer = CanvasLayer.new()
 	add_child(layer)
 	debug = Label.new()
@@ -67,7 +66,7 @@ func _process(delta: float) -> void:
 	var fight = fisher.fight
 	boat.position = fisher.position
 	boat.rotation.y = fisher.boat_yaw
-	draw_equipment(fisher,fish)
+	draw_equipment(fisher,fish,delta)
 	jerk_label.text = RodGesture.caption(fight.jerk_direction) if is_instance_valid(fight) and fight.jerk_notice_time > 0 else ""
 	jerk_label.position = fight.rod_tip+Vector3.UP if is_instance_valid(fight) else fisher.position
 	damage_label.text = "LINE DAMAGE -%.2f%%/s" % (fight.line_damage_rate*100) if is_instance_valid(fight) and fight.line_damage_rate > 0.00001 else ""
@@ -78,8 +77,10 @@ func _process(delta: float) -> void:
 	else:
 		var forward = BaitMotion.horizontal(fish.position-fisher.position)
 		var target = fish.position if is_instance_valid(fight) or mode == 1 else fisher.lure.position if is_instance_valid(fisher.lure) else fisher.position+forward*10
-		var desired = fisher.position+Vector3.UP*3-forward*5 if mode == 0 else fish.position-fish.heading*9+Vector3.UP*2
+		var desired = FishingPresentation.edge_camera(fisher.position,forward) if mode == 0 else fish.position-fish.heading*9+Vector3.UP*2
 		camera.position = camera.position.lerp(desired,1-exp(-delta*5))
+		camera.fov = lerpf(camera.fov,48.0 if mode == 0 else 70.0,1-exp(-delta*4))
+		if mode == 0: target -= Vector3.UP*0.65
 		if camera.position.distance_to(target) > 0.1: camera.look_at(target,Vector3.UP)
 	debug.text = "AI vs AI — OBSERVER ONLY\n1 Fisher | 2 Fish | 3 Overview (WASD, Q/E, RMB look)\nView: %s | Participants: %d\nDrive %.0f%% %s | Stamina %.0f / %.0f" % [["Fisher","Fish","Overview"][mode],session.players.size(),fish.motion.swim_drive*100,"DRIVE DISRUPTED" if fish.motion.drive_lockout > 0 else "OVERDRIVE" if fish.motion.overdrive > 0 else "",fish.stamina,fish.endurance]
 	if is_instance_valid(fight):
@@ -92,7 +93,7 @@ func _process(delta: float) -> void:
 		debug.text += "\nLINE CONDITION: %.1f%%\nVISION: %s | FOCUS: %.0f%% | AI PERCEPTION: %s\nFish Skill: %.0f%% | Fisher Skill: %.0f%%" % [fight.spool.condition*100,"ON" if fisher.vision_active else "OFF",fisher.focus/fisher.focus_capacity*100,perceived,fight.fish_skill*100,fight.fisher_skill*100]
 	else: debug.text += "\n%s | Last result: %s" % [FisherActor.State.keys()[fisher.state],FightSession.Outcome.keys()[fisher.outcome]]
 
-func draw_equipment(fisher: FisherActor, fish: FishPlayer) -> void:
+func draw_equipment(fisher: FisherActor, fish: FishPlayer, delta: float) -> void:
 	var f = fisher.fight
 	var hand = fisher.position+Vector3.UP*1.3
 	var direction = Vector3(0,0.6,-0.8).rotated(Vector3.UP,fisher.boat_yaw)
@@ -107,13 +108,11 @@ func draw_equipment(fisher: FisherActor, fish: FishPlayer) -> void:
 		slack = f.spool.slack
 	var control = hand+direction*2
 	var rod: Array = []
-	var line: Array = []
 	for i in range(13):
 		var t = i/12.0
 		rod.append(hand*(1-t)*(1-t)+control*2*t*(1-t)+tip*t*t)
-		line.append(tip.lerp(target,t)-Vector3.UP*sin(t*PI)*minf(8,slack*0.3))
-	draw_ribbon(rod_mesh,rod,0.065)
-	draw_ribbon(line_mesh,line,0.018)
+	draw_ribbon(rod_mesh,rod,0.018)
+	equipment.update_view(delta,camera,hand,direction,tip,target,fish if is_instance_valid(f) else null,slack,f.spool.line_rate if is_instance_valid(f) else 0,f.spool.payout if is_instance_valid(f) else 0,maxf(0,f.spool.payout-f.spool.line_rate) if is_instance_valid(f) else fisher.command.retrieve*4.5,is_instance_valid(f) or is_instance_valid(fisher.lure),mode == 0)
 
 func draw_ribbon(node: MeshInstance3D, points: Array, thickness: float) -> void:
 	var mesh: ImmediateMesh = node.mesh

@@ -26,7 +26,7 @@ var camera: Camera3D
 var boat: Node3D
 var jerk_label: Label3D
 var rod_mesh: MeshInstance3D
-var line_mesh: MeshInstance3D
+var equipment: FishingPresentation
 var rod_material: StandardMaterial3D
 var label: Label
 var drag_value: Label
@@ -34,8 +34,11 @@ var hook_panel: PanelContainer
 var fight_panel: PanelContainer
 var previous_phase: int = -1
 var impact_age: float = 0
+var last_retrieve: float = 0
 
 func _ready() -> void:
+	equipment = FishingPresentation.new()
+	add_child(equipment)
 	jerk_label = Label3D.new()
 	jerk_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	jerk_label.font_size = 40
@@ -49,10 +52,7 @@ func _ready() -> void:
 	rod_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	rod_mesh = MeshInstance3D.new()
 	rod_mesh.mesh = ImmediateMesh.new()
-	line_mesh = MeshInstance3D.new()
-	line_mesh.mesh = ImmediateMesh.new()
 	add_child(rod_mesh)
-	add_child(line_mesh)
 	camera = Camera3D.new()
 	camera.fov = 60
 	add_child(camera)
@@ -146,6 +146,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	drag_slider.set_value_no_signal(drag_setting*100)
 
 func sample() -> FisherIntent:
+	last_retrieve = 0
 	var intent = FisherIntent.new()
 	intent.tier = reel.selected_tier
 	intent.species = species
@@ -159,6 +160,7 @@ func sample() -> FisherIntent:
 	intent.move_side = Input.get_axis("left","right")
 	intent.steering = intent.move_side
 	intent.retrieve = reel.retrieve(Input.is_action_pressed("retrieve"),Input.get_action_strength("retrieve_trigger"))
+	last_retrieve = intent.retrieve
 	intent.rise = Input.is_action_pressed("rise")
 	intent.descend = Input.is_action_pressed("dive")
 	intent.escape = Input.is_action_pressed("bite")
@@ -187,13 +189,14 @@ func _process(delta: float) -> void:
 	centered_focus = centered_focus.lerp(focus,1-exp(-fight_camera_response*delta))
 	var direction = BaitMotion.horizontal(centered_focus-origin) if fighting else FishInput.from_angles(pitch,yaw)
 	if fighting: focus = centered_focus
-	var boat_camera = origin+Vector3.UP*2.8-direction*3.5
+	var boat_camera = FishingPresentation.edge_camera(origin,direction)
 	var desired = focus-direction*(6 if alternate_view else 10.8)+Vector3.UP*(2 if fighting else 0) if underwater else boat_camera
 	# Impact remains underwater briefly, then blends into the boat view during the yank.
 	if fighting and phase == FightSession.Phase.IMPACT:
 		desired = (focus-direction*8).lerp(boat_camera,clampf((impact_age-0.15)/0.5,0,1))
 	camera.position = camera.position.lerp(desired,1-exp(-7*delta))
-	var target = focus if underwater or fighting else camera.position+direction*10
+	camera.fov = lerpf(camera.fov,48.0 if fighting and not underwater else 60.0,1-exp(-delta*4))
+	var target = focus-Vector3.UP*0.65 if fighting else focus if underwater else camera.position+direction*10
 	if camera.position.distance_to(target) > 0.1: camera.look_at(target,Vector3.UP)
 	camera.rotation.z = sin(impact_age*22)*0.025*maxf(0,1-impact_age/0.5) if fighting else 0
 	var rod = Vector3(data[17],data[18],data[19])
@@ -208,14 +211,12 @@ func _process(delta: float) -> void:
 		var t = i/6.0
 		rod_points.append(hand*(1-t)*(1-t)+control*2*t*(1-t)+tip*t*t)
 	draw_rod(rod_points)
-	var line_points: Array = []
-	var line_end = Vector3(data[21],data[22],data[23]) if fighting else focus
-	for i in range(9):
-		var t = i/8.0
-		line_points.append(tip.lerp(line_end,t)+Vector3.DOWN*sin(PI*t)*minf(6,data[31]*0.45))
-	draw_line(line_mesh,line_points,rod_material)
+	var hooked: FishPlayer
+	var peer = roundi(data[20])
+	if fighting and session.players.has(peer): hooked = session.players[peer].entity as FishPlayer
+	var retrieving = maxf(0,data[36]-data[35]) if fighting else last_retrieve*4.5
+	equipment.update_view(delta,camera,hand,rod,tip,Vector3(data[21],data[22],data[23]) if fighting else focus,hooked,data[31],data[35],data[36],retrieving,fighting or roundi(data[4]) == FisherActor.State.BAIT,true)
 	rod_mesh.visible = not underwater or fighting
-	line_mesh.visible = fighting or roundi(data[4]) == FisherActor.State.BAIT
 	var phase_name = ["BAIT TAKEN — hold Q / RB when ready","HOOK: release near 75%","HOOK IMPACT","OPENING RUN — Power locked","FIGHT"][clampi(phase,0,4)] if fighting else BaitMotion.Kind.keys()[roundi(data[5])]
 	label.text = "FISHER — %s\nG cast/setup | X species | W/RT retrieve | Wheel/D-pad up/down reel\nMouse/right stick: rod during fight | [ ] / D-pad left/right: drag\nQ/RB hook set; fast rod flick: jerk | Shift/LB Power | V/LS Focus | C/RS bait view" % phase_name
 	if not fighting and data[27] > 0: label.text += "\n"+FightSession.Outcome.keys()[roundi(data[27])]
@@ -260,18 +261,10 @@ func draw_rod(points: Array) -> void:
 	var mesh: ImmediateMesh = rod_mesh.mesh
 	mesh.clear_surfaces()
 	mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES,rod_material)
-	var width = camera.global_basis.x*0.035
+	var width = camera.global_basis.x*0.018
 	for i in range(points.size()-1):
 		for point in [points[i]-width,points[i]+width,points[i+1]+width,points[i]-width,points[i+1]+width,points[i+1]-width]: mesh.surface_add_vertex(point)
 	mesh.surface_end()
-
-func draw_line(node: MeshInstance3D, points: Array, material: Material) -> void:
-	var mesh: ImmediateMesh = node.mesh
-	mesh.clear_surfaces()
-	mesh.surface_begin(Mesh.PRIMITIVE_LINE_STRIP,material)
-	for point in points: mesh.surface_add_vertex(point)
-	mesh.surface_end()
-	node.mesh = mesh
 
 func layout_fits() -> bool:
 	var viewport_rect = get_viewport().get_visible_rect()
