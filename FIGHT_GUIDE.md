@@ -1,5 +1,7 @@
 > Latest rod-gesture/pump pass: [ROD_GESTURE_GUIDE.md](ROD_GESTURE_GUIDE.md) gives **Godot editor launch arguments**, directional gesture controls, interruption rules, pump audit, 88-actor baseline and current 60-float fisherman snapshots. Supersedes older button-jerk and population descriptions below.
 
+> Latest reel/control/presentation rules: [REEL_AND_FISHER_CORRECTION.md](REEL_AND_FISHER_CORRECTION.md). Supersedes earlier spool, camera and snapshot descriptions below.
+
 > Current resource/AI rules: [CONTINUOUS_DRIVE_POLISH.md](CONTINUOUS_DRIVE_POLISH.md). This supersedes historical lump-cost Drive/Overdrive and conservative pump descriptions below.
 
 > Current physical-cue/AI pass: [FIGHT_READABILITY_GUIDE.md](FIGHT_READABILITY_GUIDE.md) supersedes historical defaults below: **150 m spool, 42-float fish snapshots**, physical-pressure cues, skill overrides, visible spectator equipment and powered directional wear.

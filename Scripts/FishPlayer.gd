@@ -259,7 +259,7 @@ func _physics_process(delta: float) -> void:
 	if in_fight: stamina = maxf(0,stamina-motion.ascent_stamina_drain*motion.ascent_power*delta)
 	var bite_start = global_position
 	feeding.update_attack(intent, delta)
-	boosting = (motion.powered_active if in_fight else intent.boost) and intent.throttle > 0.0 and not feeding.is_charging and not feeding.is_dashing()
+	boosting = motion.powered_active and intent.throttle > 0.0 and not feeding.is_charging and not feeding.is_dashing()
 	if feeding.is_dashing():
 		feeding.advance_dash(delta)
 	elif airborne:
@@ -367,7 +367,7 @@ func fatigue_multiplier() -> float:
 
 func fight_boost_multiplier() -> float:
 	# Only fight sprint output fades; ordinary swim speed and turns remain available.
-	return 1+(lerpf(1,boost_multiplier,power_capacity())-1)*motion.run_build*(0.65+0.35*maxf(motion.swim_drive,motion.powered_output)/maxf(0.01,motion.sustainable_max)) if is_instance_valid(fight) else boost_multiplier
+	return 1+(lerpf(1,boost_multiplier,power_capacity())-1)*motion.run_build*(0.65+0.35*maxf(motion.swim_drive,motion.powered_output)/maxf(0.01,motion.sustainable_max)) if is_instance_valid(fight) else 1+(boost_multiplier-1)*motion.powered_output
 
 func apply_line_force(delta: float) -> void:
 	# Measure fish-driven upward intent before adding any line acceleration.

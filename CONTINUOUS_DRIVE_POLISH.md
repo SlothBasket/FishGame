@@ -1,5 +1,7 @@
 # Continuous Drive and goal-directed Fisher correction
 
+> Latest reel/control/presentation rules: [REEL_AND_FISHER_CORRECTION.md](REEL_AND_FISHER_CORRECTION.md). Supersedes earlier spool, camera and snapshot descriptions below.
+
 ## Resource flow and tuning
 
 `FishFightMotion.step` remains the shared measured-body-stroke path. A quality reversal earns `drive_gain = 0.10`; about ten good reversals (4.8 seconds at ideal cadence) refill an empty bar. Quality uses the existing timing windows. Below 25 stamina, gain is multiplied by clamp(stamina / 25, 0.4, 1): at 5-10 stamina a good reversal earns 0.04, requiring about 25 reversals / 12 seconds for a full bar. Passive decay remains 0.055/s after 1.1 seconds without a stroke. No normal swim-speed reduction was made.

@@ -6,23 +6,32 @@ const DEFAULT_CAPACITY: float = 150
 @export var maximum_line_out: float = DEFAULT_CAPACITY
 @export var maximum_rod_take_up: float = 2.0
 @export var maximum_rod_buffer: float = 15.0
-@export var ordinary_response_time: float = 0.25
 @export var strength: float = 110
 @export var elasticity: float = 22
 @export var maximum_retrieve: float = 4.5
 @export var power_retrieve: float = 7
-@export var drag_curve: float = 1.0
-@export var payout_response: float = 6
-@export var payout_acceleration_response: float = 24
+@export var max_drag_force: float = 110
+@export var base_outward_capacity: float = 330
+@export var capacity_per_released_drag: float = 2
+@export var force_per_payout_speed: float = 40 # force-equivalent units per m/s
+var outward_capacity: float = 0
+var payout_speed_limit: float = 0
+var requested_retrieve: float = 0
+var actual_recovery: float = 0
+var retrieve_efficiency: float = 1
+var reel_slip: float = 0
+var outward_movement: float = 0
+var extension: float = 0
+var _step_distance: float = 0
+var _step_line: float = 0
+var _payout_allowance: float = 0
 @export var maximum_payout: float = 14
-@export var tension_response: float = 12
 @export var contact_tolerance: float = 0.25
 @export var load_wear: float = 0.035
 @export var slipping_reel_wear: float = 0.022
 @export var shock_wear: float = 0.003
 @export var power_wear: float = 0.035
 # Wear starts below break risk. Thresholds are fractions of full line strength.
-@export var reel_pressure: float = 20
 @export var wear_start: float = 0.545
 @export var fresh_risk_threshold: float = 0.85
 @export var damaged_risk_threshold: float = 0.60
@@ -50,63 +59,54 @@ var rod_take_up: float = 0
 @export var high_rod_multiplier: float = 1.3
 var pressure_multiplier: float = 1
 var holding_threshold: float = 0
-var _previous_outward_speed: float = 0
 var _previous_load: float = 0
 
 func step(delta: float, required_distance: float, outward_speed: float, movement_load: float, retrieve: float, drag: float, power: bool, transient_load: float = 0, rod_pull: float = 0, rod_elevation: float = 0) -> void:
 	distance = maxf(0,required_distance)
-	drag_threshold = strength*pow(clampf(drag,0,1),drag_curve)
+	_step_distance = distance
+	_step_line = line_out
+	drag_threshold = max_drag_force*clampf(drag,0,1)
+	outward_capacity = base_outward_capacity+capacity_per_released_drag*(max_drag_force-drag_threshold)
+	payout_speed_limit = minf(maximum_payout,outward_capacity/maxf(0.01,force_per_payout_speed))
+	_payout_allowance = payout_speed_limit*delta
 	rod_take_up = maximum_rod_take_up*clampf(rod_pull,0,1)
-	pressure_multiplier = lerpf(1,high_rod_multiplier,clampf(rod_elevation,0,1)) if rod_elevation >= 0 else lerpf(1,low_rod_multiplier,clampf(-rod_elevation,0,1))
+	pressure_multiplier = lerpf(1,high_rod_multiplier,maxf(0,rod_elevation)) if rod_elevation >= 0 else lerpf(1,low_rod_multiplier,-rod_elevation)
 	holding_threshold = (drag_threshold+maximum_rod_buffer*clampf(rod_pull,0,1))*pressure_multiplier
-	# Temporary rod take-up changes working span, never spool accounting. Use a
-	# neutral-tip distance from FightSession so rod geometry is not counted twice.
 	var loaded_distance = distance+rod_take_up
-	var before = line_out
-	var old_slack = slack
-	var new_contact = loaded_distance >= line_out-contact_tolerance
-	var sharp = power or transient_load > 0 or (old_slack > contact_tolerance and new_contact) or (outward_speed-_previous_outward_speed > 4)
-	_previous_outward_speed = outward_speed
-	var load_target = maxf(0,movement_load+maxf(0,outward_speed)*0.7)
-	fish_load = load_target if sharp else lerpf(fish_load,load_target,1-exp(-delta/maxf(0.01,ordinary_response_time)))
-	var recovery = (power_retrieve if power else maximum_retrieve*clampf(retrieve,0,1))
-	if old_slack < contact_tolerance and not power:
-		recovery *= lerpf(1,0.15,clampf(fish_load/maxf(1,holding_threshold),0,1))
-	# A blocked fish cannot be reeled into a numerically short, infinitely stretched line.
-	line_out = maxf(minf(line_out,maxf(0.2,loaded_distance-maximum_extension)),line_out-recovery*delta)
-	var extension = maxf(0,loaded_distance-line_out)
-	var contact = clampf(1-maxf(0,line_out-loaded_distance)/contact_tolerance,0,1)
-	requested_load = maxf(0,extension*elasticity+fish_load+reel_pressure*(1.5 if power else retrieve)+transient_load)*contact*pressure_multiplier
-	# Load derivative catches real slack-to-taut reversals without a scripted combo.
-	shock = maxf(0,requested_load-_previous_load)
-	_previous_load = requested_load
-	# Every load source reaches the same drag clutch, including Power and shocks.
-	var overload = maxf(0,requested_load-holding_threshold)
-	slipping = overload > 0.5 and contact > 0
-	var elastic_rate = elasticity*pressure_multiplier
-	var relief_span = overload/maxf(0.01,elastic_rate)
-	var payout_target = minf(maximum_payout,maxf(0,outward_speed)+recovery+relief_span*payout_response) if slipping else 0.0
-	payout = lerpf(payout,payout_target,1-exp(-payout_acceleration_response*delta)) if slipping else 0.0
-	# A transient can unload rod/line elasticity even before separation grows.
-	# Release is bounded by demanded stretch/load AND the finite spool rate.
-	var released_line = minf(payout*delta,maxf(extension,relief_span))
-	released_line = minf(released_line,maxf(0,maximum_line_out-line_out))
-	line_out += released_line
-	payout = released_line/maxf(0.0001,delta)
 	slack = maxf(0,line_out-loaded_distance)
-	line_rate = (line_out-before)/maxf(0.0001,delta)
-	# Finite release relieves only the load it actually unloaded, not a drag clamp.
-	var target_tension = maxf(0,requested_load-released_line*elastic_rate)
-	if slack > contact_tolerance: target_tension = 0
-	var response = tension_response if sharp else 1/maxf(0.01,ordinary_response_time)
-	tension = lerpf(tension,target_tension,1-exp(-response*delta))
+	fish_load = maxf(0,movement_load)
+	requested_retrieve = (power_retrieve if power else maximum_retrieve*clampf(retrieve,0,1))
+	# The motor has a useful recovery ceiling. Excess cranking fails; it is never payout.
+	var authority = maxf(1,holding_threshold*(1.5 if power else 1.0))
+	var useful_speed = (power_retrieve if power else maximum_retrieve)*clampf(1-fish_load/authority,0,1)
+	if slack > contact_tolerance: useful_speed = requested_retrieve
+	var recovery = minf(requested_retrieve,useful_speed)*delta
+	recovery = minf(recovery,maxf(0,line_out-maxf(0.2,loaded_distance-maximum_extension)))
+	line_out -= recovery
+	actual_recovery = recovery/maxf(0.0001,delta)
+	retrieve_efficiency = actual_recovery/requested_retrieve if requested_retrieve > 0.001 else 1.0
+	reel_slip = 1-retrieve_efficiency if requested_retrieve > 0.001 else 0.0
+	payout = 0
+	outward_movement = 0
+	line_rate = -actual_recovery
+	extension = maxf(0,loaded_distance-line_out)
+	var contact = clampf(1-maxf(0,line_out-loaded_distance)/contact_tolerance,0,1)
+	# Drag opposes load. It is not added to the Fish's whole force a second time.
+	requested_load = maxf(fish_load,extension*elasticity)+maxf(0,transient_load)
+	var excess = maxf(0,requested_load-drag_threshold-outward_capacity)
+	var transmitted = minf(requested_load,drag_threshold)+excess
+	# Stretch beyond the safety allowance is genuine unaccommodated separation.
+	transmitted = maxf(transmitted,maxf(0,extension-maximum_extension)*elasticity)
+	tension = transmitted*contact
+	shock = maxf(0,tension-_previous_load)
+	_previous_load = tension
+	slipping = fish_load > drag_threshold and contact > 0
+	slack = maxf(0,line_out-loaded_distance)
 	var stress = maxf(0,tension/strength-wear_start)
 	var wear = load_wear*stress*stress
-	if slipping and payout > 0.05: wear += slipping_reel_wear*retrieve*retrieve*(tension/strength)
+	if reel_slip > 0: wear += slipping_reel_wear*reel_slip*retrieve*retrieve*(tension/strength)
 	if power: wear += power_wear*stress*stress
 	condition = maxf(0.02,condition-wear*delta-shock_wear*pow(shock/strength,2)*(0.25+retrieve))
-
-	# Exposure remembers sustained danger but decays during safer pressure windows.
 	if tension > break_threshold(): high_load_exposure += delta*exposure_gain
 	else: high_load_exposure = maxf(0,high_load_exposure-delta*exposure_decay)
 
@@ -118,12 +118,20 @@ func break_hazard() -> float:
 	return base_break_hazard*excess*excess*(1+damage_hazard_multiplier*pow(1-condition,2))*(1+minf(12,high_load_exposure)*exposure_multiplier)
 
 func sync_distance(required_distance: float, delta: float) -> void:
-	# Reconciliation only measures geometry. Payout happens once in step(), at its
-	# finite rate; constrain_motion prevents further impossible separation.
-	distance = maxf(0,required_distance)
+	# Only actual outward path growth may deploy new line. Called once after movement.
+	var next_distance = maxf(0,required_distance)
+	outward_movement = maxf(0,next_distance-_step_distance)
+	var release = minf(outward_movement,_payout_allowance)
+	release = minf(release,maxf(0,next_distance+rod_take_up-line_out))
+	release = minf(release,maxf(0,maximum_line_out-line_out))
+	line_out += release
+	payout = release/maxf(0.0001,delta)
+	line_rate = (line_out-_step_line)/maxf(0.0001,delta)
+	distance = next_distance
+	extension = maxf(0,distance+rod_take_up-line_out)
 	slack = maxf(0,line_out-distance-rod_take_up)
-	var excess = maxf(0,distance+rod_take_up-line_out-maximum_extension)
-	tension = maxf(tension,excess*elasticity*pressure_multiplier)
+	tension = maxf(tension,maxf(0,extension-maximum_extension)*elasticity)
+	_payout_allowance = 0
 
 @export var rod_pull_acceleration: float = 8
 @export var rod_pull_response: float = 4
@@ -141,7 +149,7 @@ func rod_pull_velocity(offset: Vector3, velocity: Vector3, delta: float, maximum
 func constrain_motion(offset: Vector3, motion: Vector3) -> Vector3:
 	# Unilateral velocity constraint at maximum elastic stretch. Keep tangential
 	# movement and never generate a large inward correction for an existing error.
-	var radius = maxf(0.2,line_out-rod_take_up+maximum_extension)
+	var radius = maxf(0.2,line_out-rod_take_up+maximum_extension+_payout_allowance)
 	var target = offset+motion
 	if target.length() <= radius: return motion
 	# Outside a shrinking radius, allow only the inward distance supplied by

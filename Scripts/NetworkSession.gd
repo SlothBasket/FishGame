@@ -338,7 +338,7 @@ func _physics_process(delta: float) -> void:
 			if fight_smoke:
 				input.species = BaitMotion.Kind.MINNOW
 				input.cast_serial = 1
-				if fisher_view.data.size() == 64:
+				if fisher_view.data.size() == 69:
 					input.jerk = roundi(fisher_view.data[10]) == FightSession.Phase.CANDIDATE or (roundi(fisher_view.data[10]) == FightSession.Phase.METER and fisher_view.data[11] < 0.72)
 			if hosting: players[owned_id].entity.command = input
 			elif input_clock <= 0:
@@ -622,11 +622,11 @@ func fisher_state(actor: FisherActor) -> PackedFloat32Array:
 		f.rod_tip.x if has_fight else 0,f.rod_tip.y if has_fight else 0,f.rod_tip.z if has_fight else 0,f.rod_hand.x if has_fight else 0,f.rod_hand.y if has_fight else 0,f.rod_hand.z if has_fight else 0,f.spool.strength if has_fight else 110,f.rod_horizontal if has_fight else 0,f.rod_vertical if has_fight else 0,
 		f.spool.maximum_line_out if has_fight else FightLine.DEFAULT_CAPACITY,
 		v.normalized().dot(BaitMotion.horizontal(p-actor.position).cross(Vector3.UP)) if has_fight and actor.vision_active and v.length() > 0.3 else 0,
-		f.tension/maxf(1,f.spool.break_threshold()) if has_fight else 0,f.counter_pressure if has_fight else 0,f.fisher_action if has_fight else 4,f.fish.motion.dive_power if has_fight else 0,int(f.fish.motion.diving) if has_fight else 0,f.line_damage_rate if has_fight else 0,f.spool.rod_take_up if has_fight else 0,f.recovery_total if has_fight else 0,f.jerk_direction if has_fight else 0,f.jerk_notice_time if has_fight else 0,f.fish.motion.ascent_power if has_fight else 0,int(f.fish.motion.falling) if has_fight else 0,int(f.fish.airborne) if has_fight else 0,f.power_recovery if has_fight else 0])
+		f.tension/maxf(1,f.spool.break_threshold()) if has_fight else 0,f.counter_pressure if has_fight else 0,f.fisher_action if has_fight else 4,f.fish.motion.dive_power if has_fight else 0,int(f.fish.motion.diving) if has_fight else 0,f.line_damage_rate if has_fight else 0,f.spool.rod_take_up if has_fight else 0,f.recovery_total if has_fight else 0,f.jerk_direction if has_fight else 0,f.jerk_notice_time if has_fight else 0,f.fish.motion.ascent_power if has_fight else 0,int(f.fish.motion.falling) if has_fight else 0,int(f.fish.airborne) if has_fight else 0,f.power_recovery if has_fight else 0,f.spool.requested_retrieve if has_fight else 0,f.spool.actual_recovery if has_fight else 0,f.spool.retrieve_efficiency if has_fight else 1,f.counter_hint() if has_fight else 0,f.fish.motion.jump_launch_power if has_fight else 0])
 
 @rpc("authority","call_remote","unreliable_ordered",2)
 func fisher_snapshot(peer: int, state: PackedFloat32Array) -> void:
-	if hosting or closed or state.size() != 64 or not players.has(peer) or players[peer].role != ROLE_FISHER: return
+	if hosting or closed or state.size() != 69 or not players.has(peer) or players[peer].role != ROLE_FISHER: return
 	players[peer].entity.position = Vector3(state[0],state[1],state[2])
 	if peer == multiplayer.get_unique_id() and fisher_view != null:
 		if fight_smoke and (fisher_view.data.is_empty() or fisher_view.data[10] != state[10]): print("CLIENT FIGHT PHASE ",state[10]," fields=",state.size())
@@ -677,7 +677,7 @@ func fight_smoke_tick() -> void:
 			smoke_connected = clock
 		if smoke_stage == 4 and clock-smoke_connected > 0.4: get_tree().quit(0)
 	else:
-		if fisher_view != null and fisher_view.data.size() == 64:
+		if fisher_view != null and fisher_view.data.size() == 69:
 			if roundi(fisher_view.data[10]) == FightSession.Phase.FIGHT and not smoke_saw_two:
 				smoke_saw_two = true
 				print("FIGHT SMOKE PASS replicated fight/HUD state")
@@ -722,21 +722,25 @@ func present_fight_result(fish_id: int, fisher_id: int, result: int) -> void:
 	if spectator_mode or owned == fish_id or owned == fisher_id:
 		outcome_banner.show_result(result,owned == fish_id)
 
-func publish_fight_counter(fish: FishPlayer, fisher: FisherActor, kind: int) -> void:
+func publish_fight_counter(fish: FishPlayer, fisher: FisherActor, kind: int, effectiveness: float = 1.0) -> void:
 	if batch_runner != null:
 		batch_runner.counter(fisher.fight,kind)
 		return
 	var fish_id = 0
 	for id in players:
 		if players[id].entity == fish: fish_id = id
-	present_fight_counter(fish_id,fisher.peer_id,kind)
-	if connected: fight_counter.rpc(fish_id,fisher.peer_id,kind)
+	present_fight_counter(fish_id,fisher.peer_id,kind,effectiveness)
+	if connected: fight_counter.rpc(fish_id,fisher.peer_id,kind,effectiveness)
 
 @rpc("authority","call_remote","reliable",0)
-func fight_counter(fish_id: int, fisher_id: int, kind: int) -> void:
+func fight_counter(fish_id: int, fisher_id: int, kind: int, effectiveness: float = 1.0) -> void:
 	if hosting or kind < 1 or kind > 3: return
-	present_fight_counter(fish_id,fisher_id,kind)
+	present_fight_counter(fish_id,fisher_id,kind,effectiveness)
 
-func present_fight_counter(fish_id: int, fisher_id: int, kind: int) -> void:
+func present_fight_counter(fish_id: int, fisher_id: int, kind: int, effectiveness: float = 1.0) -> void:
+	if effectiveness >= 0.5 and players.has(fish_id):
+		var halo = CounterHalo.new()
+		halo.effectiveness = effectiveness
+		players[fish_id].entity.add_child(halo)
 	var owned = 1 if hosting else multiplayer.get_unique_id()
 	if spectator_mode or owned == fish_id or owned == fisher_id: outcome_banner.show_counter(kind)

@@ -99,6 +99,7 @@ static func gesture_and_pump_checks(f: FightSession) -> bool:
 		g.step(0.016,Vector2.ZERO,false)
 		detected = g.step(0.15,axis*0.8,true)
 		ok = check(detected == (1 if axis.x < 0 else 2 if axis.x > 0 else 3),"Rapid rod gesture registers correct direction") and ok
+	f.fish.motion.powered_active = true
 	f.fish.motion.run_build = 1
 	f.fish.motion.swim_drive = 1
 	f.fish.motion.propulsion = 1.6

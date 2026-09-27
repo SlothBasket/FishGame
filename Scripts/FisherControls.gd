@@ -43,12 +43,26 @@ static func plan(seen: Dictionary, stamina: float) -> Dictionary:
 	var distance = float(seen.get("distance",100))
 	var safe = danger < 0.65 and condition > 0.8 and not running and not dive and not fall and not ascent
 	var opportunity = bool(seen.get("opportunity",false)) or bool(seen.get("counter_success",false))
-	result["stage"] = "LANDING PUSH" if distance < 15 else "CLOSE" if distance < 40 else "MID" if distance < 70 else "FAR"
+	result["stage"] = "LANDING PUSH" if distance < 20 else "CLOSE" if distance < 40 else "MID" if distance < 70 else "FAR"
 	if safe:
 		result.retrieve = 1.0 if distance < 40 or opportunity else 0.8
-		result.drag = 0.65 if distance < 15 and danger < 0.45 else 0.55 if distance < 40 or opportunity else 0.4
+		result.drag = 0.65 if distance < 20 and danger < 0.45 else 0.55 if distance < 40 or opportunity else 0.4
 		result.pump = distance >= 40 and slack < 0.8 and not opportunity
 		result.vertical = 0.4 if distance < 40 else result.vertical
-		result.power = stamina > 25 and (distance < 15 or opportunity) and danger < 0.55
+		result.power = stamina > 25 and (distance < 20 or opportunity) and danger < 0.55
 		result.label = result.stage if not opportunity else "CAPTURE OPENING"
+	# Observable efficiency sets a ceiling on useful cranking, not a hidden AI advantage.
+	var requested = float(seen.get("requested_retrieve",0))
+	var efficiency = float(seen.get("retrieve_efficiency",1))
+	if running and float(seen.get("line_rate",0)) > 0.1:
+		result.retrieve = minf(result.retrieve,0.15)
+		result.power = false
+		result.pump = false
+	elif requested > 0.05 and efficiency < 0.8:
+		var useful = float(seen.get("actual_recovery",0))/4.5
+		result.retrieve = minf(result.retrieve,maxf(0.1,useful+0.05))
+		result.power = false
+		result.pump = false
+	elif requested > 0.05:
+		result.retrieve = minf(result.retrieve,requested/4.5+0.10)
 	return result

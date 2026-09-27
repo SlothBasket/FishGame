@@ -1,5 +1,7 @@
 # Fisher presentation and between-fight AI
 
+> Latest reel/control/presentation rules: [REEL_AND_FISHER_CORRECTION.md](REEL_AND_FISHER_CORRECTION.md). Supersedes earlier spool, camera and snapshot descriptions below.
+
 This pass changes local presentation and AI inputs outside fights. It does not alter combat strength, Drive economy, fatigue/counters, line physics, drag, landing geometry or hook rules. Batch mechanics and telemetry schema are preserved; more natural food interest can change setup time and which bait is eaten.
 
 ## Camera and water

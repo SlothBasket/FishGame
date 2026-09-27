@@ -36,73 +36,35 @@ static func run(fight: FightSession) -> bool:
 	ok = verify(dive.dive_power > dive.dive_counter_window and FightContest.best_counter(Vector3.DOWN,right,true,true) == FightContest.Counter.LET_RUN,"Committed dive coaching changes to let drag work") and ok
 	dive.step(0.1,dive_input,Vector3.DOWN,1,100,true)
 	ok = verify(not dive.diving,"Bottom contact ends dive") and ok
-	var limited = FightLine.new()
-	limited.maximum_payout = 1
-	limited.line_out = 40
-	limited.fish_load = 100
-	limited.step(0.2,42,10,100,0,0.4,false,35)
-	ok = verify(limited.payout <= 1.001 and limited.tension > limited.drag_threshold,"Finite payout leaves stretch / counter load above nominal drag") and ok
+	# Detailed spool force/efficiency cases live in ReelCorrectionChecks.
 	var line = FightLine.new()
 	line.line_out = 40
 	line.step(0.1,32,-8,0,0,0.4,false)
-	ok = verify(is_equal_approx(line.line_out,40) and line.slack > 7.9,"Inward swim preserves spool line and creates slack") and ok
+	line.sync_distance(32,0.1)
+	ok = verify(is_equal_approx(line.line_out,40) and line.slack > 7.9,"Inward swim preserves deployed line and creates slack") and ok
 	line.step(0.1,32,0,0,1,0.4,false)
-	ok = verify(line.line_out < 40 and line.line_rate < 0,"Retrieve recovers slack continuously") and ok
+	line.sync_distance(32,0.1)
+	ok = verify(line.actual_recovery > 0 and line.line_rate < 0,"Retrieve recovers actual slack") and ok
 	line.line_out = 40
-	for i in range(12): line.step(0.05,40+(i+1)*0.3,6,60,0,0.4,false)
-	ok = verify(line.line_out > 40 and line.payout > 0 and line.tension < line.drag_threshold+line.maximum_extension*line.elasticity,"Normal drag pays out with bounded elastic overload") and ok
-	var before = line.line_out
-	for i in range(6): line.step(0.05,before,8,80,1,0.4,true)
-	ok = verify(line.slipping and line.payout > 0,"Power retains drag payout under load") and ok
-	ok = verify(line.condition < 1,"Loaded power/reversal wears line") and ok
-	var cruise = FightLine.new()
-	cruise.line_out = 40
-	cruise.fish_load = 35
-	cruise.step(0.1,40,0,35,0.5,0.4,false)
-	ok = verify(is_equal_approx(cruise.drag_threshold,44) and cruise.slipping and cruise.payout > 0 and cruise.requested_load > 44,"40% drag = 44; total retrieve load can trigger payout") and ok
-	cruise.step(0.1,40,0,35,1,0.4,false)
-	ok = verify(cruise.slipping and cruise.payout > 0,"Hard retrieve still respects the drag clutch") and ok
-	cruise.step(0.4,41,6,60,0,0.4,false)
-	ok = verify(cruise.slipping and cruise.payout > 0,"Sprint output takes line") and ok
-	var pulls: Array[float] = []
-	for amount in [0.0,0.5,1.0]:
-		var pump = FightLine.new()
-		pump.line_out = 40
-		pump.fish_load = 35
-		pump.step(1,40,0,35,0,0.4,false,0,amount)
-		pulls.append(pump.tension)
-	ok = verify(pulls[0] < pulls[1] and pulls[1] < pulls[2],"Center / half / full rod gives increasing pressure") and ok
-	var pump = FightLine.new()
-	pump.line_out = 40
-	pump.fish_load = 50
-	pump.step(1,38,0,50,0,0.4,false,0,1)
-	ok = verify(pump.tension > pump.drag_threshold and not pump.slipping and pump.line_out == 40,"Rod holds modest pressure above drag without spool payout") and ok
-	var raised = pump.tension
-	pump.step(1,41,1,50,0,0.4,false,0,0)
-	ok = verify(pump.tension < raised and pump.slipping,"Lowered rod reduces holding pressure and permits payout") and ok
-	pump.line_out = 40
-	pump.step(0.1,38,0,0,0,0.4,false,0,0)
-	ok = verify(pump.slack >= 2 and pump.line_out == 40,"Lowering without reel gives back pump gain as slack") and ok
-	pump.step(0.2,38,0,0,1,0.4,false,0,0)
-	ok = verify(pump.line_out < 40 and pump.slack < 2,"Reeling while lowered permanently recovers gained line") and ok
-	var ramp = FightLine.new()
-	ramp.line_out = 40
-	ramp.step(0.016,40,0,60,0,0.4,false)
-	ok = verify(ramp.fish_load > 0 and ramp.fish_load < 15,"Ordinary load ramps instead of snapping") and ok
-	ramp.step(0.016,40,0,60,1,0.4,true,35)
-	ok = verify(ramp.fish_load == 60,"Power and shock retain sharp load response") and ok
+	line.step(1,40,2,100,1,0.4,false)
+	line.sync_distance(42,1)
+	ok = verify(is_equal_approx(line.payout,2) and is_equal_approx(line.line_out,42),"Only measured two-metre outward motion pays out") and ok
+	line.step(0.1,42,0,100,1,0.4,false)
+	line.sync_distance(42,0.1)
+	ok = verify(line.payout == 0 and line.actual_recovery == 0,"Failed retrieve cannot create payout") and ok
 	var spooled = FightSession.new()
 	spooled.spool = FightLine.new()
 	spooled.spool.line_out = spooled.spool.maximum_line_out-0.01
 	spooled.spool.fish_load = 100
-	spooled.spool.step(0.2,spooled.spool.maximum_line_out+10,8,100,0,0.2,false)
+	spooled.spool.step(0.2,spooled.spool.line_out,8,100,0,0.2,false)
+	spooled.spool.sync_distance(spooled.spool.maximum_line_out+1,0.2)
 	ok = verify(spooled.spool.line_out == spooled.spool.maximum_line_out and spooled.check_spooled() and spooled.phase == FightSession.Phase.FINISHED,"Capacity clamps payout and spool-out ends encounter") and ok
 	if fight.fisher.session.fisher_view != null:
 		ok = verify(fight.fisher.session.fisher_view.layout_fits(),"Fight HUD inside viewport, hook centered, network text separate") and ok
 	var tether = FightLine.new()
 	tether.line_out = 5
 	tether.step(0.016,50,0,0,1,0.4,true)
-	ok = verify(tether.line_out > 5 and tether.line_out <= 5+tether.maximum_payout*0.016+0.001,"Power releases an impossible span only at finite payout") and ok
+	ok = verify(is_equal_approx(tether.line_out,5),"Impossible stored span is not silently converted into extra deployed line") and ok
 	var legal = tether.constrain_motion(Vector3(50,0,0),Vector3(1,0.1,0))
 	ok = verify((Vector3(50,0,0)+legal).length() <= 50.001 and legal.x > -0.01,"Taut guard limits outward motion without an inward teleport") and ok
 	tether.step(1,50,0,0,1,0.4,true)

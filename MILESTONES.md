@@ -58,3 +58,5 @@ Validation for the pacing milestone: 97 checks passed. Standalone 75-second grap
 - Milestone identified by subject: `Move AI bait priority off editor stop shortcut` — changed the host test-bait toggle from F8 (Godot stops the running project) to T; updated on-screen hint and guides. No AI or gameplay changes.
 
 - Milestone identified by subject: `Make Drive continuous and give Fisher AI close-out priorities` — continuous Drive-first power, stamina fallback, slower recovery, varied AI commitments, delayed observable landing pressure, moving feeding charges, and solid mouth-attached line. See CONTINUOUS_DRIVE_POLISH.md for values and bounded validation.
+
+- Milestone identified by subject: `Tie spool payout to real separation and polish Fisher control` — force-based finite drag, separate retrieve/slip/payout, efficiency-aware Fisher, boat-framed hookset and audio, shared directional counters/star halo, retained jump launch effort, curved mouth lead. Fisher snapshots 69 floats. Bounded validation and limits: REEL_AND_FISHER_CORRECTION.md.

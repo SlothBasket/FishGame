@@ -30,18 +30,32 @@ func _ready() -> void:
 	add_child(audio)
 
 static func edge_camera(origin: Vector3, forward: Vector3) -> Vector3:
-	return origin+Vector3.UP*2.05-forward*0.85+forward.cross(Vector3.UP)*0.75
+	return origin+Vector3.UP*3.5-forward*3.8+forward.cross(Vector3.UP)*1.1
 
-static func visual_path(tip: Vector3, mouth: Vector3, slack: float) -> Array[Vector3]:
-	# Clean mouth attachment beats a visibly angular approximate body wrap.
-	# This local ribbon has no influence on authoritative line geometry.
+static func boat_view_target(origin: Vector3, forward: Vector3, rod: Vector3, focus: Vector3) -> Vector3:
+	var course = (forward+BaitMotion.horizontal(rod)*0.25).normalized()
+	var target = origin+course*12-Vector3.UP*3
+	return target+(focus-target).limit_length(8)*0.12
+
+static func visual_rod_offset(forward: Vector3) -> Vector3:
+	return forward*0.7+forward.cross(Vector3.UP)*0.5
+
+static func visual_path(tip: Vector3, mouth: Vector3, slack: float, forward: Vector3 = Vector3.FORWARD, scale: float = 1) -> Array[Vector3]:
+	# A short mouth lead, not a body collision/wrap solver. Stable smooth side bias.
+	var approach = (tip-mouth).normalized()
+	var right = forward.cross(Vector3.UP).normalized()
+	var lead = mouth+(forward*0.9+right*clampf(approach.dot(right),-0.5,0.5))*scale
+	var span = tip.distance_to(mouth)
+	var control = tip.lerp(lead,0.55)-Vector3.UP*minf(6,slack*0.4)
+	lead = mouth+(lead-mouth).limit_length(span*0.35)
 	var points: Array[Vector3] = []
 	for i in range(33):
 		var t = i/32.0
-		points.append(tip.lerp(mouth,t)-Vector3.UP*sin(PI*t)*minf(6,slack*0.4))
+		var u = 1-t
+		points.append(tip*u*u*u+control*3*u*u*t+lead*3*u*t*t+mouth*t*t*t)
 	return points
 
-func update_view(delta: float, camera: Camera3D, hand: Vector3, rod: Vector3, tip: Vector3, target: Vector3, fish: FishPlayer, slack: float, line_rate: float, payout: float, retrieve_speed: float, active: bool, audible: bool) -> void:
+func update_view(delta: float, camera: Camera3D, hand: Vector3, rod: Vector3, tip: Vector3, target: Vector3, fish: FishPlayer, slack: float, line_rate: float, payout: float, retrieve_speed: float, active: bool, audible: bool, requested: float = 0, efficiency: float = 1, phase: int = -1) -> void:
 	reel.position = hand+rod*0.18-Vector3.UP*0.16
 	if rod.length_squared() > 0.01: reel.look_at(reel.global_position+rod,Vector3.UP)
 	crank.rotation.x += maxf(0,retrieve_speed)*3*delta
@@ -53,7 +67,7 @@ func update_view(delta: float, camera: Camera3D, hand: Vector3, rod: Vector3, ti
 	if is_instance_valid(fish):
 		mouth = fish.mouth_position()
 
-	last_points = visual_path(tip,mouth,slack)
+	last_points = visual_path(tip,mouth,slack,fish.heading if is_instance_valid(fish) else (mouth-tip).normalized(),fish.size_multiplier() if is_instance_valid(fish) else 0.0)
 	var mesh: ImmediateMesh = line.mesh
 	mesh.clear_surfaces()
 	if active:
@@ -68,4 +82,5 @@ func update_view(delta: float, camera: Camera3D, hand: Vector3, rod: Vector3, ti
 				mesh.surface_add_vertex(last_points[i+1 if end else i]+width*(1 if j in [1,2] else -1))
 			distance = next
 		mesh.surface_end()
-	audio.update_payout(delta,payout if active else 0,audible and active)
+	audio.update_payout(delta,payout if active and line_rate > 0.03 else 0,audible and active and line_rate >= -0.03)
+	audio.update_reel_cues(delta,requested,efficiency,phase,audible and active)

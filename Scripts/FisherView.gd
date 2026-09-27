@@ -2,8 +2,8 @@ class_name FisherView
 extends Node3D
 ## Owner-only camera, rod/line art and HUD. Never moves a gameplay actor.
 @export var show_fight_coaching: bool = true
-@export var rod_mouse_response: float = 0.0035
-@export var rod_stick_response: float = 5.0
+@export var rod_mouse_response: float = 0.008
+@export var rod_stick_response: float = 7.5
 @export var fight_camera_response: float = 5
 var rod_horizontal: float = 0
 var rod_vertical: float = 0
@@ -170,7 +170,7 @@ func sample() -> FisherIntent:
 	return intent
 
 func _process(delta: float) -> void:
-	if data.size() != 64: return
+	if data.size() != 69: return
 	var stick = GameControls.look()
 	apply_look(stick*stick.length()*rod_stick_response*delta)
 	var origin = Vector3(data[0],data[1],data[2])
@@ -185,24 +185,24 @@ func _process(delta: float) -> void:
 		impact_age = 0
 	impact_age += delta
 	previous_phase = phase
-	var underwater = roundi(data[4]) == FisherActor.State.BAIT or (fighting and phase <= FightSession.Phase.METER) or data[16] > 0
+	var underwater = roundi(data[4]) == FisherActor.State.BAIT  or data[16] > 0
 	centered_focus = centered_focus.lerp(focus,1-exp(-fight_camera_response*delta))
-	var direction = BaitMotion.horizontal(centered_focus-origin) if fighting else FishInput.from_angles(pitch,yaw)
+	var direction = Vector3.FORWARD.rotated(Vector3.UP,data[3]) if fighting else FishInput.from_angles(pitch,yaw)
 	if fighting: focus = centered_focus
 	var boat_camera = FishingPresentation.edge_camera(origin,direction)
 	var desired = focus-direction*(6 if alternate_view else 10.8)+Vector3.UP*(2 if fighting else 0) if underwater else boat_camera
-	# Impact remains underwater briefly, then blends into the boat view during the yank.
-	if fighting and phase == FightSession.Phase.IMPACT:
-		desired = (focus-direction*8).lerp(boat_camera,clampf((impact_age-0.15)/0.5,0,1))
 	camera.position = camera.position.lerp(desired,1-exp(-7*delta))
-	camera.fov = lerpf(camera.fov,48.0 if fighting and not underwater else 60.0,1-exp(-delta*4))
-	var target = focus-Vector3.UP*0.65 if fighting else focus if underwater else camera.position+direction*10
+	camera.fov = lerpf(camera.fov,60.0,1-exp(-delta*4))
+	var target = FishingPresentation.boat_view_target(origin,direction,Vector3(data[17],data[18],data[19]),focus) if fighting and not underwater else focus if underwater else camera.position+direction*10
 	if camera.position.distance_to(target) > 0.1: camera.look_at(target,Vector3.UP)
 	camera.rotation.z = sin(impact_age*22)*0.025*maxf(0,1-impact_age/0.5) if fighting else 0
 	var rod = Vector3(data[17],data[18],data[19])
 	var hand = Vector3(data[42],data[43],data[44])
 	var tip = Vector3(data[39],data[40],data[41])
 	if not fighting: hand = origin+Vector3.UP*1.3; tip = hand+rod*3
+	var art_offset = FishingPresentation.visual_rod_offset(direction)
+	hand += art_offset
+	tip += art_offset
 	jerk_label.position = tip+Vector3.UP*0.5
 	jerk_label.text = RodGesture.caption(roundi(data[58])) if data[59] > 0 else ""
 	var rod_points: Array = []
@@ -214,8 +214,8 @@ func _process(delta: float) -> void:
 	var hooked: FishPlayer
 	var peer = roundi(data[20])
 	if fighting and session.players.has(peer): hooked = session.players[peer].entity as FishPlayer
-	var retrieving = maxf(0,data[36]-data[35]) if fighting else last_retrieve*4.5
-	equipment.update_view(delta,camera,hand,rod,tip,Vector3(data[21],data[22],data[23]) if fighting else focus,hooked,data[31],data[35],data[36],retrieving,fighting or roundi(data[4]) == FisherActor.State.BAIT,true)
+	var retrieving = data[65] if fighting else last_retrieve*4.5
+	equipment.update_view(delta,camera,hand,rod,tip,Vector3(data[21],data[22],data[23]) if fighting else focus,hooked,data[31],data[35],data[36],retrieving,fighting or roundi(data[4]) == FisherActor.State.BAIT,true,data[64],data[66],phase if fighting else -1)
 	rod_mesh.visible = not underwater or fighting
 	var phase_name = ["BAIT TAKEN — hold Q / RB when ready","HOOK: release near 75%","HOOK IMPACT","OPENING RUN — Power locked","FIGHT"][clampi(phase,0,4)] if fighting else BaitMotion.Kind.keys()[roundi(data[5])]
 	label.text = "FISHER — %s\nG cast/setup | X species | W/RT retrieve | Wheel/D-pad up/down reel\nMouse/right stick: rod during fight | [ ] / D-pad left/right: drag\nQ/RB hook set; fast rod flick: jerk | Shift/LB Power | V/LS Focus | C/RS bait view" % phase_name
@@ -225,12 +225,11 @@ func _process(delta: float) -> void:
 	if data[16] > 0: pull_direction += " LEFT" if data[49] < -0.3 else " RIGHT" if data[49] > 0.3 else " AWAY"
 	readings.text = "LINE %.1f / %.0f m\n%s | %s\nSlack %.1f m | Line rate %+.1f m/s\nTension %.0f | Drag limit %.0f\nSaved retrieve %d%% | %s" % [data[12],data[48],pressure,pull_direction if fighting else "READY",data[31],data[35],data[13],data[33],roundi(data[7]*5),"POWER" if data[15] > 0 else "NORMAL"]
 	if fighting:
+		readings.text += "\nRECOVERY %.1f / %.1f m/s | Efficiency %.0f%%\n%s | JUMP LAUNCH %.0f%%" % [data[65],data[64],data[66]*100,RodGesture.caption(roundi(data[67])),data[68]*100]
 		readings.text += "\nREMAINING %.1f m | TAKE-UP %.1f m\nREEL RECOVERY %.1f m" % [maxf(0,data[48]-data[12]),data[56],data[57]]
 		readings.text += "\n"+("FISH TAKING LINE" if data[35] > 0.15 else "GAINING LINE" if data[35] < -0.15 else "HOLDING")
 		if data[51] > 0.2: readings.text += " | GOOD COUNTER"
 		elif absf(data[46]) > 0.4: readings.text += " | POOR ANGLE"
-		if show_fight_coaching and data[16] > 0: readings.text += "\n"+FightDecisions.fisher_text(roundi(data[52]))
-		if data[54] > 0: readings.text += "\nDIVE — FLICK UP TO COUNTER"
 		if data[50] > 0.9: readings.text += "\nHIGH TENSION !" if sin(Time.get_ticks_msec()*0.009) > 0 else "\nHIGH TENSION"
 	bars["Tension"].max_value = data[45]
 	bars["Tension"].value = data[13]
@@ -249,7 +248,7 @@ func _process(delta: float) -> void:
 	drag_value.text = "%d%%" % roundi(data[32]*100)
 
 func apply_look(movement: Vector2) -> void:
-	if data.size() == 64 and roundi(data[4]) == FisherActor.State.FIGHT:
+	if data.size() == 69 and roundi(data[4]) == FisherActor.State.FIGHT:
 		if data[16] <= 0:
 			rod_horizontal = clampf(rod_horizontal+movement.x,-1,1)
 			rod_vertical = clampf(rod_vertical-movement.y,-1,1)

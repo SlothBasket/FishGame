@@ -40,14 +40,14 @@ func _init(index: int, seed_value: int) -> void:
 		"final_condition":1.0,"minimum_condition":1.0,"maximum_tension":0.0,"average_tension":0.0,"maximum_break_ratio":0.0,"maximum_line_out":0.0,"final_line_out":0.0,"maximum_payout":0.0,"total_line_recovered":0.0,"maximum_slack":0.0,"slack_time":0.0,
 		"minimum_endurance":100.0,"final_endurance":100.0,"minimum_stamina":100.0,"average_depth":0.0,"maximum_depth":-INF,"minimum_depth":INF,"final_depth":0.0,"minimum_horizontal_distance":INF,"final_horizontal_distance":0.0,"final_distance_3d":0.0,
 		"reeling_time":0.0,"lowering_time":0.0,"high_rod_time":0.0,"lateral_rod_time":0.0,"straight_time":0.0,"left_time":0.0,"right_time":0.0,"maximum_looseness":1.0,"maximum_hook_hazard":0.0,"hook_hazard_time":0.0,"maximum_airborne_hazard":0.0,"maximum_slack_hazard":0.0,"average_ascent_start_depth":0.0,"maximum_ascent_power":0.0}
-	for key in ["starting_line_out","starting_spool_reserve","total_line_paid_out","net_line_change","rod_lift_distance_gain","permanent_pump_recovery","successful_run_counters","successful_overdrive_counters","successful_dive_counters","counter_endurance_damage","drive_lockout_time","vision_total_time","average_vision_interval","jerk_attempts_per_maneuver"]: row[key] = 0.0
+	for key in ["drive_funded_time","stamina_funded_time","maximum_jump_launch_power","starting_line_out","starting_spool_reserve","total_line_paid_out","net_line_change","rod_lift_distance_gain","permanent_pump_recovery","successful_run_counters","successful_overdrive_counters","successful_dive_counters","counter_endurance_damage","drive_lockout_time","vision_total_time","average_vision_interval","jerk_attempts_per_maneuver"]: row[key] = 0.0
 	for key in ["average_swim_drive","max_drive","total_drive_gained","total_drive_spent","drive_bursts","stamina_spent_normal_drive","stamina_spent_overdrive","straight_run_time","lateral_run_time","radial_energy_cost","lateral_energy_cost","side_burst_lateral_displacement","side_burst_radial_displacement","overdrive_power_counters","counter_effectiveness_early","counter_effectiveness_mid","counter_effectiveness_late"]: row[key] = 0.0
 	for key in COUNTS: row[key] = 0
 	for key in BREAK_KEYS: row["break_"+key] = ""
 	for key in ["slack","airborne","shake","looseness","hazard","jump_severity"]: row["throw_"+key] = ""
 func state(f: FightSession) -> Dictionary:
 	var p = f.fish
-	return {"power_active":f.power_active,"holding_threshold":f.spool.holding_threshold,"drag_threshold":f.spool.drag_threshold,"phase":FightSession.Phase.keys()[f.phase],"distance_3d":p.position.distance_to(f.fisher.position),"rod_take_up":f.spool.rod_take_up,"elastic_extension":maxf(0,p.position.distance_to(f.fisher.position)+f.spool.rod_take_up-f.spool.line_out),"fish_load":f.spool.fish_load,"condition":f.spool.condition,"tension":f.spool.tension,"threshold":f.spool.break_threshold(),"ratio":f.spool.tension/maxf(0.01,f.spool.break_threshold()),"exposure":f.spool.high_load_exposure,"drag":f.fisher.drag_setting,"rod_vertical":f.rod_vertical,"rod_horizontal":f.rod_horizontal,"requested_load":f.spool.requested_load,"shock":f.spool.shock,"payout":f.spool.payout,"depth":p.water_height-p.position.y,"velocity_x":p.velocity.x,"velocity_y":p.velocity.y,"velocity_z":p.velocity.z,"action":FightDecisions.fish_text(f.fish_action),"following_jerk":f.jerk_notice_time > 0,"falling":p.motion.falling,"dive_power":p.motion.dive_power,"overdrive":p.motion.overdrive,"line_out":f.spool.line_out,"slack":f.spool.slack,"endurance":p.endurance,"stamina":p.stamina,"airborne":p.airborne,"shake":p.head.shake_pressure,"looseness":f.hook.looseness,"hazard":f.hook.hazard,"jump_severity":p.motion.jump_severity}
+	return {"requested_retrieve":f.spool.requested_retrieve,"actual_recovery":f.spool.actual_recovery,"retrieve_efficiency":f.spool.retrieve_efficiency,"reel_slip":f.spool.reel_slip,"outward_movement":f.spool.outward_movement,"payout_capacity_mps":f.spool.payout_speed_limit,"ascent_power":p.motion.ascent_power,"jump_launch_power":p.motion.jump_launch_power,"power_active":f.power_active,"holding_threshold":f.spool.holding_threshold,"drag_threshold":f.spool.drag_threshold,"phase":FightSession.Phase.keys()[f.phase],"distance_3d":p.position.distance_to(f.fisher.position),"rod_take_up":f.spool.rod_take_up,"elastic_extension":maxf(0,p.position.distance_to(f.fisher.position)+f.spool.rod_take_up-f.spool.line_out),"fish_load":f.spool.fish_load,"condition":f.spool.condition,"tension":f.spool.tension,"threshold":f.spool.break_threshold(),"ratio":f.spool.tension/maxf(0.01,f.spool.break_threshold()),"exposure":f.spool.high_load_exposure,"drag":f.fisher.drag_setting,"rod_vertical":f.rod_vertical,"rod_horizontal":f.rod_horizontal,"requested_load":f.spool.requested_load,"shock":f.spool.shock,"payout":f.spool.payout,"depth":p.water_height-p.position.y,"velocity_x":p.velocity.x,"velocity_y":p.velocity.y,"velocity_z":p.velocity.z,"action":FightDecisions.fish_text(f.fish_action),"following_jerk":f.jerk_notice_time > 0,"falling":p.motion.falling,"dive_power":p.motion.dive_power,"overdrive":p.motion.overdrive,"line_out":f.spool.line_out,"slack":f.spool.slack,"endurance":p.endurance,"stamina":p.stamina,"airborne":p.airborne,"shake":p.head.shake_pressure,"looseness":f.hook.looseness,"hazard":f.hook.hazard,"jump_severity":p.motion.jump_severity}
 func event(name: String, f: FightSession, count: String = "") -> void:
 	if not count.is_empty(): row[count] += 1
 	events.append({"fight_index":row.fight_index,"fight_seed":row.fight_seed,"time":elapsed,"event":name,"state":state(f)})
@@ -68,6 +68,10 @@ func sample(f: FightSession, delta: float) -> void:
 	sample_progression(f,delta)
 	sample_resources(f,delta)
 	var p = f.fish
+	if p.motion.powered_active:
+		row.drive_funded_time += (1-p.motion.stamina_share)*delta
+		row.stamina_funded_time += p.motion.stamina_share*delta
+	row.maximum_jump_launch_power = maxf(row.maximum_jump_launch_power,p.motion.jump_launch_power)
 	if previous_drag >= 0 and not is_equal_approx(previous_drag,f.fisher.drag_setting):
 		event("DRAG_CHANGE",f,"drag_changes")
 		events[-1].state["old_drag"] = previous_drag
@@ -176,7 +180,7 @@ func record_counter(f: FightSession) -> void:
 	var details = f.last_counter.duplicate()
 	row["counter_effectiveness_early" if details.effectiveness >= 0.7 else "counter_effectiveness_mid" if details.effectiveness >= 0.35 else "counter_effectiveness_late"] += 1
 	row.counter_endurance_damage += details.endurance_before-details.endurance_after
-	var key = "successful_dive_counters" if details.maneuver == "DIVE" else "successful_overdrive_counters" if details.maneuver == "OVERDRIVE" else "successful_run_counters"
+	var key = "successful_dive_counters" if details.maneuver == "DIVE" else "successful_overdrive_counters" if details.get("overdrive_powered",false) else "successful_run_counters"
 	row[key] += 1
 	event("COUNTER_PROGRESS",f)
 	var event_state: Dictionary = events[-1].state

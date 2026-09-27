@@ -2,10 +2,10 @@ class_name RodGesture
 extends Resource
 ## Samples authoritative smoothed rod positions, not buttons or device events.
 enum Direction { NONE, LEFT, RIGHT, UP }
-@export var minimum_displacement: float = 0.55
-@export var minimum_velocity: float = 2.4
+@export var minimum_displacement: float = 0.30
+@export var minimum_velocity: float = 2.0
 @export var maximum_window: float = 0.24
-@export var ending_position: float = 0.6
+@export var ending_position: float = 0.25
 var samples: Array[Vector3] = []
 var clock: float = 0
 func step(delta: float, rod: Vector2, enabled: bool) -> int:

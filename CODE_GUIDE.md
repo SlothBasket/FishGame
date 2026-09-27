@@ -1,5 +1,7 @@
 > Fisher presentation / between-fight AI: [FISHER_EXPERIENCE.md](FISHER_EXPERIENCE.md) covers the close camera, reel/line/audio, local food interest and seeded reset pauses. Fight balance and snapshot formats are unchanged.
 
+> Latest reel/control/presentation rules: [REEL_AND_FISHER_CORRECTION.md](REEL_AND_FISHER_CORRECTION.md). Supersedes earlier spool, camera and snapshot descriptions below.
+
 > Current resource/AI rules: [CONTINUOUS_DRIVE_POLISH.md](CONTINUOUS_DRIVE_POLISH.md). This supersedes historical lump-cost Drive/Overdrive and conservative pump descriptions below.
 
 > Current Drive/lateral pass: [DRIVE_AND_LATERAL.md](DRIVE_AND_LATERAL.md). Renewable Drive bursts, intentional Overdrive, radial effort cost, boat-relative burst telemetry and Power Reel interruption. Snapshot sizes: **51 Fish / 64 Fisher**.

@@ -17,7 +17,7 @@ enum Outcome { NONE, MISSED, LINE_BROKE, THROWN, LANDED, DISCONNECT, SPOOLED }
 @export var rod_horizontal_degrees: float = 75
 @export var rod_up_degrees: float = 55
 @export var rod_down_degrees: float = 40
-@export var rod_response: float = 5
+@export var rod_response: float = 14
 @export var rod_length: float = 3
 @export var rod_bend: float = 0.65
 @export var slack_tolerance: float = 0.5
@@ -113,6 +113,7 @@ var spike: float = 0
 var landing_time: float = 0
 var _jerk_held: bool = false
 var hook_snap_time: float = -1
+@export var hook_snap_anticipation: float = 0.06
 @export var hook_snap_rise: float = 0.18
 @export var hook_snap_hold: float = 0.12
 @export var hook_snap_return: float = 0.25
@@ -141,7 +142,6 @@ func _ready() -> void:
 	fish.endurance = fish.stamina_capacity
 	fish.fight_regen_scale = 1
 	_previous_heading = fish.heading
-	rod_direction = Vector3.FORWARD.rotated(Vector3.UP,fisher.boat_yaw)
 	_jerk_held = fisher.command.jerk # Require a fresh deliberate press after the bite.
 	fish.feeding._dash_remaining = 0
 	fish.feeding.is_charging = false
@@ -255,7 +255,6 @@ func _physics_process(delta: float) -> void:
 		movement_load = alignment*fish.motion.propulsion*fish.acceleration*mass*propulsion_load_scale+directional_load+fish.motion.dive_power*35
 	var condition_before = spool.condition
 	spool.step(delta,fish.position.distance_to(neutral_tip),radial_speed,movement_load,(0.0 if power_recovery > 0 else input.retrieve),fisher.drag_setting,power_active,spike+turn_shock+fall_load(),rod_pull,rod_vertical)
-	recovery_total += maxf(0,-spool.line_rate)*delta
 	if check_spooled(): return
 	tension = spool.tension
 	condition = spool.condition
@@ -304,20 +303,23 @@ func _physics_process(delta: float) -> void:
 	if rng.randf() < 1-exp(-spool.break_hazard()*delta): finish(Outcome.LINE_BROKE); return
 
 func update_rod(delta: float) -> void:
-	if power_recovery > 0:
+	if phase in [Phase.CANDIDATE,Phase.METER]:
+		rod_horizontal = 0
+		rod_vertical = -0.15
+	elif power_recovery > 0:
 		rod_horizontal = lerpf(rod_horizontal,0,1-exp(-8*delta))
 		rod_vertical = lerpf(rod_vertical,-0.6,1-exp(-12*delta))
 	elif not fisher.vision_active:
 		rod_horizontal = lerpf(rod_horizontal,clampf(fisher.command.rod_horizontal,-1,1),1-exp(-rod_response*delta))
 		rod_vertical = lerpf(rod_vertical,clampf(fisher.command.rod_vertical,-1,1),1-exp(-rod_response*delta))
-	var forward = BaitMotion.horizontal(fish.position-fisher.position)
+	var forward = Vector3.FORWARD.rotated(Vector3.UP,fisher.boat_yaw)
 	var yaw = FishInput.angles(forward).y-deg_to_rad(rod_horizontal_degrees)*rod_horizontal
 	var pitch = deg_to_rad(rod_up_degrees if rod_vertical >= 0 else rod_down_degrees)*rod_vertical
 	if hook_snap_time >= 0:
 		hook_snap_time += delta
 		var weight = hook_snap_weight(hook_snap_time)
 		pitch = lerpf(pitch,deg_to_rad(60),weight)
-		if hook_snap_time >= hook_snap_rise+hook_snap_hold+hook_snap_return: hook_snap_time = -1
+		if hook_snap_time >= hook_snap_anticipation+hook_snap_rise+hook_snap_hold+hook_snap_return: hook_snap_time = -1
 	if rod_sweep_time >= 0:
 		rod_sweep_time += delta
 		yaw -= rod_sweep_side*deg_to_rad(32)*sin(PI*clampf(rod_sweep_time/0.32,0,1))
@@ -390,6 +392,8 @@ func after_fish_move(delta: float) -> void:
 		return
 	if phase < Phase.IMPACT or phase == Phase.FINISHED: return
 	spool.sync_distance(fish.position.distance_to(neutral_tip),delta)
+	recovery_total += spool.actual_recovery*delta
+	tension = spool.tension
 	if check_spooled(): return
 	if phase == Phase.FIGHT and landing_ready():
 		landing_time += delta
@@ -407,18 +411,21 @@ func resistance_load(propulsion: float, effort: float, leverage: float, mass: fl
 func directional_wear_rate(drive: float, run: float, propulsion: float, leverage: float, pressure: float) -> float:
 	return directional_wear_scale*clampf((drive-0.6)/0.4,0,1)*clampf(run,0,1)*clampf(propulsion-0.9,0,1)*clampf(leverage,0,1)*clampf((pressure-spool.wear_start)/0.35,0,1)
 
+func required_jerk(heading: Vector3, outward: Vector3, right: Vector3) -> int:
+	if fish.airborne or fish.motion.falling or (fish.motion.ascent_power > 0.1 and fish.velocity.y > 0): return RodGesture.Direction.NONE
+	if fish.motion.diving: return RodGesture.Direction.UP
+	if fish.motion.run_build <= 0.3 or not (fish.motion.powered_active or fish.motion.side_time > 0 or fish.motion.overdrive > 0): return RodGesture.Direction.NONE
+	var side = heading.dot(right)
+	if absf(side) > 0.25: return RodGesture.Direction.RIGHT if side < 0 else RodGesture.Direction.LEFT
+	return RodGesture.Direction.UP if heading.dot(outward) > 0.6 else RodGesture.Direction.NONE
+
+func counter_hint() -> int:
+	return required_jerk(fish.heading,(fish.position-neutral_tip).normalized(),BaitMotion.horizontal(fish.position-fisher.position).cross(Vector3.UP))
+
 func jerk_contest(direction: int, heading: Vector3, outward: Vector3, right: Vector3, contact: float) -> Vector2:
 	# x = line spike, y = control fraction. Wrong direction always loads the line.
-	var side = heading.dot(right)
-	var matched = false
-	var committed = fish.motion.run_build > 0.3 and fish.motion.swim_drive > 0.55
-	if fish.motion.diving:
-		matched = direction == RodGesture.Direction.UP
-	elif committed:
-		if absf(side) > 0.25:
-			matched = (side < 0 and direction == RodGesture.Direction.RIGHT) or (side > 0 and direction == RodGesture.Direction.LEFT)
-		else: matched = direction == RodGesture.Direction.UP and heading.dot(outward) > 0.6
-	if fish.airborne or fish.motion.falling or (fish.motion.ascent_power > 0.1 and fish.velocity.y > 0): matched = false
+	var expected = required_jerk(heading,outward,right)
+	var matched = expected != RodGesture.Direction.NONE and direction == expected
 	var late = counter_lateness()
 	var resistance = 25+fish.motion.propulsion*15+fish.motion.swim_drive*12+fish.motion.overdrive*30+fish.motion.dive_power*20
 	var force = jerk_counter_force*(0.65+0.35*rod_pull)
@@ -437,11 +444,11 @@ func apply_directional_jerk(direction: int, outward: Vector3, right: Vector3, co
 	var result = jerk_contest(direction,fish.heading,outward,right,contact)
 	spike = maxf(spike,result.x)
 	if result.y <= 0: return
-	var maneuver = "DIVE" if fish.motion.diving else "OVERDRIVE" if fish.motion.overdrive > 0 else "SIDE_BURST" if fish.motion.side_time > 0 else "RUN"
+	var maneuver = "DIVE" if fish.motion.diving else "SIDE_BURST" if fish.motion.side_time > 0 else "RUN"
 	var timing = counter_lateness()
 	var impulse_direction = (Vector3.UP-outward*0.6).normalized() if maneuver == "DIVE" else -outward
 	apply_counter_recovery(maneuver,result.y,impulse_direction,timing)
-	if interruption > 0: fisher.session.publish_fight_counter(fish,fisher,interruption)
+	if interruption > 0: fisher.session.publish_fight_counter(fish,fisher,interruption,result.y)
 	if fisher.session.batch_runner != null: fisher.session.batch_runner.telemetry.record_counter(self)
 
 func counter_lateness() -> float:
@@ -451,11 +458,11 @@ func counter_lateness() -> float:
 
 func apply_counter_recovery(maneuver: String, effectiveness: float, impulse: Vector3, lateness: float) -> void:
 	# No line-length awards: gain comes from recoil, lost propulsion and real pull.
-	last_counter = {"maneuver":maneuver,"counter_timing":lateness,"effectiveness":effectiveness,
+	last_counter = {"maneuver":maneuver,"overdrive_powered":fish.motion.overdrive > 0,"counter_timing":lateness,"effectiveness":effectiveness,
 		"endurance_before":fish.endurance,"stamina_before":fish.stamina,
 		"distance_before":fish.position.distance_to(neutral_tip),"line_out_before":spool.line_out}
 	var dive = maneuver == "DIVE"
-	var overdrive = maneuver == "OVERDRIVE"
+	var overdrive = fish.motion.overdrive > 0
 	var damage = dive_counter_endurance if dive else overdrive_counter_endurance if overdrive else run_counter_endurance
 	fish.stamina = maxf(0,fish.stamina-(dive_counter_stamina_damage if dive else jerk_damage)*effectiveness)
 	fish.fatigue(damage*effectiveness)
@@ -466,12 +473,12 @@ func apply_counter_recovery(maneuver: String, effectiveness: float, impulse: Vec
 		if dive: fish.motion.interrupt_dive()
 		var recovery = fish.motion.dive_recovery_duration if dive else fish.motion.overdrive_recovery_duration if overdrive else fish.motion.counter_recovery_duration
 		fish.motion.interrupt_run(recovery,true)
-		if maneuver == "RUN":
+		if not dive:
 			# A bounded oblique recoil displaces leverage without snapping heading.
 			var right = BaitMotion.horizontal(fish.position-fisher.position).cross(Vector3.UP)
 			var side = -signf(rod_horizontal) if absf(rod_horizontal) > 0.1 else (1.0 if fish.heading.dot(right) >= 0 else -1.0)
 			fish.velocity += right*side*counter_impulse*effectiveness
-			fish.head.knock(Vector2(0,side*deg_to_rad(24)),0.35)
+			fish.head.knock(Vector2(0,side*deg_to_rad(30)),0.45)
 		interruption = 3 if dive else 2 if overdrive else 1
 	else:
 		# Late but correct input earns partial physical relief, not a binary stun.
@@ -489,6 +496,7 @@ func fall_load() -> float:
 	return speed*speed*0.7*clampf(fish.motion.jump_severity,0,2)*clampf(1-spool.slack/slack_tolerance,0,1)
 
 func hook_snap_weight(time: float) -> float:
+	time = maxf(0,time-hook_snap_anticipation)
 	if time < hook_snap_rise: return smoothstep(0,hook_snap_rise,time)
 	return 1-smoothstep(hook_snap_rise+hook_snap_hold,hook_snap_rise+hook_snap_hold+hook_snap_return,time)
 

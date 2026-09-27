@@ -59,7 +59,7 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 		var resting = action == FightDecisions.FishAction.REST
 		var energy = fish.stamina/maxf(1,fish.endurance)
 		run_pause = maxf(0,run_pause-delta)
-		if run_committed and (resting or fish.motion.drive_spent-run_spent_start >= run_budget or fish.motion.drive_lockout > 0):
+		if run_committed and (resting or (fish.motion.drive_spent-run_spent_start >= run_budget and side_hold <= 0 and fish.motion.side_time <= 0) or fish.motion.drive_lockout > 0):
 			run_committed = false
 			run_pause = 1.0
 		if not run_committed and not resting and run_pause <= 0 and fish.motion.swim_drive >= 0.95:
@@ -86,16 +86,17 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 			aim = aim.rotated(Vector3.UP,stroke_side*deg_to_rad(24))
 		side_wait = maxf(0,side_wait-delta)
 		side_hold = maxf(0,side_hold-delta)
-		if action in [FightDecisions.FishAction.RUN,FightDecisions.FishAction.LEFT,FightDecisions.FishAction.RIGHT] and sprint and fish.motion.swim_drive >= fish.motion.side_burst_drive and not fish.airborne:
+		if action in [FightDecisions.FishAction.RUN,FightDecisions.FishAction.LEFT,FightDecisions.FishAction.RIGHT] and sprint and (fish.motion.swim_drive >= fish.motion.side_burst_drive or side_hold > 0) and not fish.airborne:
 			if side_wait <= 0 and fish.motion.side_wait <= 0:
 				var side = -1 if execution_rng.randf() < 0.5 else 1
 				side_aim = side_burst_aim(BaitMotion.horizontal(fish.position-f.fisher.position),side)
 				var edge = session.world.arena_width*0.5-8
 				var projected = fish.position+side_aim*16
 				if absf(projected.x) > edge or absf(projected.z) > edge: side_aim = side_burst_aim(BaitMotion.horizontal(fish.position-f.fisher.position),-side)
-				side_hold = 0.9
+				side_hold = 1.2
 				side_wait = execution_rng.randf_range(3,5)
-			if side_hold > 0: aim = side_aim
+			if side_hold > 0:
+				aim = side_aim.rotated(Vector3.UP,stroke_side*deg_to_rad(14))
 		else: side_hold = 0
 		var input = FishInput.new(0.25 if resting else 1,0,0,aim,sprint)
 		input.vertical = 1 if action == FightDecisions.FishAction.JUMP and not fish.airborne and fish.motion.jump_recovery <= 0 else 0

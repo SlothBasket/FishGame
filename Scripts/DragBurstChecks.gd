@@ -9,11 +9,13 @@ func _init() -> void:
 		var line = FightLine.new()
 		line.line_out = 40
 		line.step(1.0/60,40,0,20,0.5,0.4,power,100)
-		check(line.slipping and line.payout > 0 and line.payout <= 14,"Transient starts finite payout immediately; power=%s payout=%.2f" % [power,line.payout])
+		check(line.payout == 0,"Transient cannot deploy line without actual separation; power=%s payout=%.2f" % [power,line.payout])
 	var huge = FightLine.new()
 	huge.line_out = 40
-	for i in range(30): huge.step(1.0/60,40+(i+1)*0.5,30,200,1,0.4,true,120)
-	check(huge.payout <= 14.001 and huge.payout > 13 and huge.tension > huge.break_threshold() and huge.break_hazard() > 0,"30 m/s separation overwhelms finite 14 m/s payout")
+	for i in range(30):
+		huge.step(1.0/60,40+i*0.5,30,200,1,0.4,true,120)
+		huge.sync_distance(40+(i+1)*0.5,1.0/60)
+	check(huge.payout <= huge.payout_speed_limit+0.001 and huge.payout > 0 and huge.tension > huge.break_threshold() and huge.break_hazard() > 0,"30 m/s separation overwhelms drag-dependent finite payout")
 	var f = FightSession.new()
 	var fish = FishPlayer.new()
 	fish.feeding = FishFeeding.new(fish)
@@ -32,8 +34,8 @@ func _init() -> void:
 	f.sync_pre_hook_line()
 	check(is_zero_approx(f.spool.distance+f.spool.rod_take_up-f.spool.line_out) and f.spool.tension == 0,"Pre-hook geometry stays unloaded")
 	f.hook_snap_time = 0
-	for i in range(12): f.update_rod(1.0/60)
-	check(f.rod_direction.y > 0.8 and f.rod_tip.y > f.rod_hand.y+2,"Actual rod geometry snaps upward in 0.2 s")
+	for i in range(15): f.update_rod(1.0/60)
+	check(f.rod_direction.y > 0.8 and f.rod_tip.y > f.rod_hand.y+2,"Actual rod geometry snaps upward after anticipation")
 	# Use the AI's actual input path, seeded once for each chosen legal side.
 	var found: Dictionary = {}
 	for seed_value in range(12):
