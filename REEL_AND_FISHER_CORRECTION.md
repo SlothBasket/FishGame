@@ -6,9 +6,9 @@ This is the current specification. It supersedes older descriptions of total-loa
 
 Units are explicit prototype force-equivalent units and metres/second, not pounds. Defaults:
 
-- `max_drag_force = 120`; drag resistance D = 120 * selected drag (linear).
-- Outward force accommodation C = `base_outward_capacity` (330) + `capacity_per_released_drag` (2) * (120 - D).
-- Finite payout speed = min(`maximum_payout` 14, C / `force_per_payout_speed` 40). Full drag permits 8.25 m/s, half drag 11.25 m/s, free spool 14 m/s (absolute cap).
+- `max_drag_force = 110`; drag resistance D = 110 * selected drag (linear).
+- Outward force accommodation C = `base_outward_capacity` (330) + `capacity_per_released_drag` (2) * (110 - D).
+- Finite payout speed = min(`maximum_payout` 14, C / `force_per_payout_speed` 40). Full drag permits 8.25 m/s, half drag 11 m/s, free spool 13.75 m/s.
 - Raw load R = max(Fish movement force, elastic extension * 22) + transient jerk/fall/turn load.
 - Connected tension = min(R, D) + max(0, R - D - C), with a separate lower bound for stretch beyond the 2.5 m safety allowance. Slack removes contact. Fish force and drag are opposing, never simply added.
 
@@ -79,3 +79,15 @@ FisherControls permits safe pumps from 8 m outward when recovery is below 0.8 m/
 Maximum reel drag increased 110 -> 120 (about 9%); line strength and break rules are unchanged. Shared `FightLine.rod_pull_acceleration` increased 8 -> 20. Actual assistance is still multiplied by clamp((holding threshold - Fish load) / holding threshold, 0, 1), requires loaded rod take-up/contact/positional error, and retains the 7 m/s target pull-speed cap. Thus correct rod pressure can overcome ordinary swimming, including the existing strongly moderated vertical line force, while an overpowering Fish gets no free inward movement. No hidden Fish stamina checks or deployed-line awards were added.
 
 Import passed and seven focused FisherSteadyChecks passed. Alternating pressure caused zero accidental jerks; one intentional counter produced one accepted jerk with the existing cooldown. In an eight-second controlled motor/spool fixture starting at 22 m, ordinary swimming ended at 3.81 m horizontally and 18.56 m on a steep downward line while pumping. Strong powered resistance still took line. These isolated results verify useful physical recovery, not a live-fight landing guarantee. No batch or long simulation was run for this follow-up. The user's AI-vs-AI editor launch setting was preserved.
+
+## Follow-up: reserved Drive force and jump recovery
+
+This supersedes the previous follow-up's strength increase: maximum drag returns to 110, and rod_pull_acceleration falls from 20 to 12 (originally 8). The smooth rod controls and safe pump decisions remain.
+
+FishFightMotion.stored_drive_force_bonus defaults to 0.20. Its factor is 1 + bonus * normalized stored Drive * endurance power capacity. FishPlayer applies it to forward motor acceleration and FishFightMotion applies it to the matching propulsion/load estimate. It adds no further top speed. Spending Drive, passive decay, or counter disruption reduces this reserve force immediately; sprint/Overdrive resource rules are unchanged. The existing 22% Drive movement multiplier remains separate. At healthy full reserve, ordinary acceleration is 12 * 1.22 * 1.20 = 17.568; half drag supplies 55 force units against nominal mass 3.2. Direction, rod leverage and remaining endurance still matter.
+
+FightLine now applies at least the selected spool resistance while a connected line moves outward. Previously a lagging/speed-scaled propulsion estimate could transmit less than drag resistance during payout, allowing a small motor advantage to accelerate into a large run. Slack still scales contact away; inward/stationary force and overload handling remain unchanged. No free line or scripted distance gain is added.
+
+FisherControls gives ascent, airborne, fall and meaningful slack priority over stale running/inefficient-retrieve observations. It requests low rod (-0.85) and full retrieve, with a conservative 20% request when the line is taut and tension dangerous. Existing Power eligibility is used for substantial safe slack. FightTestDriver cancels obsolete counter preparation, pumping and Vision; lowering uses 3 control units/s while lateral pressure retains 0.85. Retrieve starts immediately, without waiting for the rod to finish lowering. Human low-rod/full-retrieve uses the same spool physics; hook-throw rules are unchanged.
+
+Validation: import passed; DriveJumpChecks passed 11 focused checks after one failed initial force trial exposed the payout-resistance issue. A four-second isolated horizontal motor/spool fixture at half drag/full retrieve ended at 25.85 m from 22 m with fixed full reserve, versus 11.93 m with spent reserve. This isolates force contribution, not live-fight balance (reserve is held fixed, no AI turns or pump). Half a second of ordinary full retrieve captured 2.25 m of loose line. AI cancelled obsolete actions and lowered from full high to low within 2/3 second. No long simulation/batch; subjective jump counterplay and full-fight balance remain manual tests. Godot reported its existing root-certificate warning, with no script errors.

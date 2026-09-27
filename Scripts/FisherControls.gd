@@ -20,16 +20,17 @@ static func plan(seen: Dictionary, stamina: float) -> Dictionary:
 		result.drag = 0.50 if urgency > 0.65 else 0.45
 	elif danger >= 0.65:
 		result.drag = float(seen.get("drag",0.4)) # Hysteresis between safe and danger bands.
-	if fall:
-		result.vertical = -1.0
-		result.retrieve = 0.0 if risk > 0.5 or slack < 1 else 0.25
-		result.drag = 0.3
-		result.label = "ABSORB FALL"
-	elif ascent or slack > 0.8:
-		result.vertical = 0.1
-		result.retrieve = 1.0
-		result.power = slack > 1 and risk < 0.65 and stamina > 30
+	if fall or ascent or slack > 0.8:
+		# Slack capture supersedes stale outward-run/efficiency observations. Low
+		# rod protects the hook while the motor recovers physically loose line.
+		result.vertical = -0.85
+		result.retrieve = 1.0 if slack > 0.25 or danger < 0.85 else 0.2
+		result.power = slack > 1 and danger < 0.7 and stamina > 30
+		result.drag = 0.3 if fall else minf(result.drag,0.4)
 		result.label = "REEL SLACK"
+		result["stage"] = "JUMP / SLACK CAPTURE"
+		result["capture_slack"] = true
+		return result
 	else:
 		if dive or running:
 			result.vertical = 0.65 if dive else 0.2

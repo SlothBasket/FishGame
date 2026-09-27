@@ -275,7 +275,7 @@ func _physics_process(delta: float) -> void:
 		var speed = effective_swim_speed() * motion.multiplier() * (charge_swim_multiplier if feeding.is_charging else 1.0)
 		var response = (charge_response_multiplier if feeding.is_charging else 1.0)*(0.3 if head.impact_time > 0 else 1.0)
 		velocity = FishInput.next_velocity(velocity, heading, swim, speed, fight_boost_multiplier(),
-			reverse_speed_multiplier, acceleration * response * motion.multiplier() * (fight_boost_multiplier() if in_fight and boosting else 1.0), reverse_acceleration * response, water_drag * response, vertical_speed_multiplier, delta)
+			reverse_speed_multiplier, acceleration * response * motion.multiplier() * motion.stored_force_multiplier() * (fight_boost_multiplier() if in_fight and boosting else 1.0), reverse_acceleration * response, water_drag * response, vertical_speed_multiplier, delta)
 		if in_fight and motion.diving: velocity.y -= motion.dive_acceleration*motion.dive_power*delta
 		if in_fight and not airborne: velocity.y += motion.ascent_acceleration*motion.ascent_power*delta
 		apply_line_force(delta)

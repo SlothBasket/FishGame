@@ -335,4 +335,7 @@ Drag recording playback: `Scripts/ReelDragAudio.gd` owns local start/sustain/end
 
 AI feeding/test target: `FishFoodInterest` predicts prey movement, coasts for close turns, and holds a tunable 65–85% feeding charge until aligned. Host T toggles session-wide Fisher-lure priority through `NetworkSession`/`FightTestDriver`; see FISHER_EXPERIENCE.md. This only changes pre-fight input decisions.
 
-Steady Fisher follow-up: FightTestDriver separates slow pressure/preparation/return (0.85 units/s) from intentional flicks (8 units/s). FisherControls allows weak-recovery close pumps, and FightLine exposes maximum drag 120 plus leverage-scaled rod pull acceleration 20. See the follow-up section of REEL_AND_FISHER_CORRECTION.md.
+Steady Fisher follow-up: FightTestDriver separates slow pressure/preparation/return (0.85 units/s) from intentional flicks (8 units/s). FisherControls allows weak-recovery close pumps, and FightLine now exposes maximum drag 110 plus leverage-scaled rod pull acceleration 12. See the follow-up section of REEL_AND_FISHER_CORRECTION.md.
+
+
+Reserved Drive / jump recovery: FishFightMotion.stored_drive_force_bonus (0.20) adds force proportional to unspent Drive and endurance, shared by FishPlayer acceleration and estimated line load without another top-speed increase. FightLine applies selected drag resistance to outward connected motion even when the load estimate lags. FisherControls prioritizes low-rod/full-retrieve jump and slack capture over efficiency/run limits; FightTestDriver aborts stale actions and lowers at 3 units/s. See REEL_AND_FISHER_CORRECTION.md for formulas, values and bounded validation. Scripts/DriveJumpChecks.gd covers reserve force, delayed-observation overrides, rod response and actual slack recovery.

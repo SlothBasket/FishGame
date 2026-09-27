@@ -7,6 +7,7 @@ extends Resource
 @export var full_credit_window: float = 0.18
 @export var partial_credit_window: float = 0.48
 @export var decay_delay: float = 1.1
+@export var stored_drive_force_bonus: float = 0.20
 @export var drive_gain: float = 0.10
 @export var drive_decay: float = 0.055
 @export var drive_drain: float = 0.30
@@ -136,8 +137,12 @@ func step(delta: float, input: FishInput, heading: Vector3, speed_fraction: floa
 		ascent_power = move_toward(ascent_power,0,delta*0.4)
 	ascent_power = minf(ascent_power,power_capacity)
 	# Built speed and motor effort share a bounded budget; speed is not added twice.
-	var target = maxf(0,input.throttle)*(0.35+0.65*clampf(speed_fraction,0,1))*multiplier()*(1+run_build*0.6*power_capacity)*lerpf(0.3,1,power_capacity)
+	var target = maxf(0,input.throttle)*(0.35+0.65*clampf(speed_fraction,0,1))*multiplier()*stored_force_multiplier()*(1+run_build*0.6*power_capacity)*lerpf(0.3,1,power_capacity)
 	propulsion = lerpf(propulsion,target,1-exp(-delta/0.25))
+
+func stored_force_multiplier() -> float:
+	# Reserved Drive supplies passive force; spending/disruption gives it up.
+	return 1+stored_drive_force_bonus*clampf(swim_drive/maxf(0.01,sustainable_max),0,1)*power_capacity
 
 func multiplier() -> float:
 	return (1+0.22*maxf(swim_drive,powered_output)/maxf(0.01,sustainable_max)*power_capacity+overdrive)*(0.65 if counter_recovery > 0 else 1.0)

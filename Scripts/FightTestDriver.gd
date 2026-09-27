@@ -167,7 +167,10 @@ func fisher_input(actor: FisherActor, delta: float) -> FisherIntent:
 			input.jerk = false
 			gesture_wait = maxf(0,gesture_wait-delta)
 			# Ascent/air/fall abort preparation too: do not finish an obsolete UP jerk.
-			if plan.label in ["REEL SLACK","ABSORB FALL"]: gesture_phase = -1
+			if plan.label in ["REEL SLACK","ABSORB FALL"]:
+				gesture_phase = -1
+				pump_clock = 0
+				vision_remaining = 0
 			if gesture_phase < 0 and gesture_wait <= 0 and plan.jerk != Vector2.ZERO and not actor.vision_active and actor.stamina >= fight.jerk_cost and int(seen.get("maneuver_id",0)) != attempted_maneuver:
 				attempted_maneuver = int(seen.get("maneuver_id",0))
 				gesture_axis = plan.jerk
@@ -198,7 +201,11 @@ func fisher_input(actor: FisherActor, delta: float) -> FisherIntent:
 				if pump_clock >= 3.8: pump_clock = 0
 			else: pump_clock = 0
 			var rod_request = Vector2(input.rod_horizontal,input.rod_vertical)
-			steady_rod = steady_rod.move_toward(rod_request,(flick_rod_rate if intentional_flick else pressure_rod_rate)*delta)
+			if plan.get("capture_slack",false):
+				steady_rod.x = move_toward(steady_rod.x,rod_request.x,pressure_rod_rate*delta)
+				steady_rod.y = move_toward(steady_rod.y,rod_request.y,3.0*delta)
+			else:
+				steady_rod = steady_rod.move_toward(rod_request,(flick_rod_rate if intentional_flick else pressure_rod_rate)*delta)
 			input.rod_horizontal = steady_rod.x
 			input.rod_vertical = steady_rod.y
 			vision_cooldown = maxf(0,vision_cooldown-delta)
