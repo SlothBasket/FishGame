@@ -329,4 +329,4 @@ Validation: import passed; one bounded 30-second encounter, seed 12345 at 20x, p
 
 Drag recording playback: `Scripts/ReelDragAudio.gd` owns local start/sustain/end playback, payout-driven pitch, and camera muting. See the recorded drag audio section of FISHER_EXPERIENCE.md for source/segment boundaries and tunables.
 
-AI feeding/test target: `FishFoodInterest` predicts prey movement, coasts for close turns, and holds a tunable 65–85% feeding charge until aligned. Host F8 toggles session-wide Fisher-lure priority through `NetworkSession`/`FightTestDriver`; see FISHER_EXPERIENCE.md. This only changes pre-fight input decisions.
+AI feeding/test target: `FishFoodInterest` predicts prey movement, coasts for close turns, and holds a tunable 65–85% feeding charge until aligned. Host T toggles session-wide Fisher-lure priority through `NetworkSession`/`FightTestDriver`; see FISHER_EXPERIENCE.md. This only changes pre-fight input decisions.

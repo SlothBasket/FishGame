@@ -54,3 +54,5 @@ Validation for the pacing milestone: 97 checks passed. Standalone 75-second grap
 - Milestone identified by subject: `Add recorded reel drag with natural start loop and stop` â€” supplied ReelDrag.mp3 preserved, derived opening/middle loop and ending, payout-driven smoothed pitch, short crossfades, and local camera muting. Import passed; one bounded 12-second audio check passed eight start/loop/pitch/stop/restart/muting assertions. Headless shutdown reported object/resource cleanup warnings; no playback script errors. Listening/volume tuning left to manual playtesting. No combat changes.
 
 - Milestone identified by subject: `Add test bait priority and deliberate predictive AI feeding` — host F8 lure-priority toggle, close-turn coasting, velocity-led 65–85% feeding charges; unchanged fight physics. Import and 19 focused checks passed. Preserves the user-selected AI-vs-AI editor launch arguments.
+
+- Milestone identified by subject: `Move AI bait priority off editor stop shortcut` — changed the host test-bait toggle from F8 (Godot stops the running project) to T; updated on-screen hint and guides. No AI or gameplay changes.

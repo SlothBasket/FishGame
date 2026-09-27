@@ -142,11 +142,11 @@ func start(level: Node3D, fish: FishPlayer, args: PackedStringArray) -> void:
 		show_status("Connecting to %s:%d" % [address,port])
 
 func show_status(message: String) -> void:
-	if status != null: status.text = message+"\nF8 AI test-bait priority (host) | F10 disconnect"
+	if status != null: status.text = message+"\nT AI test-bait priority (host) | F10 disconnect"
 	print("NETWORK "+message)
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F8 and hosting and not closed:
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_T and hosting and not closed:
 		ai_test_bait_priority = not ai_test_bait_priority
 		for record in players.values():
 			if record.role == ROLE_FISH and record.ai != null:
