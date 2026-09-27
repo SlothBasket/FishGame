@@ -39,4 +39,16 @@ static func plan(seen: Dictionary, stamina: float) -> Dictionary:
 		else:
 			result.pump = risk < 0.65 and float(seen.get("outward_speed",0)) < 2 and slack < 0.8
 		result.vision = running and absf(side) < 0.5
+	# Strategic progress uses delayed geometry/line observations, never Fish energy.
+	var distance = float(seen.get("distance",100))
+	var safe = danger < 0.65 and condition > 0.8 and not running and not dive and not fall and not ascent
+	var opportunity = bool(seen.get("opportunity",false)) or bool(seen.get("counter_success",false))
+	result["stage"] = "LANDING PUSH" if distance < 15 else "CLOSE" if distance < 40 else "MID" if distance < 70 else "FAR"
+	if safe:
+		result.retrieve = 1.0 if distance < 40 or opportunity else 0.8
+		result.drag = 0.65 if distance < 15 and danger < 0.45 else 0.55 if distance < 40 or opportunity else 0.4
+		result.pump = distance >= 40 and slack < 0.8 and not opportunity
+		result.vertical = 0.4 if distance < 40 else result.vertical
+		result.power = stamina > 25 and (distance < 15 or opportunity) and danger < 0.55
+		result.label = result.stage if not opportunity else "CAPTURE OPENING"
 	return result

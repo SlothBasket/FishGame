@@ -7,23 +7,23 @@ extends Resource
 @export var full_credit_window: float = 0.18
 @export var partial_credit_window: float = 0.48
 @export var decay_delay: float = 1.1
-@export var overdrive_hold_time: float = 1.4
-@export var fast_cadence_scaling: float = 0.8
-@export var drive_gain: float = 0.18
+@export var drive_gain: float = 0.10
 @export var drive_decay: float = 0.055
-@export var drive_burst_cost: float = 0.75
-@export var drive_burst_threshold: float = 0.8
-@export var drive_burst_duration: float = 1.0
-@export var overdrive_cost: float = 0.65
-@export var overdrive_stamina_cost: float = 12
+@export var drive_drain: float = 0.30
+@export var overdrive_drive_drain: float = 0.48
+@export var drive_burst_threshold: float = 0.10 # UI readiness, not an activation price.
+@export var powered_rhythm_window: float = 0.62
 @export var overdrive_stamina_drain: float = 8
+var powered_active: bool = false
+var stamina_share: float = 0
+var powered_output: float = 0
+# Kept as a positive activity signal for existing snapshots, telemetry and VFX.
 var drive_burst_time: float = 0
 var drive_bursts: int = 0
 var overdrive_serial: int = 0
 var drive_gained: float = 0
 var drive_spent: float = 0
 var stamina_cost: float = 0
-var boost_was_held: bool = false
 @export var minimum_stroke_interval: float = 0.08
 @export var run_build_time: float = 0.6
 @export var dive_angle: float = 35
@@ -69,53 +69,53 @@ var drive_lockout: float = 0
 func step(delta: float, input: FishInput, heading: Vector3, speed_fraction: float, stamina: float, bottom: bool, measured_stroke: float = 0, capacity: float = 1, upward_speed: float = 0, fight_mode: bool = true) -> void:
 	power_capacity = clampf(capacity,0,1)
 	stamina_cost = 0
-	drive_burst_time = maxf(0,drive_burst_time-delta)
-	var boost_pressed = input.boost and not boost_was_held
-	boost_was_held = input.boost
+	var was_powered = powered_active
 	counter_recovery = maxf(0,counter_recovery-delta)
 	drive_lockout = maxf(0,drive_lockout-delta)
-	run_age = run_age+delta if input.boost and input.throttle > 0 and stamina > 1 else 0.0
 	stroke_age += delta
-	var had_overdrive = overdrive > 0
+	var wants_power = input.boost and input.throttle > 0 and counter_recovery <= 0 and drive_lockout <= 0
 	var axis = measured_stroke
 	var side = int(signf(axis)) if absf(axis) > 0.25 else 0
+	overdrive_remaining = maxf(0,overdrive_remaining-delta)
 	if input.throttle > 0 and side != 0 and side != last_side and stroke_age >= minimum_stroke_interval:
 		if last_side != 0 and drive_lockout <= 0:
 			var fast_boundary = ideal_stroke_interval-full_credit_window
-			if input.boost and stroke_age < fast_boundary and swim_drive >= overdrive_cost and stamina >= overdrive_stamina_cost+1 and overdrive <= 0 and counter_recovery <= 0:
-				var excess = clampf((fast_boundary-stroke_age)/maxf(0.01,fast_boundary-minimum_stroke_interval),0,1)
-				overdrive = power_capacity*overdrive_max*(0.6+0.4*clampf(excess*fast_cadence_scaling,0,1))
-				swim_drive -= overdrive_cost
-				drive_spent += overdrive_cost
-				stamina_cost += overdrive_stamina_cost
-				overdrive_serial += 1
-				drive_burst_time = 0
-				overdrive_remaining = overdrive_hold_time
+			var error = absf(stroke_age-ideal_stroke_interval)
+			var quality = 1-clampf((error-full_credit_window)/maxf(0.01,partial_credit_window-full_credit_window),0,1)
+			if wants_power and stroke_age < fast_boundary:
+				# Escalation is sustained by fast reversals, never purchased up front.
+				if overdrive_remaining <= 0: overdrive_serial += 1
+				overdrive_remaining = fast_boundary+0.10
 				cadence_grade = 2
 			else:
-				var error = absf(stroke_age-ideal_stroke_interval)
-				var quality = 1-clampf((error-full_credit_window)/maxf(0.01,partial_credit_window-full_credit_window),0,1)
-				var gain = minf(sustainable_max-swim_drive,drive_gain*quality) if drive_burst_time <= 0 and overdrive <= 0 else 0.0
+				# Exhausted Fish rebuild more slowly; no refill while demanding power.
+				var recovery = clampf(stamina/25.0,0.4,1.0)
+				var gain = minf(sustainable_max-swim_drive,drive_gain*quality*recovery) if not wants_power and not was_powered else 0.0
 				swim_drive += gain
 				drive_gained += gain
 				cadence_grade = 1 if error <= full_credit_window else 3
 		last_side = side
 		stroke_age = 0
-	if not had_overdrive and overdrive > 0: run_age = 0
-	if boost_pressed and input.throttle > 0 and swim_drive >= drive_burst_threshold and overdrive <= 0 and drive_lockout <= 0 and counter_recovery <= 0:
-		swim_drive -= drive_burst_cost
-		drive_spent += drive_burst_cost
-		drive_burst_time = drive_burst_duration
-		drive_bursts += 1
-		run_age = 0
-	overdrive_remaining = maxf(0,overdrive_remaining-delta)
-	if overdrive_remaining <= 0 or stamina <= 0:
-		overdrive = 0
-	overdrive = minf(overdrive,overdrive_max*power_capacity)
+	powered_active = wants_power and last_side != 0 and stroke_age <= powered_rhythm_window and (swim_drive > 0 or stamina > 1)
+	if not powered_active: overdrive_remaining = 0
+	var escalating = powered_active and overdrive_remaining > 0
+	stamina_share = 0
+	if powered_active:
+		var requested = (overdrive_drive_drain if escalating else drive_drain)*delta
+		var spent = minf(swim_drive,requested)
+		swim_drive -= spent
+		drive_spent += spent
+		stamina_share = 1-spent/maxf(0.000001,requested)
+		if not was_powered: drive_bursts += 1
+		if escalating: stamina_cost = overdrive_stamina_drain*stamina_share*delta
+	# Only the stamina-funded portion fades with exhaustion; base swim is unchanged.
+	powered_output = lerpf(1,clampf(stamina/15.0,0,1),stamina_share) if powered_active else 0.0
+	drive_burst_time = powered_output if powered_active else 0.0
+	overdrive = overdrive_max*power_capacity*powered_output if escalating else 0.0
 	var passive_decay = drive_decay if stroke_age > decay_delay else 0.0
 	swim_drive = maxf(0,swim_drive-passive_decay*delta)
-	run_build = move_toward(run_build,1 if input.boost and input.throttle > 0 and stamina > 0 and counter_recovery <= 0 else 0,delta/maxf(0.05,run_build_time))
-	if overdrive > 0: stamina_cost += overdrive_stamina_drain*delta
+	run_age = run_age+delta if powered_active else 0.0
+	run_build = move_toward(run_build,powered_output,delta/maxf(0.05,run_build_time))
 	if not input.boost: dive_blocked = false
 	if not fight_mode or not input.boost or stamina <= 1 or bottom or power_capacity <= 0.01 or heading.y > 0.25 or counter_recovery > 0:
 		diving = false
@@ -134,7 +134,7 @@ func step(delta: float, input: FishInput, heading: Vector3, speed_fraction: floa
 	propulsion = lerpf(propulsion,target,1-exp(-delta/0.25))
 
 func multiplier() -> float:
-	return (1+0.22*maxf(swim_drive,1 if drive_burst_time > 0 else 0)/maxf(0.01,sustainable_max)*power_capacity+overdrive)*(0.65 if counter_recovery > 0 else 1.0)
+	return (1+0.22*maxf(swim_drive,powered_output)/maxf(0.01,sustainable_max)*power_capacity+overdrive)*(0.65 if counter_recovery > 0 else 1.0)
 
 func interrupt_dive() -> void:
 	diving = false
@@ -145,6 +145,8 @@ func interrupt_dive() -> void:
 func interrupt_run(recovery: float = -1, disrupt_drive: bool = false) -> void:
 	overdrive = 0
 	overdrive_remaining = 0
+	powered_active = false
+	powered_output = 0
 	drive_burst_time = 0
 	run_build = 0
 	propulsion *= 0.5
@@ -221,7 +223,7 @@ func steer_burst(delta: float, input: FishInput, heading: Vector3, allowed: bool
 		side_lateral_displacement = 0
 		side_radial_displacement = 0
 	if side_time > 0:
-		var committed = FishInput.new(input.throttle,0,input.vertical,side_target,true,input.bite_held)
+		var committed = FishInput.new(input.throttle,0,input.vertical,side_target,input.boost,input.bite_held)
 		committed.cancel_bite = input.cancel_bite
 		return committed
 	return input

@@ -53,7 +53,7 @@ func run() -> void:
 	fish.feeding.is_charging = true
 	fish.feeding._charge_time = fish.full_charge_time*0.3
 	var charge = food.input(fish,[lure],132,32,0.016)
-	check(charge.bite_held and not charge.cancel_bite,"Charge continues beyond old quarter-power release")
+	check(charge.bite_held and not charge.cancel_bite and charge.throttle >= 0.65,"Charge continues beyond old quarter-power release")
 	fish.feeding._charge_time = fish.full_charge_time*0.8
 	charge = food.input(fish,[lure],132,32,0.016)
 	check(not charge.bite_held and not charge.cancel_bite,"Aligned charged attack releases")
@@ -61,7 +61,7 @@ func run() -> void:
 	lure.position = fish.position+fish.heading.cross(Vector3.UP)*3
 	food.state = FishFoodInterest.State.APPROACH
 	var turn = food.input(fish,[lure],132,32,0.016)
-	check(turn.throttle < 0.1,"Close sideways target causes coasting instead of orbiting propulsion")
+	check(turn.throttle >= 0.65,"Imperfect alignment keeps meaningful approach propulsion")
 	food.set_lure_priority(false)
 	lure.position = fish.position+fish.heading*80
 	check(food.choose(fish,[lure]) == null,"Toggle off restores natural awareness limit")
@@ -75,8 +75,8 @@ func run() -> void:
 	check(driver.cast_serial == 0,"No early cast during pause")
 	driver.fisher_input(owner,0.2)
 	check(driver.cast_serial == 1,"AI casts after pause expires")
-	var points = FishingPresentation.visual_path(Vector3(0,0,10),Vector3(0,0,-1.25),Vector3.ZERO,0.85,Vector3.RIGHT,0)
-	check(points[-1].is_equal_approx(Vector3(0,0,-1.25)) and points.size() > 17,"Mouth endpoint with flank routing when body crosses line")
+	var points = FishingPresentation.visual_path(Vector3(0,0,10),Vector3(0,0,-1.25),0)
+	check(points[-1].is_equal_approx(Vector3(0,0,-1.25)) and points.size() > 17,"Smooth mouth attachment without angular flank corners")
 	var gear = FishingPresentation.new()
 	world.add_child(gear)
 	var cam = Camera3D.new()

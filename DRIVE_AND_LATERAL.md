@@ -1,16 +1,12 @@
 # Renewable Drive and real lateral movement
 
+> Current resource/AI rules: [CONTINUOUS_DRIVE_POLISH.md](CONTINUOUS_DRIVE_POLISH.md). This supersedes historical lump-cost Drive/Overdrive and conservative pump descriptions below.
+
 This pass uses the user's 500-fight report (381 landings, 106 throws, 12 breaks, 1 spool-out) and manual observations. It does not target an AI win percentage. Line strength/hazard, drag, capacity, landing geometry, Jump decision frequency, rod lift and pump accounting are preserved.
 
 ## Player resource rules
 
-Keep building Swim Drive with the existing alternating physical strokes. Building a full bar alone spends no stamina. Press the existing sprint control while moving forward with at least **0.80 Drive**: a **1.0 s normal Drive burst** spends **0.75 Drive** immediately (a full bar leaves 0.25). Hold sprint through that second to use its propulsion. Continuing sprint afterward is deliberate stamina-funded extension. Release/repress after rebuilding to start another normal burst; holding the button does not repeatedly auto-spend full bars.
-
-For Overdrive, hold sprint and perform a fast measured stroke reversal (existing fast cadence window), with at least **0.65 Drive and 13 stamina**. It spends **0.65 Drive + 12 stamina** at activation, lasts **1.4 s**, and adds **8 stamina/s** alongside ordinary paid sprint. This is stronger/longer than the normal Drive burst. Fast strokes while not sprinting build Drive rather than forcing escalation. No Drive builds while a burst/Overdrive is active. Passive Drive decay and counter disruption remain.
-
-All tunables and resource clocks are in `FishFightMotion`; actual energy deductions are in `FishPlayer`. Normal Drive propulsion has zero direct sprint/Overdrive stamina cost; rod resistance, a Dive/ascent or an enemy counter can still affect stamina. Existing free opening-run rules remain. Stamina exhaustion does not prevent using sufficient stored Drive. Normal swimming and steering remain available.
-
-Drive now builds outside fights using the same measured head/body stroke path. Motion stepping is shared; fight-only Dive/ascent logic remains gated. The fight no longer resets Swim Drive on the bite. Fish carry only the Drive they legitimately built. The optional AI pre-bait naturalism expansion was left out.
+Drive now builds/spends continuously; see CONTINUOUS_DRIVE_POLISH.md for rates, stamina fallback and AI budgets. The old fixed 0.75 Drive burst and 0.65 Drive + 12 stamina Overdrive activation were removed. Shared measured strokes, radial energy cost, lateral geometry and Power ordering remain.
 
 ## Resistance-dependent energy cost
 

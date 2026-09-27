@@ -56,3 +56,5 @@ Validation for the pacing milestone: 97 checks passed. Standalone 75-second grap
 - Milestone identified by subject: `Add test bait priority and deliberate predictive AI feeding` — host F8 lure-priority toggle, close-turn coasting, velocity-led 65–85% feeding charges; unchanged fight physics. Import and 19 focused checks passed. Preserves the user-selected AI-vs-AI editor launch arguments.
 
 - Milestone identified by subject: `Move AI bait priority off editor stop shortcut` — changed the host test-bait toggle from F8 (Godot stops the running project) to T; updated on-screen hint and guides. No AI or gameplay changes.
+
+- Milestone identified by subject: `Make Drive continuous and give Fisher AI close-out priorities` — continuous Drive-first power, stamina fallback, slower recovery, varied AI commitments, delayed observable landing pressure, moving feeding charges, and solid mouth-attached line. See CONTINUOUS_DRIVE_POLISH.md for values and bounded validation.

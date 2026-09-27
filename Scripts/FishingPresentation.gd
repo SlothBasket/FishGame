@@ -8,7 +8,6 @@ var line: MeshInstance3D
 var material: ShaderMaterial
 var audio: ReelDragAudio
 var travel: float = 0
-var wrap_side: Vector3 = Vector3.RIGHT
 var last_points: Array[Vector3] = []
 func _ready() -> void:
 	reel = Node3D.new()
@@ -33,25 +32,13 @@ func _ready() -> void:
 static func edge_camera(origin: Vector3, forward: Vector3) -> Vector3:
 	return origin+Vector3.UP*2.05-forward*0.85+forward.cross(Vector3.UP)*0.75
 
-static func visual_path(tip: Vector3, mouth: Vector3, center: Vector3, radius: float, side: Vector3, slack: float) -> Array[Vector3]:
-	var route: Array[Vector3] = [tip]
-	var closest = FishFeeding.closest_point(tip,mouth,center)
-	if radius > 0 and closest.distance_to(center) < radius and tip.distance_to(center) > radius:
-		# Stable flank bypass, with two support points around the body sphere.
-		var toward = (tip-center).normalized()
-		var flank = side-toward*side.dot(toward)
-		if flank.length_squared() < 0.01: flank = toward.cross(Vector3.UP)
-		if flank.length_squared() < 0.01: flank = Vector3.RIGHT
-		flank = flank.normalized()
-		route.append(center+toward*radius*1.2+flank*radius*1.35)
-		route.append(center+(mouth-center).normalized()*radius*1.2+flank*radius*1.35)
-	route.append(mouth)
+static func visual_path(tip: Vector3, mouth: Vector3, slack: float) -> Array[Vector3]:
+	# Clean mouth attachment beats a visibly angular approximate body wrap.
+	# This local ribbon has no influence on authoritative line geometry.
 	var points: Array[Vector3] = []
-	for segment in range(route.size()-1):
-		for i in range(17):
-			var t = i/16.0
-			var sag = minf(6,slack*0.4) if segment == 0 else 0.0
-			points.append(route[segment].lerp(route[segment+1],t)-Vector3.UP*sin(PI*t)*sag)
+	for i in range(33):
+		var t = i/32.0
+		points.append(tip.lerp(mouth,t)-Vector3.UP*sin(PI*t)*minf(6,slack*0.4))
 	return points
 
 func update_view(delta: float, camera: Camera3D, hand: Vector3, rod: Vector3, tip: Vector3, target: Vector3, fish: FishPlayer, slack: float, line_rate: float, payout: float, retrieve_speed: float, active: bool, audible: bool) -> void:
@@ -63,16 +50,10 @@ func update_view(delta: float, camera: Camera3D, hand: Vector3, rod: Vector3, ti
 	material.set_shader_parameter("travel",travel)
 	line.visible = active
 	var mouth = target
-	var center = target
-	var radius = 0.0
 	if is_instance_valid(fish):
 		mouth = fish.mouth_position()
-		center = fish.global_position
-		radius = fish.size_multiplier()*0.85
-		var right = fish.heading.cross(Vector3.UP).normalized()
-		# Keep the chosen side through small heading changes to avoid wrap flicker.
-		if absf((tip-center).normalized().dot(right)) > 0.25: wrap_side = right*signf((tip-center).dot(right))
-	last_points = visual_path(tip,mouth,center,radius,wrap_side,slack)
+
+	last_points = visual_path(tip,mouth,slack)
 	var mesh: ImmediateMesh = line.mesh
 	mesh.clear_surfaces()
 	if active:

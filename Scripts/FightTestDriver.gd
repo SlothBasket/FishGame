@@ -16,8 +16,21 @@ var cast_serial: int = 0
 var cast_sent: bool = false
 var stroke_clock: float = 0
 var stroke_side: float = 1
-var burst_remaining: float = 0
 var run_committed: bool = false
+var run_budget: float = 0
+var run_spent_start: float = 0
+var run_pause: float = 0
+var progress_window: float = 0
+var power_push: float = 0
+var power_pause: float = 0
+var was_observed_run: bool = false
+
+func choose_run_budget(major: bool = false) -> float:
+	var roll = execution_rng.randf()
+	if major or roll > 0.85: return execution_rng.randf_range(0.9,1.0)
+	if roll < 0.2: return execution_rng.randf_range(0.4,0.6)
+	return execution_rng.randf_range(0.65,0.85)
+
 var vision_remaining: float = 0
 var vision_cooldown: float = 0
 var drag_wait: float = 0
@@ -45,15 +58,18 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 		aim = FightDecisions.heading_for(f,action)
 		var resting = action == FightDecisions.FishAction.REST
 		var energy = fish.stamina/maxf(1,fish.endurance)
-		if resting or energy < 0.28: run_committed = false
-		elif energy > 0.7 and fish.motion.swim_drive >= fish.motion.drive_burst_threshold: run_committed = true
-		var sprint = action == FightDecisions.FishAction.JUMP or run_committed or (not resting and f.spool.distance < 12 and energy > 0.4)
-		if fish.motion.drive_burst_time <= 0 and fish.motion.swim_drive < 0.3 and energy < 0.65: run_committed = false
-		burst_remaining = maxf(0,burst_remaining-delta)
-		if burst_remaining <= 0 and sprint and fish.motion.swim_drive > 0.85 and energy > 0.55 and (absf(fish.directional_pressure) > 0.2 or f.spool.line_rate > 0): burst_remaining = 1.5
-		# Bank Drive with efficient legal strokes, spend it during a strong run/turn.
+		run_pause = maxf(0,run_pause-delta)
+		if run_committed and (resting or fish.motion.drive_spent-run_spent_start >= run_budget or fish.motion.drive_lockout > 0):
+			run_committed = false
+			run_pause = 1.0
+		if not run_committed and not resting and run_pause <= 0 and fish.motion.swim_drive >= 0.95:
+			run_committed = true
+			run_budget = minf(fish.motion.swim_drive,choose_run_budget(f.spool.distance < 12))
+			run_spent_start = fish.motion.drive_spent
+		var sprint = run_committed
+		# Ordinary powered cadence spends Drive; major commitments escalate faster.
+		var cadence = (0.26 if run_budget >= 0.9 else 0.36) if sprint else fish.motion.ideal_stroke_interval
 		stroke_clock += delta
-		var cadence = (lerpf(0.29,0.25,f.fish_skill) if burst_remaining > 0 else fish.motion.ideal_stroke_interval)+(0.03+(1-f.fish_skill)*0.2)*sin(clock*2.7)
 		if stroke_clock >= cadence: stroke_clock = 0; stroke_side *= -1
 		if clock > next_lapse:
 			stroke_pause = lerpf(1.7,1.2,f.fish_skill)
@@ -121,14 +137,26 @@ func fisher_input(actor: FisherActor, delta: float) -> FisherIntent:
 		elif fight.phase == FightSession.Phase.METER: input.jerk = fight.meter < 0.75-(1-fight.fisher_skill)*0.3
 		else:
 			var seen = fight.perception.observation
-			var plan = FisherControls.plan(seen,actor.stamina)
+			progress_window = maxf(0,progress_window-delta)
+			power_push = maxf(0,power_push-delta)
+			power_pause = maxf(0,power_pause-delta)
+			var observed_run = float(seen.get("outward_speed",0)) > 3 or float(seen.get("payout",0)) > 2
+			if bool(seen.get("counter_success",false)) or (was_observed_run and not observed_run): progress_window = 2.5
+			was_observed_run = observed_run
+			var planning = seen.duplicate()
+			planning["opportunity"] = progress_window > 0
+			var plan = FisherControls.plan(planning,actor.stamina)
+			if plan.power and power_pause <= 0:
+				power_push = 0.9
+				power_pause = 3.5
+			plan.power = plan.power and power_push > 0
 			input.rod_horizontal = plan.horizontal*lerpf(0.75,1,fight.fisher_skill)
 			input.rod_vertical = plan.vertical
 			input.retrieve = plan.retrieve
 			input.power = plan.power
 			drag_wait -= delta
 			if drag_wait <= 0:
-				selected_drag = snappedf(move_toward(selected_drag,plan.drag,0.05),0.05)
+				selected_drag = snappedf(move_toward(selected_drag,plan.drag,0.20 if plan.drag < selected_drag else 0.05),0.05)
 				drag_wait = lerpf(1.4,0.9,fight.fisher_skill)
 			input.drag = selected_drag
 			input.jerk = false
@@ -153,10 +181,10 @@ func fisher_input(actor: FisherActor, delta: float) -> FisherIntent:
 				pump_clock = fmod(pump_clock+delta,3.8)
 				if pump_clock < 1.6:
 					input.rod_vertical = pump_clock/1.6
-					input.retrieve = 0.15
+					input.retrieve = 0.55
 				elif pump_clock < 2.0:
 					input.rod_vertical = 1
-					input.retrieve = 0.15
+					input.retrieve = 0.55
 				else:
 					input.rod_vertical = maxf(0,1-(pump_clock-2.0)/1.4)
 					input.retrieve = lerpf(0.65,1,fight.fisher_skill)

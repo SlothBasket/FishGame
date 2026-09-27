@@ -85,30 +85,34 @@ func input(fish: FishPlayer, candidates: Array, half_width: float, depth: float,
 			state = State.WANDER
 		else:
 			var direct = (target.position-fish.position).normalized()
-			if state == State.APPROACH and distance < 14 and fish.heading.dot(direct) > 0.75:
+			var dash_reach = lerpf(fish.minimum_lunge_distance,fish.maximum_lunge_distance,charge_goal)
+			var closing_speed = (fish.velocity-target.velocity).dot(direct)
+			var commit_reach = dash_reach+maxf(0,closing_speed)*charge_goal*fish.full_charge_time
+			if state == State.APPROACH and distance < commit_reach and fish.heading.dot(direct) > 0.6:
 				state = State.COMMIT
 				charge_goal = rng.randf_range(minimum_charge,maximum_charge)
 				commit_time = 0
 			var remaining = maxf(0,charge_goal*fish.full_charge_time-fish.feeding._charge_time) if state == State.COMMIT else 0.0
 			var aim = intercept_direction(fish,target,remaining)
-			# Only weave on a distant approach. Coast while turning to avoid orbiting
-			# a nearby target at a speed our legal turn rate cannot sustain.
+			# Keep moving through the wind-up; brake only for an imminent overshoot.
 			if state == State.APPROACH and distance > 18:
 				aim = aim.rotated(Vector3.UP,deg_to_rad(12)*stroke_side)
 			var alignment = fish.heading.dot(aim)
-			var throttle = 0.85 if distance > 18 else lerpf(0.0,0.45,clampf((alignment-0.6)/0.4,0,1))
+			var throttle = 0.85 if state == State.APPROACH else 0.7
+			var turn_radius = fish.velocity.length()/maxf(0.1,deg_to_rad(fish.forward_turn_rate))
+			if distance < maxf(2,turn_radius) and alignment < 0.4: throttle = 0.2
 			var attack = FishInput.new(throttle,0,0,aim,false,false)
 			if state == State.COMMIT:
 				commit_time += delta
-				if distance > 24 or fish.heading.dot(direct) < -0.1 or commit_time > fish.full_charge_time+1.0:
+				if distance > commit_reach*1.5 or fish.heading.dot(direct) < -0.1 or commit_time > fish.full_charge_time+1.0:
 					attack.cancel_bite = true
 					state = State.APPROACH
 				elif fish.feeding.is_charging:
 					# Hold the charge until both power and predicted heading are ready.
-					attack.bite_held = fish.feeding.charge_fraction() < charge_goal or alignment < 0.94
+					attack.bite_held = fish.feeding.charge_fraction() < charge_goal or alignment < 0.88
 					if not attack.bite_held: state = State.APPROACH
 				elif not fish.feeding.is_dashing() and fish.feeding.cooldown_remaining <= 0:
-					attack.bite_held = alignment > 0.8
+					attack.bite_held = alignment > 0.65
 			return attack
 
 	if wander_wait <= 0:

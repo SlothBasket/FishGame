@@ -15,11 +15,10 @@ static func run(fight: FightSession) -> bool:
 		mouse.step(0.48,stroke,Vector3.FORWARD,1,100,false,stroke.stroke_axis)
 	ok = verify(rhythm.swim_drive > 0.9 and is_equal_approx(mouse.swim_drive,rhythm.swim_drive) and is_equal_approx(both.swim_drive,rhythm.swim_drive),"Ideal keyboard/mouse cadence sustains the same non-stacking Drive") and ok
 	var stored = rhythm.swim_drive
-	rhythm.boost_was_held = true
 	for i in range(3): rhythm.step(0.16,FishInput.new(1,1 if i%2 == 0 else -1,0,Vector3.FORWARD,true),Vector3.FORWARD,1,100,false,1 if i%2 == 0 else -1)
 	ok = verify(rhythm.overdrive > 0 and rhythm.overdrive <= rhythm.overdrive_max and rhythm.swim_drive < stored,"Fast cadence gives bounded overdrive and consumes stored Drive") and ok
 	var run = FishFightMotion.new()
-	run.step(0.1,FishInput.new(1,0,0,Vector3.FORWARD,true),Vector3.FORWARD,1,100,false)
+	run.step(0.1,FishInput.new(1,0,0,Vector3.FORWARD,true),Vector3.FORWARD,1,100,false,1)
 	ok = verify(run.run_build > 0 and run.run_build < 0.3,"Sprint builds rather than switching instantly") and ok
 	var right = Vector3.RIGHT
 	var aligned = FightContest.evaluate(Vector3.LEFT,Vector3.FORWARD,right,-1,0)

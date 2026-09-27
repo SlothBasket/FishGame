@@ -285,7 +285,7 @@ func _physics_process(delta: float) -> void:
 	var drain = resistance_fatigue*(resistance+exertion*0.12)*pressure
 	# Resting is optional: ordinary swimming always retains net recovery. Correct
 	# rod resistance still taxes endurance and reduces (rather than erases) regen.
-	if not fish.boosting or fish.motion.drive_burst_time > 0: drain = minf(drain,fish.stamina_regen*fish.fight_regen_multiplier*0.5)
+	if not fish.boosting or (fish.motion.powered_active and fish.motion.stamina_share < 1): drain = minf(drain,fish.stamina_regen*fish.fight_regen_multiplier*0.5)
 	fish.stamina = maxf(0,fish.stamina-drain*delta)
 	fish.fight_pressure = tension/spool.strength
 	fish.fight_gain = spool.line_rate
