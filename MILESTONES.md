@@ -70,3 +70,6 @@ Milestone subject: `Make powered commitments readable and steady Fisher close-ou
 
 
 Milestone subject: `Calibrate endurance force and prioritize AI escape distance` - fresh 130 stamina/endurance with fixed 100 force reference, nonlinear fatigue and full-Drive reward, preserved payout accounting with higher line acceleration cap, committed side force, distance-defending AI, and right-side notices. Import, 19 focused checks, three short encounters and one graphical layout fixture; no large batch.
+
+
+Milestone subject: `Fix horizontal escape strategy and close-range Fisher dead zone` - XZ escape scoring/memory, legal terrain-aware bottom recovery, and reachable close-pressure drag targets. Import and 14 focused checks passed; fight physics/resource/counter systems unchanged.

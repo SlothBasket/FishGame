@@ -5,6 +5,7 @@ static func plan(seen: Dictionary, stamina: float) -> Dictionary:
 	var risk = float(seen.get("tension",0))/maxf(1,float(seen.get("strength",110)))
 	var slack = float(seen.get("slack",0))
 	var side = float(seen.get("side",0))
+	var distance = float(seen.get("distance",100))
 	var urgency = clampf((float(seen.get("line_out",0))/maxf(1,float(seen.get("capacity",150)))-0.5)/0.4,0,1)
 	var running = float(seen.get("outward_speed",0)) > 3 or float(seen.get("payout",0)) > 2
 	var fall = bool(seen.get("jump_fall",false))
@@ -17,9 +18,14 @@ static func plan(seen: Dictionary, stamina: float) -> Dictionary:
 	if danger > 0.85 or condition < 0.7 or dive or float(seen.get("shock",0)) > 35:
 		result.drag = 0.30 if danger > 1 or condition < 0.5 else 0.35
 	elif danger < 0.65 and condition > 0.8 and running:
-		result.drag = 0.50 if urgency > 0.65 else 0.45
+		result.drag = 0.65 if distance < 20 else 0.60 if distance <= 40 else 0.50 if urgency > 0.65 else 0.45
 	elif danger >= 0.65:
 		result.drag = float(seen.get("drag",0.4)) # Hysteresis between safe and danger bands.
+	# Close pressure uses geometry and observed risk, not far-spool urgency.
+	var close_pressure = distance <= 40 and condition > 0.8 and danger < 0.78 and not dive and float(seen.get("shock",0)) <= 35
+	if close_pressure and running:
+		result.drag = 0.65 if distance < 20 else 0.60
+		result["close_pressure"] = true
 	if fall or ascent or slack > 0.8:
 		# Slack capture supersedes stale outward-run/efficiency observations. Low
 		# rod protects the hook while the motor recovers physically loose line.
@@ -44,7 +50,6 @@ static func plan(seen: Dictionary, stamina: float) -> Dictionary:
 		var direction = int(seen.required_jerk)
 		result.jerk = Vector2(0,1) if direction == RodGesture.Direction.UP else Vector2(-1,0) if direction == RodGesture.Direction.LEFT else Vector2(1,0) if direction == RodGesture.Direction.RIGHT else Vector2.ZERO
 	# Strategic progress uses delayed geometry/line observations, never Fish energy.
-	var distance = float(seen.get("distance",100))
 	var safe = danger < 0.65 and condition > 0.8 and not running and not dive and not fall and not ascent
 	var opportunity = bool(seen.get("opportunity",false)) or bool(seen.get("counter_success",false))
 	result["stage"] = "LANDING PUSH" if distance < 20 else "CLOSE" if distance < 40 else "MID" if distance < 70 else "FAR"

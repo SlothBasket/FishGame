@@ -345,3 +345,6 @@ Current AI commitment/counter/camera rules: see COMMITMENT_AND_COUNTER_READABILI
 
 
 Current force/escape calibration: FORCE_AND_ESCAPE_PATCH.md documents 130 starting endurance, fixed 100 power reference, nonlinear exertion fatigue and stored Drive, meaningful high-drag acceleration, quality-based side force, escape-distance AI and right-side fading notices. These values supersede prior guides where they differ.
+
+
+Horizontal escape bugfix: FightDecisions.escape_distance is now the shared XZ-only strategic metric; RUN/REST are level. Terrain-layer clearance below 3 m triggers legal upward basic swimming until 4.5 m clear and blocks new Dive selection. Safe running Fish within 40 m receive 60% drag targets (65% within 20 m), with close-pressure final-step persistence. See FORCE_AND_ESCAPE_PATCH.md for precise gates and validation.

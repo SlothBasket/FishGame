@@ -21,6 +21,7 @@ var run_budget: float = 0
 var run_spent_start: float = 0
 var run_pause: float = 0
 var committed_action: int = 0
+var bottom_recovery: bool = false
 var best_escape_distance: float = 0
 var recent_escape_distance: float = 0
 var preserve_drive_until: float = 0
@@ -64,12 +65,12 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 	var aim = fish.heading
 	if is_instance_valid(fish.fight):
 		if not fish_was_fighting:
-			best_escape_distance = fish.position.distance_to(fish.fight.fisher.position)
+			best_escape_distance = FightDecisions.escape_distance(fish.position,fish.fight.fisher.position)
 			recent_escape_distance = best_escape_distance
 			preserve_drive_until = clock+2.5
 		fish_was_fighting = true
 		var f = fish.fight
-		var distance = fish.position.distance_to(f.fisher.position)
+		var distance = FightDecisions.escape_distance(fish.position,f.fisher.position)
 		best_escape_distance = maxf(best_escape_distance,distance)
 		recent_escape_distance = lerpf(recent_escape_distance,distance,1-exp(-delta/3.0))
 		var losing_ground = distance < recent_escape_distance-1 or distance < best_escape_distance-3
@@ -130,6 +131,7 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 		var input = FishInput.new(1,0,0,aim,sprint)
 		input.vertical = 1 if action == FightDecisions.FishAction.JUMP and not fish.airborne and fish.motion.jump_recovery <= 0 else 0
 		if fish.motion.jump_recovery > 0: input.boost = false; input.aim_direction.y = -0.25
+		input = avoid_bottom(input,fish,FightDecisions.bottom_clearance(fish))
 		input.cancel_bite = fish.feeding.is_charging
 		return input
 	if not food_seeded:
@@ -262,10 +264,21 @@ func persist_settings(plan: Dictionary, seen: Dictionary, delta: float) -> Dicti
 	var mode = "SLACK" if plan.get("capture_slack",false) else "DANGER" if danger > 0.85 else "RUN" if float(seen.get("line_rate",0)) > 0.1 and float(seen.get("payout",0)) > 2 else "DIVE" if seen.get("descending",false) else "OPENING" if seen.get("opportunity",false) else "NORMAL"
 	if setting_wait <= 0 or mode != setting_mode:
 		held_retrieve = plan.retrieve
-		if absf(plan.drag-selected_drag) >= 0.09 or mode in ["DANGER","SLACK"]:
+		if absf(plan.drag-selected_drag) >= 0.09 or mode in ["DANGER","SLACK"] or (plan.get("close_pressure",false) and plan.drag > selected_drag+0.01):
 			selected_drag = snappedf(move_toward(selected_drag,plan.drag,0.2 if mode == "DANGER" else 0.1),0.05)
 		setting_wait = execution_rng.randf_range(1.5,2.5)
 		setting_mode = mode
 	plan.retrieve = held_retrieve
 	plan.drag = selected_drag
 	return plan
+
+# Last legal-input override: stale committed dives or shakes cannot pin the nose.
+func avoid_bottom(input: FishInput, fish: FishPlayer, clearance: float) -> FishInput:
+	if clearance < 3 or fish.touching_bottom(): bottom_recovery = true
+	elif clearance > 4.5: bottom_recovery = false
+	if not bottom_recovery: return input
+	input.aim_direction = (BaitMotion.horizontal(input.aim_direction)+Vector3.UP*0.8).normalized()
+	input.throttle = 1
+	input.vertical = 1
+	input.boost = false # Basic swimming must suffice, including at zero Drive.
+	return input
