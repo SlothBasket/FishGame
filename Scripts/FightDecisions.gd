@@ -28,7 +28,7 @@ static func fish_choice(f: FightSession, previous: int) -> int:
 		var heading = heading_for(f,i)
 		var point = fish.position+heading*12
 		var gain = escape_distance(point,f.fisher.position)-escape_distance(fish.position,f.fisher.position)
-		scores[i] += gain*0.65+minf(0,gain)*0.65+heading.dot(outward)*1.0
+		scores[i] += gain*0.06+heading.dot(outward)*0.2
 		# Compare the real resistance cost, not just outward metres gained.
 		if i in [FishAction.RUN,FishAction.LEFT,FishAction.RIGHT]:
 			scores[i] -= (FishFightMotion.opposition_cost(heading,outward,1)-1)*(2.0-energy)
@@ -37,6 +37,7 @@ static func fish_choice(f: FightSession, previous: int) -> int:
 			scores[i] -= maxf(0,absf(point.x)-edge)+maxf(0,absf(point.z)-edge)
 	var order = [0,1,2,3,4,5]
 	order.sort_custom(func(a,b): return scores[a] > scores[b])
+	if f.rng.randf() < (1-f.fish_skill)*0.35 and scores[order[1]] > scores[order[0]]-1: return order[1]
 	return order[0]
 
 static func heading_for(f: FightSession, action: int) -> Vector3:

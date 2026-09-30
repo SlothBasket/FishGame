@@ -73,3 +73,6 @@ Milestone subject: `Calibrate endurance force and prioritize AI escape distance`
 
 
 Milestone subject: `Fix horizontal escape strategy and close-range Fisher dead zone` - XZ escape scoring/memory, legal terrain-aware bottom recovery, and reachable close-pressure drag targets. Import and 14 focused checks passed; fight physics/resource/counter systems unchanged.
+
+
+Milestone subject: `Restore fight variety and expose authoritative line load` - remove distance-record planner, restore earlier Fish fight input behavior with depth safety, align powered motor/load factors, and add authoritative debug force comparisons. Import and one seven-second graphical smoke only; no batches.

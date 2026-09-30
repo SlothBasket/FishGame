@@ -138,8 +138,9 @@ func step(delta: float, input: FishInput, heading: Vector3, speed_fraction: floa
 	else:
 		ascent_power = move_toward(ascent_power,0,delta*0.4)
 	ascent_power = minf(ascent_power,power_capacity)
-	# Built speed and motor effort share a bounded budget; speed is not added twice.
-	var target = maxf(0,input.throttle)*(0.35+0.65*clampf(speed_fraction,0,1))*multiplier()*stored_force_multiplier()*(1+run_build*0.6*power_capacity)*lerpf(0.3,1,power_capacity)
+	# Base effort carries movement and stored Drive once; FightSession applies the
+	# same powered force multiplier as the physical motor, not a second boost curve.
+	var target = maxf(0,input.throttle)*(0.35+0.65*clampf(speed_fraction,0,1))*multiplier()*stored_force_multiplier()
 	propulsion = lerpf(propulsion,target,1-exp(-delta/0.25))
 
 func stored_force_multiplier() -> float:

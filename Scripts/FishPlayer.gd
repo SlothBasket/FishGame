@@ -73,7 +73,8 @@ var fight_slack: bool = false
 @export_group("Stamina and size speed")
 @export var stamina_capacity: float = 130
 @export var normal_power_reference: float = 100
-@export var force_capacity_exponent: float = 0.9
+@export var force_capacity_exponent: float = 0.8
+@export var fresh_force_exponent: float = 1.1
 @export var sprint_drain: float = 18
 @export var dash_cost: float = 14
 @export var stamina_regen: float = 12
@@ -367,7 +368,8 @@ func fatigue_multiplier() -> float:
 	return maxf(fatigue_low_multiplier,pow(maxf(0,endurance)/maxf(1,normal_power_reference),fatigue_curve_exponent))
 
 func force_capacity() -> float:
-	return pow(maxf(0,endurance)/maxf(1,normal_power_reference),force_capacity_exponent)
+	var reserve = maxf(0,endurance)/maxf(1,normal_power_reference)
+	return pow(reserve,fresh_force_exponent if reserve > 1 else force_capacity_exponent)
 
 func fight_force_multiplier() -> float:
 	# Capacity scales powered acceleration, not top speed; basic locomotion survives.

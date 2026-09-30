@@ -10,7 +10,7 @@ func _init() -> void:
  for e in [130,100,75,50,25]:
   fish.endurance = e
   print("CAPACITY endurance=",e," force=",fish.force_capacity()," fatigue=",fish.fatigue_multiplier())
-  check(is_equal_approx(fish.force_capacity(),pow(e/100.0,0.9)),"Fixed 100 force reference at %s" % e)
+  check(is_equal_approx(fish.force_capacity(),pow(e/100.0,1.1 if e > 100 else 0.8)),"Fixed 100 force reference at %s" % e)
  fish.endurance = 130
  fish.fatigue(1)
  check(fish.endurance < 128.6 and fish.endurance > 128.4 and fish.stamina <= fish.endurance,"Fresh exertion burns faster and caps stamina")
@@ -41,32 +41,6 @@ func _init() -> void:
  var side = trial(130,0.5,true)
  print("SIDE working drag ",side)
  check(side.distance >= 30 and side.lateral > 2,"Uncountered quality side gains ground through force")
- var actor = FisherActor.new()
- var session = NetworkSession.new()
- var world = load("res://Scripts/Reef.gd").new()
- session.world = world
- actor.session = session
- var fight = FightSession.new()
- fight.fisher = actor
- fight.fish = fish
- fish.fight = fight
- fish.position = Vector3(0,-10,-40)
- fish.endurance = 130
- fish.stamina = 130
- fish.motion.swim_drive = 1
- fight.fish_action = FightDecisions.FishAction.RUN
- var pilot = FightTestDriver.new()
- var intent = pilot.fish_input(fish,session,0.016)
- check(not intent.boost and intent.throttle == 1 and intent.aim_direction.dot(fish.position.normalized()) > 0.8,"AI preserves full Drive initially while swimming outward")
- pilot.best_escape_distance = 50
- pilot.recent_escape_distance = 48
- intent = pilot.fish_input(fish,session,0.016)
- check(intent.boost,"Losing gained distance overrides resource holding")
- fish.fight = null
- fight.free()
- actor.free()
- session.free()
- world.free()
  fish.free()
  quit(1 if failures else 0)
 func trial(endurance: float, drag: float, side: bool) -> Dictionary:
@@ -91,7 +65,7 @@ func trial(endurance: float, drag: float, side: bool) -> Dictionary:
   fish.motion.step(1.0/60,input,heading,velocity.length()/8,endurance,false,stroke,fish.power_capacity())
   fish.motion.side_time = 1 if side else 0
   fish.motion.side_quality = 1 if side else 0
-  var load = maxf(0,heading.dot(axis))*fish.motion.propulsion*12*3.2*0.85*fish.force_capacity()*fish.motion.side_force_multiplier()
+  var load = fight.propulsion_force(maxf(0,heading.dot(axis)),3.2)
   line.step(1.0/60,offset.length(),velocity.dot(axis),load,1,drag,false)
   velocity = FishInput.next_velocity(velocity,heading,input,fish.effective_swim_speed()*fish.motion.multiplier(),fish.fight_boost_multiplier(),0.4,12*fish.motion.multiplier()*fish.motion.stored_force_multiplier()*fish.fight_force_multiplier(),6,4,0.7,1.0/60)
   velocity += fight.controlled_force(-axis*line.tension/3.2)/60

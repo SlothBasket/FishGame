@@ -348,3 +348,6 @@ Current force/escape calibration: FORCE_AND_ESCAPE_PATCH.md documents 130 starti
 
 
 Horizontal escape bugfix: FightDecisions.escape_distance is now the shared XZ-only strategic metric; RUN/REST are level. Terrain-layer clearance below 3 m triggers legal upward basic swimming until 4.5 m clear and blocks new Dive selection. Safe running Fish within 40 m receive 60% drag targets (65% within 20 m), with close-pressure final-step persistence. See FORCE_AND_ESCAPE_PATCH.md for precise gates and validation.
+
+
+Current Fish AI and force readouts: VARIETY_AND_LIVE_FORCE.md supersedes distance-priority rules and the former estimated-load chain. Fish fight inputs reference 5f5d8e; Fisher fixes remain. Motor and line estimate share fight_force_multiplier, load scale is 0.70, force-capacity exponents are 1.1 fresh / 0.8 depleted. Fisher snapshot now has 72 fields; live LINE LOAD is the actual FightLine.fish_load.

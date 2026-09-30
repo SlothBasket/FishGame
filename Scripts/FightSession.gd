@@ -33,7 +33,7 @@ var _previous_heading: Vector3 = Vector3.FORWARD
 var power_exhausted: bool = false
 @export var power_drain: float = 24
 @export var lateral_force: float = 30
-@export var propulsion_load_scale: float = 0.85
+@export var propulsion_load_scale: float = 0.70
 @export var pressure_endurance_drain: float = 0.18
 @export var leverage_endurance_drain: float = 0.95
 @export var yield_bonus: float = 2
@@ -239,7 +239,7 @@ func _physics_process(delta: float) -> void:
 	# but supplies little outward pull and exposes the flank to counter pressure.
 	var contest = FightContest.evaluate(fish.heading,outward,right,rod_horizontal,rod_vertical)
 	var alignment = contest.x
-	var drive = alignment*fish.motion.propulsion*fish.acceleration*mass*propulsion_load_scale*(fish.force_capacity()*fish.motion.side_force_multiplier() if fish.motion.powered_active else 1.0)
+	var drive = propulsion_force(alignment,mass)
 	var counter = contest.y
 	var vertical_counter = contest.z
 	var broadside = 1-absf(fish.heading.dot(outward))
@@ -259,7 +259,7 @@ func _physics_process(delta: float) -> void:
 		apply_directional_jerk(gesture_direction,outward,right,connected_line)
 		# Counter changes physical velocity/effort before this tick's spool accounting.
 		radial_speed = fish.velocity.dot(outward)
-		movement_load = alignment*fish.motion.propulsion*fish.acceleration*mass*propulsion_load_scale*(fish.force_capacity()*fish.motion.side_force_multiplier() if fish.motion.powered_active else 1.0)+directional_load+fish.motion.dive_power*35
+		movement_load = propulsion_force(alignment,mass)+directional_load+fish.motion.dive_power*35
 	var condition_before = spool.condition
 	spool.step(delta,fish.position.distance_to(neutral_tip),radial_speed,movement_load,(0.0 if power_recovery > 0 else input.retrieve),fisher.drag_setting,power_active,spike+turn_shock+fall_load(),rod_pull,rod_vertical)
 	if check_spooled(): return
@@ -545,3 +545,11 @@ func update_visible_maneuver(delta: float) -> void:
 
 func notice(fish_text: String, fisher_text: String) -> void:
 	if is_instance_valid(fisher.session): fisher.session.publish_fight_notice(fish,fisher,fish_text,fisher_text)
+
+func propulsion_force(alignment: float, mass: float) -> float:
+	var powered_force = fish.fight_force_multiplier() if fish.motion.powered_active else 1.0
+	return alignment*fish.motion.propulsion*fish.acceleration*mass*propulsion_load_scale*powered_force
+
+static func force_readout(load_value: float, drag_hold: float, capacity: float, drive: float) -> String:
+	var ratio = "--" if drag_hold <= 0.001 else "%.2fx" % (load_value/drag_hold)
+	return "LINE LOAD %.1f | DRAG HOLD %.1f\nFORCE / DRAG %s | FORCE CAP %.2fx | DRIVE FORCE %.2fx" % [load_value,drag_hold,ratio,capacity,drive]

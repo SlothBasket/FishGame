@@ -170,7 +170,7 @@ func sample() -> FisherIntent:
 	return intent
 
 func _process(delta: float) -> void:
-	if data.size() != 69: return
+	if data.size() != 72: return
 	var stick = GameControls.look()
 	apply_look(stick*stick.length()*rod_stick_response*delta)
 	var origin = Vector3(data[0],data[1],data[2])
@@ -226,6 +226,7 @@ func _process(delta: float) -> void:
 	if data[16] > 0: pull_direction += " LEFT" if data[49] < -0.3 else " RIGHT" if data[49] > 0.3 else " AWAY"
 	readings.text = "LINE %.1f / %.0f m\n%s | %s\nSlack %.1f m | Line rate %+.1f m/s\nTension %.0f | Drag limit %.0f\nSaved retrieve %d%% | %s" % [data[12],data[48],pressure,pull_direction if fighting else "READY",data[31],data[35],data[13],data[33],roundi(data[7]*5),"POWER" if data[15] > 0 else "NORMAL"]
 	if fighting:
+		readings.text += "\n"+FightSession.force_readout(data[69],data[33],data[70],data[71])
 		readings.text += "\nRECOVERY %.1f / %.1f m/s | Efficiency %.0f%%\n%s | JUMP LAUNCH %.0f%%" % [data[65],data[64],data[66]*100,RodGesture.caption(roundi(data[67])),data[68]*100]
 		readings.text += "\nREMAINING %.1f m | TAKE-UP %.1f m\nREEL RECOVERY %.1f m" % [maxf(0,data[48]-data[12]),data[56],data[57]]
 		readings.text += "\n"+("FISH TAKING LINE" if data[35] > 0.15 else "GAINING LINE" if data[35] < -0.15 else "HOLDING")
@@ -249,7 +250,7 @@ func _process(delta: float) -> void:
 	drag_value.text = "%d%%" % roundi(data[32]*100)
 
 func apply_look(movement: Vector2) -> void:
-	if data.size() == 69 and roundi(data[4]) == FisherActor.State.FIGHT:
+	if data.size() == 72 and roundi(data[4]) == FisherActor.State.FIGHT:
 		if data[16] <= 0:
 			rod_horizontal = clampf(rod_horizontal+movement.x,-1,1)
 			rod_vertical = clampf(rod_vertical-movement.y,-1,1)
