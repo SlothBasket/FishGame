@@ -76,6 +76,7 @@ func run() -> void:
 	var f = FightSession.new()
 	f.fish = fish
 	f.fisher = fisher
+	f.visible_maneuver = "OVERDRIVE"
 	fish.motion.powered_active = true
 	fish.motion.run_build = 1
 	fish.motion.overdrive = 0.3

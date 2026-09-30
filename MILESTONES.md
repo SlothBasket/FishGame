@@ -64,3 +64,6 @@ Validation for the pacing milestone: 97 checks passed. Standalone 75-second grap
 - Milestone identified by subject: `Steady AI rod pressure and restore close-range pump progress` — prevent unintended pressure/preparation jerks, bounded intentional flicks, safe close pump completion, maximum drag 120 and stronger leverage-based rod assistance. Import and seven focused control/motor checks passed; no batch.
 
 - Milestone identified by subject: `Restore reserved Drive resistance and prioritize jump slack recovery` - revert excessive drag increase, soften pump assistance, give unspent Drive a tunable passive force bonus, enforce spool resistance during outward contact, and prioritize low-rod fast retrieve through jumps. Import and 11 focused checks; no long batch.
+
+
+Milestone subject: `Make powered commitments readable and steady Fisher close-out decisions` - persistent useful retrieve, varied continuous escape budgets, sustained lateral commitment, human-scale visible counter timing/messages, and raised outboard Fisher view. Eighteen focused checks and one three-encounter sample; no large batch.

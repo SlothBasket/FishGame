@@ -99,6 +99,8 @@ static func gesture_and_pump_checks(f: FightSession) -> bool:
 		g.step(0.016,Vector2.ZERO,false)
 		detected = g.step(0.15,axis*0.8,true)
 		ok = check(detected == (1 if axis.x < 0 else 2 if axis.x > 0 else 3),"Rapid rod gesture registers correct direction") and ok
+	f.visible_maneuver = "LEFT DASH"
+	f.event_clock = 0.1
 	f.fish.motion.powered_active = true
 	f.fish.motion.run_build = 1
 	f.fish.motion.swim_drive = 1
@@ -110,9 +112,11 @@ static func gesture_and_pump_checks(f: FightSession) -> bool:
 	var correct = f.jerk_contest(RodGesture.Direction.RIGHT,heading,Vector3.FORWARD,Vector3.RIGHT,1)
 	var wrong = f.jerk_contest(RodGesture.Direction.LEFT,heading,Vector3.FORWARD,Vector3.RIGHT,1)
 	ok = check(correct.y >= 0.65 and wrong.y == 0 and wrong.x > 0,"Matching early lateral jerk controls; wrong jerk only loads") and ok
+	f.event_clock = 4
 	f.fish.motion.run_age = 4
 	var late = f.jerk_contest(RodGesture.Direction.RIGHT,heading,Vector3.FORWARD,Vector3.RIGHT,1)
 	ok = check(late.x > correct.x*2 and late.y < correct.y,"Late counters carry substantially more risk and less control") and ok
+	f.event_clock = 0.1
 	f.fish.motion.diving = true
 	f.fish.motion.dive_power = 0.1
 	ok = check(f.jerk_contest(RodGesture.Direction.UP,Vector3.DOWN,Vector3.FORWARD,Vector3.RIGHT,1).y >= 0.65,"Early Dive responds to UP jerk") and ok

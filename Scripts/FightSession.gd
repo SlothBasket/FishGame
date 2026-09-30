@@ -119,6 +119,12 @@ var hook_snap_time: float = -1
 @export var hook_snap_return: float = 0.25
 var rod_sweep_time: float = -1
 var rod_sweep_side: float = 0
+var visible_maneuver: String = ""
+var visible_id: int = 0
+var visible_since: float = 0
+var event_clock: float = 0
+@export var human_counter_window: float = 1.2
+var previous_power_notice: bool = false
 var rng = RandomNumberGenerator.new()
 
 func _ready() -> void:
@@ -167,6 +173,7 @@ func _physics_process(delta: float) -> void:
 	jerk_wait = maxf(0,jerk_wait-delta)
 	jerk_notice_time = maxf(0,jerk_notice_time-delta)
 	var gesture_direction = gesture.step(delta,Vector2(rod_horizontal,rod_vertical),phase in [Phase.OPENING,Phase.FIGHT] and power_recovery <= 0 and not fisher.vision_active and jerk_wait <= 0 and fisher.stamina >= jerk_cost)
+	update_visible_maneuver(delta)
 	perception.tick(delta,self)
 	fisher_action = FightDecisions.fisher_choice(perception.observation)
 	jump_cooldown = maxf(0,jump_cooldown-delta)
@@ -325,7 +332,7 @@ func update_rod(delta: float) -> void:
 		yaw -= rod_sweep_side*deg_to_rad(32)*sin(PI*clampf(rod_sweep_time/0.32,0,1))
 		if rod_sweep_time >= 0.32: rod_sweep_time = -1
 	rod_direction = FishInput.from_angles(pitch,yaw)
-	rod_hand = fisher.position+Vector3.UP*1.3
+	rod_hand = fisher.position+Vector3.UP*1.3+FishingPresentation.visual_rod_offset(Vector3.FORWARD.rotated(Vector3.UP,fisher.boat_yaw))
 	neutral_tip = fisher.position # Stable water-level anchor; rod take-up is separate.
 	# Lowering below center releases upward pressure; left/right still load the rod.
 	rod_pull = minf(1,Vector2(rod_horizontal,maxf(0,rod_vertical)).length())
@@ -413,8 +420,10 @@ func directional_wear_rate(drive: float, run: float, propulsion: float, leverage
 
 func required_jerk(heading: Vector3, outward: Vector3, right: Vector3) -> int:
 	if fish.airborne or fish.motion.falling or (fish.motion.ascent_power > 0.1 and fish.velocity.y > 0): return RodGesture.Direction.NONE
+	if visible_maneuver.is_empty(): return RodGesture.Direction.NONE
 	if fish.motion.diving: return RodGesture.Direction.UP
-	if fish.motion.run_build <= 0.3 or not (fish.motion.powered_active or fish.motion.side_time > 0 or fish.motion.overdrive > 0): return RodGesture.Direction.NONE
+	if fish.motion.side_time > 0 and not fish.motion.side_reported: return RodGesture.Direction.NONE
+	if fish.motion.side_time <= 0 and (fish.motion.run_build <= 0.3 or not (fish.motion.powered_active or fish.motion.overdrive > 0)): return RodGesture.Direction.NONE
 	var side = heading.dot(right)
 	if absf(side) > 0.25: return RodGesture.Direction.RIGHT if side < 0 else RodGesture.Direction.LEFT
 	return RodGesture.Direction.UP if heading.dot(outward) > 0.6 else RodGesture.Direction.NONE
@@ -443,22 +452,25 @@ func apply_directional_jerk(direction: int, outward: Vector3, right: Vector3, co
 	interruption = 0
 	var result = jerk_contest(direction,fish.heading,outward,right,contact)
 	spike = maxf(spike,result.x)
-	if result.y <= 0: return
+	var jerk_text = "JERK " + ("UP" if direction == RodGesture.Direction.UP else "LEFT" if direction == RodGesture.Direction.LEFT else "RIGHT")
+	if result.y <= 0:
+		notice("COUNTER MISSED",jerk_text+" / COUNTER MISSED")
+		return
 	var maneuver = "DIVE" if fish.motion.diving else "SIDE_BURST" if fish.motion.side_time > 0 else "RUN"
 	var timing = counter_lateness()
 	var impulse_direction = (Vector3.UP-outward*0.6).normalized() if maneuver == "DIVE" else -outward
 	apply_counter_recovery(maneuver,result.y,impulse_direction,timing)
+	var grade = "EARLY" if timing < 0.25 else "GOOD" if timing < 0.6 else "LATE" if timing < 0.9 else "VERY LATE"
+	notice(maneuver+" COUNTERED / "+grade,jerk_text+" / COUNTER "+grade)
 	if interruption > 0: fisher.session.publish_fight_counter(fish,fisher,interruption,result.y)
 	if fisher.session.batch_runner != null: fisher.session.batch_runner.telemetry.record_counter(self)
 
 func counter_lateness() -> float:
-	var age = fish.motion.dive_age if fish.motion.diving else fish.motion.run_age
-	var window = fish.motion.dive_counter_window if fish.motion.diving else early_run_window
-	return clampf(age/maxf(0.1,window+1.0),0,1)
+	return clampf((event_clock-visible_since-0.25)/maxf(0.1,human_counter_window),0,1)
 
 func apply_counter_recovery(maneuver: String, effectiveness: float, impulse: Vector3, lateness: float) -> void:
 	# No line-length awards: gain comes from recoil, lost propulsion and real pull.
-	last_counter = {"maneuver":maneuver,"overdrive_powered":fish.motion.overdrive > 0,"counter_timing":lateness,"effectiveness":effectiveness,
+	last_counter = {"maneuver":maneuver,"overdrive_powered":fish.motion.overdrive > 0,"counter_timing":lateness,"effectiveness":effectiveness,"visible_commit_time":visible_since,"counter_input_time":event_clock,"reaction_delay":event_clock-visible_since,"visible_maneuver_id":visible_id,"timing_grade":"EARLY" if lateness < 0.25 else "GOOD" if lateness < 0.6 else "LATE" if lateness < 0.9 else "VERY LATE",
 		"endurance_before":fish.endurance,"stamina_before":fish.stamina,
 		"distance_before":fish.position.distance_to(neutral_tip),"line_out_before":spool.line_out}
 	var dive = maneuver == "DIVE"
@@ -509,4 +521,27 @@ func update_power_punish(delta: float) -> void:
 	power_age = 0
 	power_recovery = power_punish_duration
 	power_punishes += 1
+	notice("POWER REEL INTERRUPTED","POWER REEL INTERRUPTED")
 	if fisher.session.batch_runner != null: fisher.session.batch_runner.telemetry.event("OVERDRIVE_PUNISH_POWER",self)
+
+# Authoritative, physically readable commitment. UI and delayed AI see this same state.
+func update_visible_maneuver(delta: float) -> void:
+	event_clock += delta
+	if phase not in [Phase.OPENING,Phase.FIGHT]: return
+	var m = fish.motion
+	var key = ""
+	if m.diving and m.dive_power > 0.15: key = "POWERED DIVE" if m.overdrive > 0 else "DIVE"
+	elif m.ascent_power > 0.15 and fish.velocity.y > 0.5: key = "JUMP ASCENT"
+	elif m.side_time > 0 and m.side_reported: key = "LEFT DASH" if m.side_sign < 0 else "RIGHT DASH"
+	elif m.side_time <= 0 and m.powered_active and m.run_build > 0.6 and fish.velocity.length() > 2: key = "OVERDRIVE" if m.overdrive > 0 else "DRIVE DASH"
+	if key != visible_maneuver:
+		visible_maneuver = key
+		if not key.is_empty():
+			visible_id += 1
+			visible_since = event_clock
+			notice(key,"FISH: "+key)
+	if power_active and not previous_power_notice: notice("POWER REEL","POWER REEL")
+	previous_power_notice = power_active
+
+func notice(fish_text: String, fisher_text: String) -> void:
+	if is_instance_valid(fisher.session): fisher.session.publish_fight_notice(fish,fisher,fish_text,fisher_text)

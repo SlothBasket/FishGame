@@ -40,6 +40,9 @@ static func plan(seen: Dictionary, stamina: float) -> Dictionary:
 		else:
 			result.pump = risk < 0.65 and float(seen.get("outward_speed",0)) < 2 and slack < 0.8
 		result.vision = running and absf(side) < 0.5
+	if seen.has("required_jerk"):
+		var direction = int(seen.required_jerk)
+		result.jerk = Vector2(0,1) if direction == RodGesture.Direction.UP else Vector2(-1,0) if direction == RodGesture.Direction.LEFT else Vector2(1,0) if direction == RodGesture.Direction.RIGHT else Vector2.ZERO
 	# Strategic progress uses delayed geometry/line observations, never Fish energy.
 	var distance = float(seen.get("distance",100))
 	var safe = danger < 0.65 and condition > 0.8 and not running and not dive and not fall and not ascent
@@ -61,10 +64,10 @@ static func plan(seen: Dictionary, stamina: float) -> Dictionary:
 		result.pump = false
 	elif requested > 0.05 and efficiency < 0.8:
 		var useful = float(seen.get("actual_recovery",0))/4.5
-		result.retrieve = minf(result.retrieve,maxf(0.1,useful+0.05))
+		result.retrieve = minf(result.retrieve,maxf(0.0,useful))
 		result.power = false
 		# Weak recovery is a reason to improve rod leverage, not disable a safe pump.
 		result.pump = result.pump and safe
-	elif requested > 0.05:
+	elif requested > 0.05 and float(seen.get("line_rate",0)) < -0.05:
 		result.retrieve = minf(result.retrieve,requested/4.5+0.10)
 	return result

@@ -187,7 +187,7 @@ func track_jump(delta: float, airborne: bool, height: float, vertical_speed: flo
 # Side burst commits existing run propulsion to a fixed 55-degree course.
 @export var side_burst_drive: float = 0.55
 @export var side_burst_angle: float = 55
-@export var side_burst_duration: float = 0.75
+@export var side_burst_duration: float = 1.8
 @export var side_burst_cooldown: float = 2.5
 @export var side_burst_prepare: float = 0.35
 var side_time: float = 0
@@ -202,6 +202,11 @@ var side_event: int = 0
 var side_frame: Vector3 = Vector3.FORWARD
 var side_origin: Vector3 = Vector3.ZERO
 var side_measure_time: float = 0
+var side_elapsed: float = 0
+var side_good_time: float = 0
+var side_bad_time: float = 0
+var side_visible_age: float = 0
+var side_quality: float = 0
 var side_lateral_velocity: float = 0
 var side_radial_velocity: float = 0
 var side_angle: float = 0
@@ -233,10 +238,18 @@ func steer_burst(delta: float, input: FishInput, heading: Vector3, allowed: bool
 		side_wait = side_burst_cooldown
 		side_reported = false
 		side_measure_time = 0
+		side_elapsed = 0
+		side_good_time = 0
+		side_bad_time = 0
+		side_visible_age = 0
+		side_quality = 0
 		side_lateral_displacement = 0
 		side_radial_displacement = 0
+	if side_time > 0 and requested != side_sign:
+		side_time = 0
+		side_quality = 0
 	if side_time > 0:
-		var committed = FishInput.new(input.throttle,0,input.vertical,side_target,input.boost,input.bite_held)
+		var committed = FishInput.new(input.throttle,0,input.vertical,FishInput.turn_toward(side_target,input.aim_direction,deg_to_rad(12)),input.boost,input.bite_held)
 		committed.cancel_bite = input.cancel_bite
 		return committed
 	return input
@@ -252,8 +265,15 @@ func measure_side(delta: float, heading: Vector3, velocity: Vector3, current_out
 	side_radial_displacement += side_radial_velocity*delta
 	side_lateral_displacement += side_lateral_velocity*delta
 	var real_lateral = heading.dot(right)*side_sign > 0.6 and side_lateral_velocity*side_sign > 2
+	side_elapsed += delta
+	side_good_time += delta if real_lateral else 0.0
+	side_bad_time = 0 if real_lateral else side_bad_time+delta
+	side_visible_age += delta if side_reported else 0.0
+	side_quality = move_toward(side_quality,1 if real_lateral else 0,delta/0.5)
+	if side_reported and side_bad_time > 0.25: side_time = 0; side_quality = 0
+	if side_reported and real_lateral: side_time = maxf(side_time,delta*2)
 	side_measure_time = side_measure_time+delta if real_lateral else 0.0
-	if not side_reported and side_measure_time >= 0.1:
+	if not side_reported and side_measure_time >= 0.2:
 		side_reported = true
 		side_event = side_sign
 

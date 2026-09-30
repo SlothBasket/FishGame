@@ -744,3 +744,23 @@ func present_fight_counter(fish_id: int, fisher_id: int, kind: int, effectivenes
 		players[fish_id].entity.add_child(halo)
 	var owned = 1 if hosting else multiplayer.get_unique_id()
 	if spectator_mode or owned == fish_id or owned == fisher_id: outcome_banner.show_counter(kind)
+
+func publish_fight_notice(fish: FishPlayer, fisher: FisherActor, fish_text: String, fisher_text: String) -> void:
+	if batch_runner != null:
+		batch_runner.telemetry.event("NOTICE: "+fisher_text,fisher.fight)
+		return
+	var fish_id = 0
+	for id in players:
+		if players[id].entity == fish: fish_id = id
+	present_fight_notice(fish_id,fisher.peer_id,fish_text,fisher_text)
+	if connected: fight_notice.rpc(fish_id,fisher.peer_id,fish_text,fisher_text)
+
+@rpc("authority","call_remote","reliable",0)
+func fight_notice(fish_id: int, fisher_id: int, fish_text: String, fisher_text: String) -> void:
+	if hosting: return
+	present_fight_notice(fish_id,fisher_id,fish_text,fisher_text)
+
+func present_fight_notice(fish_id: int, fisher_id: int, fish_text: String, fisher_text: String) -> void:
+	var owned = 1 if hosting else multiplayer.get_unique_id()
+	if outcome_banner != null and (spectator_mode or owned == fish_id or owned == fisher_id):
+		outcome_banner.show_notice(fish_text if owned == fish_id and not spectator_mode else fisher_text)

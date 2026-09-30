@@ -339,3 +339,6 @@ Steady Fisher follow-up: FightTestDriver separates slow pressure/preparation/ret
 
 
 Reserved Drive / jump recovery: FishFightMotion.stored_drive_force_bonus (0.20) adds force proportional to unspent Drive and endurance, shared by FishPlayer acceleration and estimated line load without another top-speed increase. FightLine applies selected drag resistance to outward connected motion even when the load estimate lags. FisherControls prioritizes low-rod/full-retrieve jump and slack capture over efficiency/run limits; FightTestDriver aborts stale actions and lowers at 3 units/s. See REEL_AND_FISHER_CORRECTION.md for formulas, values and bounded validation. Scripts/DriveJumpChecks.gd covers reserve force, delayed-observation overrides, rod response and actual slack recovery.
+
+
+Current AI commitment/counter/camera rules: see COMMITMENT_AND_COUNTER_READABILITY.md. It documents decision holds, Drive budget distribution, physical side-quality gates, server-visible counter timing, reliable role messages, authoritative outboard rod geometry, and bounded validation.

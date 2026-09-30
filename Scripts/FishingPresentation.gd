@@ -30,7 +30,7 @@ func _ready() -> void:
 	add_child(audio)
 
 static func edge_camera(origin: Vector3, forward: Vector3) -> Vector3:
-	return origin+Vector3.UP*3.5-forward*3.8+forward.cross(Vector3.UP)*1.1
+	return origin+Vector3.UP*4.0-forward*5.2+forward.cross(Vector3.UP)*1.8
 
 static func boat_view_target(origin: Vector3, forward: Vector3, rod: Vector3, focus: Vector3) -> Vector3:
 	var course = (forward+BaitMotion.horizontal(rod)*0.25).normalized()
@@ -38,7 +38,7 @@ static func boat_view_target(origin: Vector3, forward: Vector3, rod: Vector3, fo
 	return target+(focus-target).limit_length(8)*0.12
 
 static func visual_rod_offset(forward: Vector3) -> Vector3:
-	return forward*0.7+forward.cross(Vector3.UP)*0.5
+	return forward*1.4+forward.cross(Vector3.UP)*1.0
 
 static func visual_path(tip: Vector3, mouth: Vector3, slack: float, forward: Vector3 = Vector3.FORWARD, scale: float = 1) -> Array[Vector3]:
 	# A short mouth lead, not a body collision/wrap solver. Stable smooth side bias.

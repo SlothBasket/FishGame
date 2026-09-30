@@ -201,8 +201,9 @@ func _process(delta: float) -> void:
 	var tip = Vector3(data[39],data[40],data[41])
 	if not fighting: hand = origin+Vector3.UP*1.3; tip = hand+rod*3
 	var art_offset = FishingPresentation.visual_rod_offset(direction)
-	hand += art_offset
-	tip += art_offset
+	if not fighting:
+		hand += art_offset
+		tip += art_offset
 	jerk_label.position = tip+Vector3.UP*0.5
 	jerk_label.text = RodGesture.caption(roundi(data[58])) if data[59] > 0 else ""
 	var rod_points: Array = []

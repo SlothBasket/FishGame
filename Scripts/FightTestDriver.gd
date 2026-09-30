@@ -20,6 +20,12 @@ var run_committed: bool = false
 var run_budget: float = 0
 var run_spent_start: float = 0
 var run_pause: float = 0
+var committed_action: int = 0
+var run_start_drive: float = 0
+var completed_commitments: Array[Dictionary] = []
+var setting_wait: float = 0
+var held_retrieve: float = 0.4
+var setting_mode: String = ""
 var progress_window: float = 0
 var power_push: float = 0
 var power_pause: float = 0
@@ -27,13 +33,12 @@ var was_observed_run: bool = false
 
 func choose_run_budget(major: bool = false) -> float:
 	var roll = execution_rng.randf()
-	if major or roll > 0.85: return execution_rng.randf_range(0.9,1.0)
-	if roll < 0.2: return execution_rng.randf_range(0.4,0.6)
-	return execution_rng.randf_range(0.65,0.85)
+	if major or roll > 0.9: return execution_rng.randf_range(0.7,0.9)
+	if roll < 0.1: return execution_rng.randf_range(0.2,0.3)
+	return (execution_rng.randf_range(0.3,0.7)+execution_rng.randf_range(0.3,0.7))*0.5
 
 var vision_remaining: float = 0
 var vision_cooldown: float = 0
-var drag_wait: float = 0
 var selected_drag: float = 0.4
 var steady_rod: Vector2 = Vector2.ZERO
 @export var pressure_rod_rate: float = 0.85
@@ -57,27 +62,35 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 	if is_instance_valid(fish.fight):
 		fish_was_fighting = true
 		var f = fish.fight
-		var action = f.fish_action
+		var action = committed_action if run_committed else f.fish_action
+		if (side_hold > 0 or fish.motion.side_time > 0) and fish.motion.drive_lockout <= 0: action = FightDecisions.FishAction.RUN
 		aim = FightDecisions.heading_for(f,action)
 		var resting = action == FightDecisions.FishAction.REST
 		var energy = fish.stamina/maxf(1,fish.endurance)
 		run_pause = maxf(0,run_pause-delta)
-		if run_committed and (resting or (fish.motion.drive_spent-run_spent_start >= run_budget and side_hold <= 0 and fish.motion.side_time <= 0) or fish.motion.drive_lockout > 0):
+		if run_committed and (energy < 0.22 or fish.motion.drive_spent-run_spent_start >= run_budget or fish.motion.drive_lockout > 0 or fish.motion.jump_recovery > 0):
+			completed_commitments.append({"start_drive":run_start_drive,"end_drive":fish.motion.swim_drive,"spent_fraction":fish.motion.drive_spent-run_spent_start,"target":run_budget,"interrupted":fish.motion.drive_lockout > 0})
+			if session.batch_runner != null:
+				session.batch_runner.telemetry.event("AI_COMMITMENT_END",f)
+				session.batch_runner.telemetry.events[-1].state.merge(completed_commitments[-1],true)
+			if completed_commitments.size() > 64: completed_commitments.pop_front()
 			run_committed = false
 			run_pause = 1.0
 		if not run_committed and not resting and run_pause <= 0 and fish.motion.swim_drive >= 0.95:
 			run_committed = true
+			committed_action = action
+			run_start_drive = fish.motion.swim_drive
 			run_budget = minf(fish.motion.swim_drive,choose_run_budget(f.spool.distance < 12))
 			run_spent_start = fish.motion.drive_spent
 		var sprint = run_committed
 		# Ordinary powered cadence spends Drive; major commitments escalate faster.
-		var cadence = (0.26 if run_budget >= 0.9 else 0.36) if sprint else fish.motion.ideal_stroke_interval
+		var cadence = (0.26 if run_budget >= 0.5 else 0.36) if sprint else fish.motion.ideal_stroke_interval
 		stroke_clock += delta
 		if stroke_clock >= cadence: stroke_clock = 0; stroke_side *= -1
-		if clock > next_lapse:
+		if not sprint and clock > next_lapse:
 			stroke_pause = lerpf(1.7,1.2,f.fish_skill)
 			next_lapse = clock+execution_rng.randf_range(7,12)*f.fish_skill
-		stroke_pause = maxf(0,stroke_pause-delta)
+		stroke_pause = 0 if sprint else maxf(0,stroke_pause-delta)
 		shake_wait = maxf(0,shake_wait-delta)
 		shake_until = maxf(0,shake_until-delta)
 		if shake_wait <= 0 and (f.spool.slack > 0.8 or fish.airborne):
@@ -89,17 +102,17 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 			aim = aim.rotated(Vector3.UP,stroke_side*deg_to_rad(24))
 		side_wait = maxf(0,side_wait-delta)
 		side_hold = maxf(0,side_hold-delta)
-		if action in [FightDecisions.FishAction.RUN,FightDecisions.FishAction.LEFT,FightDecisions.FishAction.RIGHT] and sprint and (fish.motion.swim_drive >= fish.motion.side_burst_drive or side_hold > 0) and not fish.airborne:
-			if side_wait <= 0 and fish.motion.side_wait <= 0:
+		if action in [FightDecisions.FishAction.RUN,FightDecisions.FishAction.LEFT,FightDecisions.FishAction.RIGHT] and ((sprint and fish.motion.swim_drive >= fish.motion.side_burst_drive) or side_hold > 0 or fish.motion.side_time > 0) and not fish.airborne:
+			if sprint and side_wait <= 0 and fish.motion.side_wait <= 0:
 				var side = -1 if execution_rng.randf() < 0.5 else 1
 				side_aim = side_burst_aim(BaitMotion.horizontal(fish.position-f.fisher.position),side)
 				var edge = session.world.arena_width*0.5-8
 				var projected = fish.position+side_aim*16
 				if absf(projected.x) > edge or absf(projected.z) > edge: side_aim = side_burst_aim(BaitMotion.horizontal(fish.position-f.fisher.position),-side)
-				side_hold = 1.2
+				side_hold = 2.2
 				side_wait = execution_rng.randf_range(3,5)
-			if side_hold > 0:
-				aim = side_aim.rotated(Vector3.UP,stroke_side*deg_to_rad(14))
+			if side_hold > 0 or fish.motion.side_time > 0:
+				aim = side_aim.rotated(Vector3.UP,stroke_side*deg_to_rad(9))
 		else: side_hold = 0
 		var input = FishInput.new(0.25 if resting else 1,0,0,aim,sprint)
 		input.vertical = 1 if action == FightDecisions.FishAction.JUMP and not fish.airborne and fish.motion.jump_recovery <= 0 else 0
@@ -151,6 +164,7 @@ func fisher_input(actor: FisherActor, delta: float) -> FisherIntent:
 			var planning = seen.duplicate()
 			planning["opportunity"] = progress_window > 0
 			var plan = FisherControls.plan(planning,actor.stamina)
+			plan = persist_settings(plan,seen,delta)
 			if plan.power and power_pause <= 0:
 				power_push = 0.9
 				power_pause = 3.5
@@ -159,10 +173,7 @@ func fisher_input(actor: FisherActor, delta: float) -> FisherIntent:
 			input.rod_vertical = plan.vertical
 			input.retrieve = plan.retrieve
 			input.power = plan.power
-			drag_wait -= delta
-			if drag_wait <= 0:
-				selected_drag = snappedf(move_toward(selected_drag,plan.drag,0.20 if plan.drag < selected_drag else 0.05),0.05)
-				drag_wait = lerpf(1.4,0.9,fight.fisher_skill)
+			selected_drag = plan.drag
 			input.drag = selected_drag
 			input.jerk = false
 			gesture_wait = maxf(0,gesture_wait-delta)
@@ -171,8 +182,8 @@ func fisher_input(actor: FisherActor, delta: float) -> FisherIntent:
 				gesture_phase = -1
 				pump_clock = 0
 				vision_remaining = 0
-			if gesture_phase < 0 and gesture_wait <= 0 and plan.jerk != Vector2.ZERO and not actor.vision_active and actor.stamina >= fight.jerk_cost and int(seen.get("maneuver_id",0)) != attempted_maneuver:
-				attempted_maneuver = int(seen.get("maneuver_id",0))
+			if gesture_phase < 0 and gesture_wait <= 0 and plan.jerk != Vector2.ZERO and not actor.vision_active and actor.stamina >= fight.jerk_cost and int(seen.get("visible_maneuver_id",seen.get("maneuver_id",0))) != attempted_maneuver:
+				attempted_maneuver = int(seen.get("visible_maneuver_id",seen.get("maneuver_id",0)))
 				gesture_axis = plan.jerk
 				gesture_phase = 0
 				gesture_wait = maxf(4.0,fight.jerk_cooldown+lerpf(1.0,0.25,fight.fisher_skill))
@@ -230,3 +241,18 @@ func bait_retrieve(kind: int, delta: float) -> float:
 			_: retrieve_level = 0.4
 		retrieve_wait = execution_rng.randf_range(0.6,1.3) if retrieve_level == 0 else execution_rng.randf_range(2,5)
 	return retrieve_level
+
+# Hold ordinary settings; only observable state transitions bypass the hold.
+func persist_settings(plan: Dictionary, seen: Dictionary, delta: float) -> Dictionary:
+	setting_wait = maxf(0,setting_wait-delta)
+	var danger = float(seen.get("tension",0))/maxf(1,float(seen.get("break_threshold",93.5)))
+	var mode = "SLACK" if plan.get("capture_slack",false) else "DANGER" if danger > 0.85 else "RUN" if float(seen.get("line_rate",0)) > 0.1 and float(seen.get("payout",0)) > 2 else "DIVE" if seen.get("descending",false) else "OPENING" if seen.get("opportunity",false) else "NORMAL"
+	if setting_wait <= 0 or mode != setting_mode:
+		held_retrieve = plan.retrieve
+		if absf(plan.drag-selected_drag) >= 0.09 or mode in ["DANGER","SLACK"]:
+			selected_drag = snappedf(move_toward(selected_drag,plan.drag,0.2 if mode == "DANGER" else 0.1),0.05)
+		setting_wait = execution_rng.randf_range(1.5,2.5)
+		setting_mode = mode
+	plan.retrieve = held_retrieve
+	plan.drag = selected_drag
+	return plan

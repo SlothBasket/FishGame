@@ -39,7 +39,7 @@ func _init() -> void:
 		sum += budget
 		low = minf(low,budget)
 		high = maxf(high,budget)
-	check(sum/100 > 0.65 and sum/100 < 0.85 and low < 0.6 and high > 0.9,"Varied AI commitment budgets average %.1f%%" % sum)
+	check(sum/100 > 0.4 and sum/100 < 0.6 and low < 0.3 and high > 0.7,"Varied AI commitment budgets average %.1f%%" % sum)
 	var seen = {"distance":30,"tension":30,"strength":110,"break_threshold":100,"condition":1,"payout":0,"outward_speed":0}
 	var plan = FisherControls.plan(seen,80)
 	check(plan.retrieve == 1 and plan.drag >= 0.55 and plan.pump,"Controlled Fish at 30m gets retrieve, leverage and close-out drag")

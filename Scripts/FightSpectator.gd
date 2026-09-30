@@ -108,8 +108,9 @@ func draw_equipment(fisher: FisherActor, fish: FishPlayer, delta: float) -> void
 		target = fish.position
 		slack = f.spool.slack
 	var art_offset = FishingPresentation.visual_rod_offset(Vector3.FORWARD.rotated(Vector3.UP,fisher.boat_yaw))
-	hand += art_offset
-	tip += art_offset
+	if not is_instance_valid(f):
+		hand += art_offset
+		tip += art_offset
 	var control = hand+direction*2
 	var rod: Array = []
 	for i in range(13):
