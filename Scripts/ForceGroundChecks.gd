@@ -19,9 +19,9 @@ func _init() -> void:
  check(fish.endurance == kept,"No exertion means no endurance loss")
  fish.motion.power_capacity = 1
  fish.motion.swim_drive = 1
- check(is_equal_approx(fish.motion.stored_force_multiplier(),1.35),"Full Drive adds 35% force")
+ check(is_equal_approx(fish.motion.stored_force_multiplier(),1.45),"Full Drive adds 45% force")
  fish.motion.swim_drive = 0.5
- check(is_equal_approx(fish.motion.stored_force_multiplier(),1.0875),"Half Drive adds 8.75%, rewarding the top of the bar")
+ check(is_equal_approx(fish.motion.stored_force_multiplier(),1.1125),"Half Drive adds 11.25%, rewarding the top of the bar")
  fish.motion.side_time = 1
  fish.motion.side_quality = 1
  check(is_equal_approx(fish.motion.side_force_multiplier(),1.5),"Committed side receives 50% force efficiency")

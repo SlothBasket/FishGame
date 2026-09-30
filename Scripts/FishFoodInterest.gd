@@ -16,6 +16,10 @@ var rng = RandomNumberGenerator.new()
 var prioritize_lures: bool = false
 var charge_goal: float = 0.7
 var commit_time: float = 0
+var attack_reset: float = 0
+var reset_course: Vector3 = Vector3.FORWARD
+@export var attack_setup_distance: float = 12
+@export var maximum_prediction: float = 0.55
 @export var minimum_charge: float = 0.65
 @export var maximum_charge: float = 0.85
 
@@ -25,12 +29,13 @@ func set_lure_priority(enabled: bool) -> void:
 	state = State.WANDER
 	scan_wait = 0
 
-func intercept_direction(fish: FishPlayer, bait: BaitActor, remaining_charge: float) -> Vector3:
+func intercept_direction(fish: FishPlayer, bait, remaining_charge: float) -> Vector3:
+	if not eligible(bait,fish): return fish.heading
 	# Predict through remaining wind-up plus dash travel, without changing physics.
 	var travel = fish.position.distance_to(bait.position)/maxf(1,fish.effective_dash_speed())
 	var predicted = bait.position
 	for i in range(3):
-		predicted = bait.position+bait.velocity*minf(2.0,remaining_charge+travel)
+		predicted = bait.position+bait.velocity*minf(maximum_prediction,remaining_charge+travel)
 		travel = fish.position.distance_to(predicted)/maxf(1,fish.effective_dash_speed())
 	return (predicted-fish.position).normalized()
 
@@ -40,13 +45,13 @@ func disengage() -> void:
 	target = null
 	state = State.WANDER
 	wander_wait = 0
-func eligible(bait: BaitActor, fish: FishPlayer) -> bool:
-	return is_instance_valid(bait) and not bait.claimed and bait.lifecycle == BaitActor.Lifecycle.ALIVE and fish.size_multiplier() >= bait.minimum_eater_scale and (prioritize_lures or lure_reset <= 0 or not is_instance_valid(bait.fisher_owner))
+func eligible(bait, fish: FishPlayer) -> bool:
+	return is_instance_valid(bait) and bait is BaitActor and not bait.claimed and bait.lifecycle == BaitActor.Lifecycle.ALIVE and fish.size_multiplier() >= bait.minimum_eater_scale and (prioritize_lures or lure_reset <= 0 or not is_instance_valid(bait.fisher_owner))
 func choose(fish: FishPlayer, candidates: Array) -> BaitActor:
 	var chosen: BaitActor
 	var score: float = INF
 	for item in candidates:
-		if not item is BaitActor or not eligible(item,fish): continue
+		if not eligible(item,fish): continue
 		var distance = fish.position.distance_to(item.position)
 		var lure = is_instance_valid(item.fisher_owner)
 		if distance > detection_radius and not (prioritize_lures and lure): continue
@@ -56,15 +61,16 @@ func choose(fish: FishPlayer, candidates: Array) -> BaitActor:
 	return chosen
 func input(fish: FishPlayer, candidates: Array, half_width: float, depth: float, delta: float) -> FishInput:
 	lure_reset = maxf(0,lure_reset-delta)
+	attack_reset = maxf(0,attack_reset-delta)
 	scan_wait -= delta
 	wander_wait -= delta
 	stroke_time += delta
 	if stroke_time >= fish.motion.ideal_stroke_interval: stroke_time = 0; stroke_side *= -1
-	if not eligible(target,fish): target = null; state = State.WANDER
+	if not eligible(target,fish): target = null; state = State.WANDER; attack_reset = 0; commit_time = 0
 	# A new cast can interrupt natural-prey interest while test priority is on.
 	if prioritize_lures and scan_wait <= 0 and (not is_instance_valid(target) or not is_instance_valid(target.fisher_owner)):
 		var preferred = choose(fish,candidates)
-		if preferred != null and is_instance_valid(preferred.fisher_owner):
+		if eligible(preferred,fish) and is_instance_valid(preferred.fisher_owner):
 			scan_wait = 0.7
 			target = preferred
 			state = State.NOTICE
@@ -72,13 +78,13 @@ func input(fish: FishPlayer, candidates: Array, half_width: float, depth: float,
 	if state == State.WANDER and scan_wait <= 0:
 		scan_wait = rng.randf_range(0.6,1.0)
 		target = choose(fish,candidates)
-		if target != null:
+		if eligible(target,fish):
 			state = State.NOTICE
 			notice_wait = rng.randf_range(0.7,1.5)
 	if state == State.NOTICE:
 		notice_wait -= delta
 		if notice_wait <= 0: state = State.APPROACH
-	if state in [State.APPROACH,State.COMMIT]:
+	if state in [State.APPROACH,State.COMMIT] and eligible(target,fish):
 		var distance = fish.position.distance_to(target.position)
 		if distance > detection_radius*1.5 and not (prioritize_lures and is_instance_valid(target.fisher_owner)):
 			target = null
@@ -86,14 +92,25 @@ func input(fish: FishPlayer, candidates: Array, half_width: float, depth: float,
 		else:
 			var direct = (target.position-fish.position).normalized()
 			var dash_reach = lerpf(fish.minimum_lunge_distance,fish.maximum_lunge_distance,charge_goal)
-			var closing_speed = (fish.velocity-target.velocity).dot(direct)
-			var commit_reach = dash_reach+maxf(0,closing_speed)*charge_goal*fish.full_charge_time
-			if state == State.APPROACH and distance < commit_reach and fish.heading.dot(direct) > 0.6:
+			var commit_reach = minf(attack_setup_distance,dash_reach*0.75)
+			if attack_reset > 0:
+				var reset = FishInput.new(0.7,0,0,reset_course,false,false)
+				reset.cancel_bite = fish.feeding.is_charging
+				return reset
+			var radius = fish.velocity.length()/maxf(0.1,deg_to_rad(fish.forward_turn_rate))
+			if distance < maxf(4,radius*1.5) and fish.heading.dot(direct) < 0.15:
+				attack_reset = rng.randf_range(1.0,1.6)
+				reset_course = fish.heading.rotated(Vector3.UP,deg_to_rad(20)*stroke_side)
+				state = State.APPROACH
+				var reset = FishInput.new(0.7,0,0,reset_course,false,false)
+				reset.cancel_bite = true
+				return reset
+			if state == State.APPROACH and distance < commit_reach and fish.heading.dot(direct) > 0.8:
 				state = State.COMMIT
 				charge_goal = rng.randf_range(minimum_charge,maximum_charge)
 				commit_time = 0
 			var remaining = maxf(0,charge_goal*fish.full_charge_time-fish.feeding._charge_time) if state == State.COMMIT else 0.0
-			var aim = intercept_direction(fish,target,remaining)
+			var aim = intercept_direction(fish,target,remaining) if distance <= commit_reach else (target.position+target.velocity*0.12-fish.position).normalized()
 			# Keep moving through the wind-up; brake only for an imminent overshoot.
 			if state == State.APPROACH and distance > 18:
 				aim = aim.rotated(Vector3.UP,deg_to_rad(12)*stroke_side)
@@ -126,7 +143,7 @@ func input(fish: FishPlayer, candidates: Array, half_width: float, depth: float,
 		if absf(ahead[axis]) > half_width-10: aim[axis] = -signf(ahead[axis])*0.6
 	if ahead.y < 3: aim.y = 0.35
 	elif ahead.y > depth-3: aim.y = -0.3
-	aim = aim.normalized().rotated(Vector3.UP,stroke_side*deg_to_rad(18))
-	var cruise = FishInput.new(cruise_throttle,0,0,aim,fish.motion.swim_drive >= 0.9 and state == State.WANDER)
+	aim = aim.normalized().rotated(Vector3.UP,-stroke_side*deg_to_rad(24))
+	var cruise = FishInput.new(cruise_throttle,stroke_side*0.65 if state == State.WANDER else 0,0,aim,false)
 	cruise.cancel_bite = fish.feeding.is_charging
 	return cruise

@@ -7,7 +7,7 @@ extends Resource
 @export var full_credit_window: float = 0.18
 @export var partial_credit_window: float = 0.48
 @export var decay_delay: float = 1.1
-@export var stored_drive_force_bonus: float = 0.35
+@export var stored_drive_force_bonus: float = 0.45
 @export var stored_drive_force_exponent: float = 2.0
 @export var side_force_bonus: float = 0.5
 @export var drive_gain: float = 0.10
@@ -146,6 +146,10 @@ func step(delta: float, input: FishInput, heading: Vector3, speed_fraction: floa
 func stored_force_multiplier() -> float:
 	# Reserved Drive supplies passive force; spending/disruption gives it up.
 	return 1+stored_drive_force_bonus*pow(clampf(swim_drive/maxf(0.01,sustainable_max),0,1),stored_drive_force_exponent)*power_capacity
+
+func side_cost_multiplier() -> float:
+	# Existing radial opposition already saves ~35%; this brings good sides near half cost.
+	return lerpf(1,0.75,side_quality) if side_time > 0 and counter_recovery <= 0 else 1.0
 
 func side_force_multiplier() -> float:
 	return 1+side_force_bonus*side_quality if side_time > 0 and counter_recovery <= 0 else 1.0

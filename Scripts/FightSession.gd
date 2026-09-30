@@ -34,6 +34,9 @@ var power_exhausted: bool = false
 @export var power_drain: float = 24
 @export var lateral_force: float = 30
 @export var propulsion_load_scale: float = 0.70
+@export var reserve_load_scale: float = 0.90
+@export var counter_momentum_scale: float = 0.35
+@export var counter_momentum_cap: float = 40
 @export var pressure_endurance_drain: float = 0.18
 @export var leverage_endurance_drain: float = 0.95
 @export var yield_bonus: float = 2
@@ -114,8 +117,8 @@ var landing_time: float = 0
 var _jerk_held: bool = false
 var hook_snap_time: float = -1
 @export var hook_snap_anticipation: float = 0.06
-@export var hook_snap_rise: float = 0.18
-@export var hook_snap_hold: float = 0.12
+@export var hook_snap_rise: float = 0.11
+@export var hook_snap_hold: float = 0.18
 @export var hook_snap_return: float = 0.25
 var rod_sweep_time: float = -1
 var rod_sweep_side: float = 0
@@ -213,6 +216,8 @@ func _physics_process(delta: float) -> void:
 			var yank = (hook_tip-fish.position).normalized()*yank_speed*(0.65+quality*0.25)
 			fish.velocity += yank
 			fish.receive_impact(yank,quality/3.0)
+			# Stronger visible head recoil; the existing gameplay yank is unchanged.
+			fish.head.knock(fish.head.recoil*1.6,0.45)
 			fish.stamina = maxf(0,fish.stamina-hook_stamina_damage*quality/3.0)
 			change_phase(Phase.IMPACT)
 		elif phase_time > opportunity_window: finish(Outcome.MISSED)
@@ -325,7 +330,7 @@ func update_rod(delta: float) -> void:
 	if hook_snap_time >= 0:
 		hook_snap_time += delta
 		var weight = hook_snap_weight(hook_snap_time)
-		pitch = lerpf(pitch,deg_to_rad(60),weight)
+		pitch = lerpf(pitch,deg_to_rad(78),weight)
 		if hook_snap_time >= hook_snap_anticipation+hook_snap_rise+hook_snap_hold+hook_snap_return: hook_snap_time = -1
 	if rod_sweep_time >= 0:
 		rod_sweep_time += delta
@@ -422,7 +427,8 @@ func required_jerk(heading: Vector3, outward: Vector3, right: Vector3) -> int:
 	if fish.airborne or fish.motion.falling or (fish.motion.ascent_power > 0.1 and fish.velocity.y > 0): return RodGesture.Direction.NONE
 	if visible_maneuver.is_empty(): return RodGesture.Direction.NONE
 	if fish.motion.diving: return RodGesture.Direction.UP
-	if fish.motion.side_time > 0 and not fish.motion.side_reported: return RodGesture.Direction.NONE
+	if fish.motion.side_time > 0:
+		return RodGesture.Direction.RIGHT if fish.motion.side_sign < 0 else RodGesture.Direction.LEFT
 	if fish.motion.side_time <= 0 and (fish.motion.run_build <= 0.3 or not (fish.motion.powered_active or fish.motion.overdrive > 0)): return RodGesture.Direction.NONE
 	var side = heading.dot(right)
 	if absf(side) > 0.25: return RodGesture.Direction.RIGHT if side < 0 else RodGesture.Direction.LEFT
@@ -438,7 +444,10 @@ func jerk_contest(direction: int, heading: Vector3, outward: Vector3, right: Vec
 	var late = counter_lateness()
 	var resistance = 25+fish.motion.propulsion*15+fish.motion.swim_drive*12+fish.motion.overdrive*30+fish.motion.dive_power*20
 	var force = jerk_counter_force*(0.65+0.35*rod_pull)
-	return Vector2((jerk_spike+late*late_jerk_spike)*contact,clampf(force/resistance,0,1)*lerpf(1,0.15,late)*contact if matched else 0.0)
+	var course = (outward+Vector3.DOWN).normalized() if fish.motion.diving else right*fish.motion.side_sign if fish.motion.side_time > 0 else outward
+	var momentum = (3.2*(1+0.35*fish.growth_fraction()))*maxf(0,fish.velocity.dot(course))
+	var momentum_shock = minf(counter_momentum_cap,momentum*counter_momentum_scale*lerpf(0.35,1.5,late))
+	return Vector2((jerk_spike+late*late_jerk_spike+momentum_shock)*contact,clampf(force/resistance,0,1)*lerpf(1,0.15,late)*contact if matched else 0.0)
 
 func apply_directional_jerk(direction: int, outward: Vector3, right: Vector3, contact: float) -> void:
 	jerk_wait = jerk_cooldown
@@ -532,13 +541,15 @@ func update_visible_maneuver(delta: float) -> void:
 	var key = ""
 	if m.diving and m.dive_power > 0.15: key = "POWERED DIVE" if m.overdrive > 0 else "DIVE"
 	elif m.ascent_power > 0.15 and fish.velocity.y > 0.5: key = "JUMP ASCENT"
-	elif m.side_time > 0 and m.side_reported: key = "LEFT DASH" if m.side_sign < 0 else "RIGHT DASH"
+	elif m.side_time > 0: key = ("LEFT " if m.side_sign < 0 else "RIGHT ")+("OVERDRIVE" if m.overdrive > 0 else "DRIVE DASH")
 	elif m.side_time <= 0 and m.powered_active and m.run_build > 0.6 and fish.velocity.length() > 2: key = "OVERDRIVE" if m.overdrive > 0 else "DRIVE DASH"
 	if key != visible_maneuver:
+		var continuing = maneuver_family(key) == maneuver_family(visible_maneuver)
 		visible_maneuver = key
 		if not key.is_empty():
-			visible_id += 1
-			visible_since = event_clock
+			if not continuing:
+				visible_id += 1
+				visible_since = event_clock
 			notice(key,"FISH: "+key)
 	if power_active and not previous_power_notice: notice("POWER REEL","POWER REEL")
 	previous_power_notice = power_active
@@ -547,9 +558,14 @@ func notice(fish_text: String, fisher_text: String) -> void:
 	if is_instance_valid(fisher.session): fisher.session.publish_fight_notice(fish,fisher,fish_text,fisher_text)
 
 func propulsion_force(alignment: float, mass: float) -> float:
-	var powered_force = fish.fight_force_multiplier() if fish.motion.powered_active else 1.0
-	return alignment*fish.motion.propulsion*fish.acceleration*mass*propulsion_load_scale*powered_force
+	var powered_force = fish.fight_force_multiplier() if fish.motion.powered_active else fish.reserve_force_capacity()
+	var scale = propulsion_load_scale if fish.motion.powered_active else reserve_load_scale
+	return alignment*fish.motion.propulsion*fish.acceleration*mass*scale*powered_force
 
 static func force_readout(load_value: float, drag_hold: float, capacity: float, drive: float) -> String:
 	var ratio = "--" if drag_hold <= 0.001 else "%.2fx" % (load_value/drag_hold)
 	return "LINE LOAD %.1f | DRAG HOLD %.1f\nFORCE / DRAG %s | FORCE CAP %.2fx | DRIVE FORCE %.2fx" % [load_value,drag_hold,ratio,capacity,drive]
+
+static func maneuver_family(label: String) -> String:
+	# Escalating Drive to Overdrive cannot restart an already-running counter clock.
+	return label.replace("POWERED DIVE","DIVE").replace("OVERDRIVE","DRIVE DASH")

@@ -351,3 +351,6 @@ Horizontal escape bugfix: FightDecisions.escape_distance is now the shared XZ-on
 
 
 Current Fish AI and force readouts: VARIETY_AND_LIVE_FORCE.md supersedes distance-priority rules and the former estimated-load chain. Fish fight inputs reference 5f5d8e; Fisher fixes remain. Motor and line estimate share fight_force_multiplier, load scale is 0.70, force-capacity exponents are 1.1 fresh / 0.8 depleted. Fisher snapshot now has 72 fields; live LINE LOAD is the actual FightLine.fish_load.
+
+
+Current follow-up: RESERVE_SIDE_AND_FEEDING.md documents +45% quadratic stored Drive, ordinary reserve scale 0.90 versus powered 0.70, tactical high-Drive waits, quality-based finite side cost, immediate side identity, momentum counter shock, stronger hookset presentation and safe short-range feeding/reset logic. No automatic wander boost or direct Drive grants.

@@ -76,3 +76,6 @@ Milestone subject: `Fix horizontal escape strategy and close-range Fisher dead z
 
 
 Milestone subject: `Restore fight variety and expose authoritative line load` - remove distance-record planner, restore earlier Fish fight input behavior with depth safety, align powered motor/load factors, and add authoritative debug force comparisons. Import and one seven-second graphical smoke only; no batches.
+
+
+Milestone subject: `Strengthen Drive reserve and fix feeding pursuit safety` - high-Drive holding, efficient committed sides, momentum-sensitive late counters, stronger hookset presentation, legal wander strokes and freed-bait-safe close feeding approaches. Import plus one seven-second smoke; no batch.

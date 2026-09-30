@@ -20,6 +20,7 @@ var run_committed: bool = false
 var run_budget: float = 0
 var run_spent_start: float = 0
 var run_pause: float = 0
+var reserve_wait: float = -1
 var committed_action: int = 0
 var bottom_recovery: bool = false
 var run_start_drive: float = 0
@@ -77,7 +78,11 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 			if completed_commitments.size() > 64: completed_commitments.pop_front()
 			run_committed = false
 			run_pause = 1.0
-		if not run_committed and not resting and run_pause <= 0 and fish.motion.swim_drive >= 0.95:
+		if fish.motion.swim_drive < 0.9: reserve_wait = -1
+		elif reserve_wait < 0: reserve_wait = execution_rng.randf_range(0.5,5.0)
+		else: reserve_wait = maxf(0,reserve_wait-delta)
+		var spend_reserve = reserve_wait == 0 or f.spool.line_rate < -0.8 or f.tension > f.spool.strength*0.65 or action in [FightDecisions.FishAction.DIVE,FightDecisions.FishAction.JUMP]
+		if not run_committed and not resting and spend_reserve and run_pause <= 0 and fish.motion.swim_drive >= 0.95:
 			run_committed = true
 			committed_action = action
 			run_start_drive = fish.motion.swim_drive
