@@ -51,7 +51,7 @@ var last_counter: Dictionary = {}
 @export var jerk_cost: float = 14
 @export var landing_distance: float = 4
 @export var landing_depth: float = 6
-@export var maximum_line_acceleration: float = 20
+@export var maximum_line_acceleration: float = 40
 @export var maximum_vertical_acceleration: float = 2
 @export var vertical_pull_fraction: float = 0.15
 @export var maximum_pull_speed: float = 7
@@ -239,7 +239,7 @@ func _physics_process(delta: float) -> void:
 	# but supplies little outward pull and exposes the flank to counter pressure.
 	var contest = FightContest.evaluate(fish.heading,outward,right,rod_horizontal,rod_vertical)
 	var alignment = contest.x
-	var drive = alignment*fish.motion.propulsion*fish.acceleration*mass*propulsion_load_scale
+	var drive = alignment*fish.motion.propulsion*fish.acceleration*mass*propulsion_load_scale*(fish.force_capacity()*fish.motion.side_force_multiplier() if fish.motion.powered_active else 1.0)
 	var counter = contest.y
 	var vertical_counter = contest.z
 	var broadside = 1-absf(fish.heading.dot(outward))
@@ -259,7 +259,7 @@ func _physics_process(delta: float) -> void:
 		apply_directional_jerk(gesture_direction,outward,right,connected_line)
 		# Counter changes physical velocity/effort before this tick's spool accounting.
 		radial_speed = fish.velocity.dot(outward)
-		movement_load = alignment*fish.motion.propulsion*fish.acceleration*mass*propulsion_load_scale+directional_load+fish.motion.dive_power*35
+		movement_load = alignment*fish.motion.propulsion*fish.acceleration*mass*propulsion_load_scale*(fish.force_capacity()*fish.motion.side_force_multiplier() if fish.motion.powered_active else 1.0)+directional_load+fish.motion.dive_power*35
 	var condition_before = spool.condition
 	spool.step(delta,fish.position.distance_to(neutral_tip),radial_speed,movement_load,(0.0 if power_recovery > 0 else input.retrieve),fisher.drag_setting,power_active,spike+turn_shock+fall_load(),rod_pull,rod_vertical)
 	if check_spooled(): return

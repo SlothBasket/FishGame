@@ -67,3 +67,6 @@ Validation for the pacing milestone: 97 checks passed. Standalone 75-second grap
 
 
 Milestone subject: `Make powered commitments readable and steady Fisher close-out decisions` - persistent useful retrieve, varied continuous escape budgets, sustained lateral commitment, human-scale visible counter timing/messages, and raised outboard Fisher view. Eighteen focused checks and one three-encounter sample; no large batch.
+
+
+Milestone subject: `Calibrate endurance force and prioritize AI escape distance` - fresh 130 stamina/endurance with fixed 100 force reference, nonlinear fatigue and full-Drive reward, preserved payout accounting with higher line acceleration cap, committed side force, distance-defending AI, and right-side notices. Import, 19 focused checks, three short encounters and one graphical layout fixture; no large batch.

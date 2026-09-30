@@ -71,7 +71,9 @@ var fight_slack: bool = false
 @export var maximum_size: float = 2.1
 
 @export_group("Stamina and size speed")
-@export var stamina_capacity: float = 100
+@export var stamina_capacity: float = 130
+@export var normal_power_reference: float = 100
+@export var force_capacity_exponent: float = 0.9
 @export var sprint_drain: float = 18
 @export var dash_cost: float = 14
 @export var stamina_regen: float = 12
@@ -87,17 +89,16 @@ var fight_slack: bool = false
 @export var dive_endurance_drain: float = 2.0
 @export var ascent_endurance_drain: float = 1.6
 @export var side_endurance_cost: float = 1.5
-@export var fatigue_high_multiplier: float = 1.4
 @export var fatigue_low_multiplier: float = 0.12
-@export var fatigue_curve_exponent: float = 1.0
-var endurance: float = 100
+@export var fatigue_curve_exponent: float = 1.6
+var endurance: float = 130
 var drive_stamina_spent: float = 0
 var overdrive_stamina_spent: float = 0
 var radial_energy_spent: float = 0
 var lateral_energy_spent: float = 0
 var fight_regen_scale: float = 1
 var sprint_exhausted: bool = false
-var stamina: float = 100
+var stamina: float = 130
 var fight
 var line_force: Vector3 = Vector3.ZERO
 var sprint_locked: bool = false
@@ -275,7 +276,7 @@ func _physics_process(delta: float) -> void:
 		var speed = effective_swim_speed() * motion.multiplier() * (charge_swim_multiplier if feeding.is_charging else 1.0)
 		var response = (charge_response_multiplier if feeding.is_charging else 1.0)*(0.3 if head.impact_time > 0 else 1.0)
 		velocity = FishInput.next_velocity(velocity, heading, swim, speed, fight_boost_multiplier(),
-			reverse_speed_multiplier, acceleration * response * motion.multiplier() * motion.stored_force_multiplier() * (fight_boost_multiplier() if in_fight and boosting else 1.0), reverse_acceleration * response, water_drag * response, vertical_speed_multiplier, delta)
+			reverse_speed_multiplier, acceleration * response * motion.multiplier() * motion.stored_force_multiplier() * (fight_force_multiplier() if in_fight and boosting else 1.0), reverse_acceleration * response, water_drag * response, vertical_speed_multiplier, delta)
 		if in_fight and motion.diving: velocity.y -= motion.dive_acceleration*motion.dive_power*delta
 		if in_fight and not airborne: velocity.y += motion.ascent_acceleration*motion.ascent_power*delta
 		apply_line_force(delta)
@@ -363,7 +364,14 @@ func fatigue(amount: float) -> void:
 	stamina = minf(stamina,endurance)
 
 func fatigue_multiplier() -> float:
-	return lerpf(fatigue_low_multiplier,fatigue_high_multiplier,pow(clampf(endurance/maxf(1,stamina_capacity),0,1),fatigue_curve_exponent))
+	return maxf(fatigue_low_multiplier,pow(maxf(0,endurance)/maxf(1,normal_power_reference),fatigue_curve_exponent))
+
+func force_capacity() -> float:
+	return pow(maxf(0,endurance)/maxf(1,normal_power_reference),force_capacity_exponent)
+
+func fight_force_multiplier() -> float:
+	# Capacity scales powered acceleration, not top speed; basic locomotion survives.
+	return maxf(1,fight_boost_multiplier()*force_capacity()*motion.side_force_multiplier())
 
 func fight_boost_multiplier() -> float:
 	# Only fight sprint output fades; ordinary swim speed and turns remain available.
@@ -388,7 +396,7 @@ func touching_bottom() -> bool:
 	return false
 
 func power_capacity() -> float:
-	return pow(clampf(endurance/maxf(1,stamina_capacity),0,1),endurance_power_exponent)
+	return pow(clampf(endurance/maxf(1,normal_power_reference),0,1),endurance_power_exponent)
 func receive_impact(force: Vector3, severity: float) -> void:
 	var body = FishInput.angles(heading)
 	var wanted = FishInput.angles(force.normalized())

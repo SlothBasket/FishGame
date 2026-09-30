@@ -7,7 +7,9 @@ extends Resource
 @export var full_credit_window: float = 0.18
 @export var partial_credit_window: float = 0.48
 @export var decay_delay: float = 1.1
-@export var stored_drive_force_bonus: float = 0.20
+@export var stored_drive_force_bonus: float = 0.35
+@export var stored_drive_force_exponent: float = 2.0
+@export var side_force_bonus: float = 0.5
 @export var drive_gain: float = 0.10
 @export var drive_decay: float = 0.055
 @export var drive_drain: float = 0.30
@@ -142,7 +144,10 @@ func step(delta: float, input: FishInput, heading: Vector3, speed_fraction: floa
 
 func stored_force_multiplier() -> float:
 	# Reserved Drive supplies passive force; spending/disruption gives it up.
-	return 1+stored_drive_force_bonus*clampf(swim_drive/maxf(0.01,sustainable_max),0,1)*power_capacity
+	return 1+stored_drive_force_bonus*pow(clampf(swim_drive/maxf(0.01,sustainable_max),0,1),stored_drive_force_exponent)*power_capacity
+
+func side_force_multiplier() -> float:
+	return 1+side_force_bonus*side_quality if side_time > 0 and counter_recovery <= 0 else 1.0
 
 func multiplier() -> float:
 	return (1+0.22*maxf(swim_drive,powered_output)/maxf(0.01,sustainable_max)*power_capacity+overdrive)*(0.65 if counter_recovery > 0 else 1.0)
@@ -164,6 +169,7 @@ func interrupt_run(recovery: float = -1, disrupt_drive: bool = false) -> void:
 	propulsion *= 0.5
 	counter_recovery = counter_recovery_duration if recovery < 0 else recovery
 	side_time = 0
+	side_quality = 0
 	if disrupt_drive:
 		swim_drive = 0
 		drive_lockout = drive_counter_lockout

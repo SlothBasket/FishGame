@@ -102,10 +102,12 @@ func start(level: Node3D, fish: FishPlayer, args: PackedStringArray) -> void:
 	status.add_theme_font_size_override("font_size",16)
 	layer.add_child(status)
 	status.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
-	status.offset_left = 24
-	status.offset_top = 160
-	status.offset_right = 600
-	status.offset_bottom = 220
+	status.anchor_left = 0.34
+	status.anchor_right = 0.66
+	status.offset_left = 0
+	status.offset_top = 20
+	status.offset_right = 0
+	status.offset_bottom = 90
 	status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	status.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	if port < 1024 or port > 65535 or not address.is_valid_ip_address():

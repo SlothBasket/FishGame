@@ -5,6 +5,8 @@ extends CanvasLayer
 var remaining: float = 0
 var label: Label
 var notices: Label
+@export var notice_duration: float = 2.0
+@export var notice_fade: float = 0.3
 var notice_time: float = 0
 var recent_notices: Array[String] = []
 func _ready() -> void:
@@ -22,7 +24,14 @@ func _ready() -> void:
 	label.hide()
 	notices = Label.new()
 	add_child(notices)
-	notices.position = Vector2(30,250)
+	notices.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	notices.anchor_top = 0.28
+	notices.anchor_bottom = 0.28
+	notices.offset_left = -520
+	notices.offset_right = -32
+	notices.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	notices.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	notices.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	notices.add_theme_font_size_override("font_size",22)
 	notices.add_theme_color_override("font_shadow_color",Color.BLACK)
 	notices.add_theme_constant_override("shadow_offset_x",2)
@@ -34,18 +43,18 @@ func show_result(result: int, fish_role: bool) -> void:
 	remaining = duration
 	label.show()
 func show_counter(kind: int) -> void:
-	label.text = ["","RUN STOPPED!","OVERDRIVE BROKEN!","DIVE STOPPED!"][clampi(kind,0,3)]
-	remaining = 1.0
-	label.show()
+	show_notice(["","RUN STOPPED!","OVERDRIVE BROKEN!","DIVE STOPPED!"][clampi(kind,0,3)])
 func _process(delta: float) -> void:
 	notice_time = maxf(0,notice_time-delta)
 	notices.visible = notice_time > 0
+	notices.modulate.a = clampf(notice_time/maxf(0.01,notice_fade),0,1)
 	if notice_time <= 0: recent_notices.clear()
 	remaining = maxf(0,remaining-delta)
 	label.visible = remaining > 0
 
 func show_notice(text: String) -> void:
+	if notice_time > 0 and not recent_notices.is_empty() and recent_notices[-1] == text: return
 	recent_notices.append(text)
 	if recent_notices.size() > 3: recent_notices.pop_front()
 	notices.text = "\n".join(recent_notices)
-	notice_time = 2.5
+	notice_time = notice_duration

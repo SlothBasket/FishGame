@@ -21,6 +21,9 @@ var run_budget: float = 0
 var run_spent_start: float = 0
 var run_pause: float = 0
 var committed_action: int = 0
+var best_escape_distance: float = 0
+var recent_escape_distance: float = 0
+var preserve_drive_until: float = 0
 var run_start_drive: float = 0
 var completed_commitments: Array[Dictionary] = []
 var setting_wait: float = 0
@@ -60,12 +63,22 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 	clock += delta
 	var aim = fish.heading
 	if is_instance_valid(fish.fight):
+		if not fish_was_fighting:
+			best_escape_distance = fish.position.distance_to(fish.fight.fisher.position)
+			recent_escape_distance = best_escape_distance
+			preserve_drive_until = clock+2.5
 		fish_was_fighting = true
 		var f = fish.fight
+		var distance = fish.position.distance_to(f.fisher.position)
+		best_escape_distance = maxf(best_escape_distance,distance)
+		recent_escape_distance = lerpf(recent_escape_distance,distance,1-exp(-delta/3.0))
+		var losing_ground = distance < recent_escape_distance-1 or distance < best_escape_distance-3
+		if fish.motion.swim_drive < 0.9: preserve_drive_until = clock+2.5
 		var action = committed_action if run_committed else f.fish_action
 		if (side_hold > 0 or fish.motion.side_time > 0) and fish.motion.drive_lockout <= 0: action = FightDecisions.FishAction.RUN
 		aim = FightDecisions.heading_for(f,action)
 		var resting = action == FightDecisions.FishAction.REST
+		if not run_committed and not fish.airborne and action not in [FightDecisions.FishAction.DIVE,FightDecisions.FishAction.JUMP]: aim = FightDecisions.heading_for(f,FightDecisions.FishAction.RUN)
 		var energy = fish.stamina/maxf(1,fish.endurance)
 		run_pause = maxf(0,run_pause-delta)
 		if run_committed and (energy < 0.22 or fish.motion.drive_spent-run_spent_start >= run_budget or fish.motion.drive_lockout > 0 or fish.motion.jump_recovery > 0):
@@ -76,7 +89,7 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 			if completed_commitments.size() > 64: completed_commitments.pop_front()
 			run_committed = false
 			run_pause = 1.0
-		if not run_committed and not resting and run_pause <= 0 and fish.motion.swim_drive >= 0.95:
+		if not run_committed and not resting and run_pause <= 0 and fish.motion.swim_drive >= 0.95 and (losing_ground or distance < 15 or clock >= preserve_drive_until):
 			run_committed = true
 			committed_action = action
 			run_start_drive = fish.motion.swim_drive
@@ -103,8 +116,8 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 		side_wait = maxf(0,side_wait-delta)
 		side_hold = maxf(0,side_hold-delta)
 		if action in [FightDecisions.FishAction.RUN,FightDecisions.FishAction.LEFT,FightDecisions.FishAction.RIGHT] and ((sprint and fish.motion.swim_drive >= fish.motion.side_burst_drive) or side_hold > 0 or fish.motion.side_time > 0) and not fish.airborne:
-			if sprint and side_wait <= 0 and fish.motion.side_wait <= 0:
-				var side = -1 if execution_rng.randf() < 0.5 else 1
+			if sprint and action in [FightDecisions.FishAction.LEFT,FightDecisions.FishAction.RIGHT] and side_wait <= 0 and fish.motion.side_wait <= 0:
+				var side = -1 if action == FightDecisions.FishAction.LEFT else 1
 				side_aim = side_burst_aim(BaitMotion.horizontal(fish.position-f.fisher.position),side)
 				var edge = session.world.arena_width*0.5-8
 				var projected = fish.position+side_aim*16
@@ -114,7 +127,7 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 			if side_hold > 0 or fish.motion.side_time > 0:
 				aim = side_aim.rotated(Vector3.UP,stroke_side*deg_to_rad(9))
 		else: side_hold = 0
-		var input = FishInput.new(0.25 if resting else 1,0,0,aim,sprint)
+		var input = FishInput.new(1,0,0,aim,sprint)
 		input.vertical = 1 if action == FightDecisions.FishAction.JUMP and not fish.airborne and fish.motion.jump_recovery <= 0 else 0
 		if fish.motion.jump_recovery > 0: input.boost = false; input.aim_direction.y = -0.25
 		input.cancel_bite = fish.feeding.is_charging

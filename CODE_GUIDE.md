@@ -342,3 +342,6 @@ Reserved Drive / jump recovery: FishFightMotion.stored_drive_force_bonus (0.20) 
 
 
 Current AI commitment/counter/camera rules: see COMMITMENT_AND_COUNTER_READABILITY.md. It documents decision holds, Drive budget distribution, physical side-quality gates, server-visible counter timing, reliable role messages, authoritative outboard rod geometry, and bounded validation.
+
+
+Current force/escape calibration: FORCE_AND_ESCAPE_PATCH.md documents 130 starting endurance, fixed 100 power reference, nonlinear exertion fatigue and stored Drive, meaningful high-drag acceleration, quality-based side force, escape-distance AI and right-side fading notices. These values supersede prior guides where they differ.

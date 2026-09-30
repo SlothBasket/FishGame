@@ -65,8 +65,8 @@ func _ready() -> void:
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	fight_panel = PanelContainer.new()
 	root.add_child(fight_panel)
-	fight_panel.anchor_left = 0.71
-	fight_panel.anchor_right = 0.98
+	fight_panel.anchor_left = 0.02
+	fight_panel.anchor_right = 0.29
 	fight_panel.anchor_top = 0.04
 	fight_panel.anchor_bottom = 0.96
 	var margin = MarginContainer.new()
