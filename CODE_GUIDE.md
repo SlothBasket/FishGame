@@ -354,3 +354,14 @@ Current Fish AI and force readouts: VARIETY_AND_LIVE_FORCE.md supersedes distanc
 
 
 Current follow-up: RESERVE_SIDE_AND_FEEDING.md documents +45% quadratic stored Drive, ordinary reserve scale 0.90 versus powered 0.70, tactical high-Drive waits, quality-based finite side cost, immediate side identity, momentum counter shock, stronger hookset presentation and safe short-range feeding/reset logic. No automatic wander boost or direct Drive grants.
+
+
+### AI stroke and feeding correction (2026-10-01)
+This supersedes the earlier feeding setup and force defaults above. FishInput.rhythmic_swim supplies legal alternating steering (+/-0.75) reinforcing a 24-degree body-relative aim swing. An 8-degree maximum course bias keeps navigation from swallowing one half-stroke. FightTestDriver and FishFoodInterest share this input generator at the existing cadence. Committed side courses keep their 9-degree aim swing and retain bounded steering instead of discarding it. FishSteering thresholds and measured head.stroke -> FishFightMotion.step Drive awards are unchanged; deliberate head shakes, pauses and tactical reserve holding remain.
+
+FishFoodInterest aims early (0.12 s far lead; arrival prediction capped at 0.55 s), begins charge only inside attack_setup_distance=12 with heading dot >0.8, and keeps 0.90 approach / 0.85 charge throttle. Current charge produces actual min/max lunge reach, compared against predicted remaining distance with scaled bite-radius tolerance. preferred_launch_distance=7 m shifts by +/-1 m for closing speed and up to 2 m for fish growth; full charge may release outside this preferred zone. Alignment >=0.88 is still required. No chosen charge percentage or alignment braking. Existing freed-target guards, awareness radius and broad overshoot reset remain.
+
+FightSession propulsion_load_scale=0.80 and reserve_load_scale=1.0. Drag calibration and Fisher decisions are unchanged. Counter lateness uses side_elapsed/side_burst_duration for side bursts, or elapsed/(elapsed+counter_lateness_timescale) for variable maneuvers (timescale=2.5 s). Active maneuver state determines eligibility, not a timer. Existing minimum matched control and momentum-dependent late shock remain.
+
+
+See RESERVE_SIDE_AND_FEEDING.md for the checkpoint notes.

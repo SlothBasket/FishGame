@@ -49,11 +49,11 @@ func run() -> void:
 	lure.velocity = Vector3.ZERO
 	food.target = lure
 	food.state = FishFoodInterest.State.COMMIT
-	food.charge_goal = 0.75
 	fish.feeding.is_charging = true
 	fish.feeding._charge_time = fish.full_charge_time*0.3
 	var charge = food.input(fish,[lure],132,32,0.016)
 	check(charge.bite_held and not charge.cancel_bite and charge.throttle >= 0.65,"Charge continues beyond old quarter-power release")
+	lure.position = fish.position+fish.heading*7
 	fish.feeding._charge_time = fish.full_charge_time*0.8
 	charge = food.input(fish,[lure],132,32,0.016)
 	check(not charge.bite_held and not charge.cancel_bite,"Aligned charged attack releases")

@@ -260,7 +260,7 @@ func steer_burst(delta: float, input: FishInput, heading: Vector3, allowed: bool
 		side_time = 0
 		side_quality = 0
 	if side_time > 0:
-		var committed = FishInput.new(input.throttle,0,input.vertical,FishInput.turn_toward(side_target,input.aim_direction,deg_to_rad(12)),input.boost,input.bite_held)
+		var committed = FishInput.new(input.throttle,clampf(input.steering,-0.75,0.75),input.vertical,FishInput.turn_toward(side_target,input.aim_direction,deg_to_rad(12)),input.boost,input.bite_held)
 		committed.cancel_bite = input.cancel_bite
 		return committed
 	return input

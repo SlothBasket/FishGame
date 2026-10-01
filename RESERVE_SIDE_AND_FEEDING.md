@@ -35,3 +35,14 @@ eligible and intercept_direction accept Variant bait arguments, check is_instanc
 Import passed. One existing seven-second normal Fisher presentation smoke entered FIGHT with zero hook extension and no script errors. The usual Windows certificate warning remains. Freed-reference call ordering was inspected; no batch or new test harness was run. Existing reserve-value assertions were adjusted, not executed. Force balance, side efficiency/readability, physical outside-fight stroke generation and moving-prey interception remain manual playtest items.
 
 Gameplay files: FishFoodInterest, FishFightMotion, FishPlayer, FightTestDriver and FightSession. Existing DriveJumpChecks/ForceGroundChecks reference values and CODE_GUIDE/MILESTONES documentation updated. The user's 100-fight editor launch preference is preserved; this pass did not execute it. Use `-- --ai-vs-ai` for normal spectator play.
+
+
+## Measured AI strokes and moving feeding correction (2026-10-01)
+
+This supersedes the earlier feeding setup and force defaults above. FishInput.rhythmic_swim supplies legal alternating steering (+/-0.75) reinforcing a 24-degree body-relative aim swing. An 8-degree maximum course bias keeps navigation from swallowing one half-stroke. FightTestDriver and FishFoodInterest share this input generator at the existing cadence. Committed side courses keep their 9-degree aim swing and retain bounded steering instead of discarding it. FishSteering thresholds and measured head.stroke -> FishFightMotion.step Drive awards are unchanged; deliberate head shakes, pauses and tactical reserve holding remain.
+
+FishFoodInterest aims early (0.12 s far lead; arrival prediction capped at 0.55 s), begins charge only inside attack_setup_distance=12 with heading dot >0.8, and keeps 0.90 approach / 0.85 charge throttle. Current charge produces actual min/max lunge reach, compared against predicted remaining distance with scaled bite-radius tolerance. preferred_launch_distance=7 m shifts by +/-1 m for closing speed and up to 2 m for fish growth; full charge may release outside this preferred zone. Alignment >=0.88 is still required. No chosen charge percentage or alignment braking. Existing freed-target guards, awareness radius and broad overshoot reset remain.
+
+FightSession propulsion_load_scale=0.80 and reserve_load_scale=1.0. Drag calibration and Fisher decisions are unchanged. Counter lateness uses side_elapsed/side_burst_duration for side bursts, or elapsed/(elapsed+counter_lateness_timescale) for variable maneuvers (timescale=2.5 s). Active maneuver state determines eligibility, not a timer. Existing minimum matched control and momentum-dependent late shock remain.
+
+Validation: one import/parse check only; no batches or fight simulations. Movement feel, measured Drive gain and balance are left for manual playtesting. Editor spectator arguments (-- --ai-vs-ai) are preserved.

@@ -33,8 +33,8 @@ var _previous_heading: Vector3 = Vector3.FORWARD
 var power_exhausted: bool = false
 @export var power_drain: float = 24
 @export var lateral_force: float = 30
-@export var propulsion_load_scale: float = 0.70
-@export var reserve_load_scale: float = 0.90
+@export var propulsion_load_scale: float = 0.80
+@export var reserve_load_scale: float = 1.0
 @export var counter_momentum_scale: float = 0.35
 @export var counter_momentum_cap: float = 40
 @export var pressure_endurance_drain: float = 0.18
@@ -126,7 +126,7 @@ var visible_maneuver: String = ""
 var visible_id: int = 0
 var visible_since: float = 0
 var event_clock: float = 0
-@export var human_counter_window: float = 1.2
+@export var counter_lateness_timescale: float = 2.5 # Variable maneuver half-lateness, not expiry.
 var previous_power_notice: bool = false
 var rng = RandomNumberGenerator.new()
 
@@ -475,7 +475,11 @@ func apply_directional_jerk(direction: int, outward: Vector3, right: Vector3, co
 	if fisher.session.batch_runner != null: fisher.session.batch_runner.telemetry.record_counter(self)
 
 func counter_lateness() -> float:
-	return clampf((event_clock-visible_since-0.25)/maxf(0.1,human_counter_window),0,1)
+	# Eligibility still follows the authoritative maneuver; timing only grades it.
+	if fish.motion.side_time > 0:
+		return clampf(fish.motion.side_elapsed/maxf(0.1,fish.motion.side_burst_duration),0,1)
+	var elapsed = maxf(0,event_clock-visible_since)
+	return elapsed/(elapsed+maxf(0.1,counter_lateness_timescale))
 
 func apply_counter_recovery(maneuver: String, effectiveness: float, impulse: Vector3, lateness: float) -> void:
 	# No line-length awards: gain comes from recoil, lost propulsion and real pull.

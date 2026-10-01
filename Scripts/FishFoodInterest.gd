@@ -14,14 +14,12 @@ var stroke_time: float = 0
 var stroke_side: float = 1
 var rng = RandomNumberGenerator.new()
 var prioritize_lures: bool = false
-var charge_goal: float = 0.7
 var commit_time: float = 0
 var attack_reset: float = 0
 var reset_course: Vector3 = Vector3.FORWARD
 @export var attack_setup_distance: float = 12
 @export var maximum_prediction: float = 0.55
-@export var minimum_charge: float = 0.65
-@export var maximum_charge: float = 0.85
+@export var preferred_launch_distance: float = 7
 
 func set_lure_priority(enabled: bool) -> void:
 	prioritize_lures = enabled
@@ -30,14 +28,17 @@ func set_lure_priority(enabled: bool) -> void:
 	scan_wait = 0
 
 func intercept_direction(fish: FishPlayer, bait, remaining_charge: float) -> Vector3:
-	if not eligible(bait,fish): return fish.heading
-	# Predict through remaining wind-up plus dash travel, without changing physics.
+	return (intercept_point(fish,bait,remaining_charge)-fish.position).normalized()
+
+func intercept_point(fish: FishPlayer, bait, remaining_charge: float = 0) -> Vector3:
+	if not eligible(bait,fish): return fish.position+fish.heading
+	# Short arrival prediction, shared by aim and current charged-reach comparison.
 	var travel = fish.position.distance_to(bait.position)/maxf(1,fish.effective_dash_speed())
 	var predicted = bait.position
 	for i in range(3):
 		predicted = bait.position+bait.velocity*minf(maximum_prediction,remaining_charge+travel)
 		travel = fish.position.distance_to(predicted)/maxf(1,fish.effective_dash_speed())
-	return (predicted-fish.position).normalized()
+	return predicted
 
 @export var detection_radius: float = 45
 func disengage() -> void:
@@ -91,8 +92,7 @@ func input(fish: FishPlayer, candidates: Array, half_width: float, depth: float,
 			state = State.WANDER
 		else:
 			var direct = (target.position-fish.position).normalized()
-			var dash_reach = lerpf(fish.minimum_lunge_distance,fish.maximum_lunge_distance,charge_goal)
-			var commit_reach = minf(attack_setup_distance,dash_reach*0.75)
+			var commit_reach = attack_setup_distance
 			if attack_reset > 0:
 				var reset = FishInput.new(0.7,0,0,reset_course,false,false)
 				reset.cancel_bite = fish.feeding.is_charging
@@ -107,26 +107,27 @@ func input(fish: FishPlayer, candidates: Array, half_width: float, depth: float,
 				return reset
 			if state == State.APPROACH and distance < commit_reach and fish.heading.dot(direct) > 0.8:
 				state = State.COMMIT
-				charge_goal = rng.randf_range(minimum_charge,maximum_charge)
 				commit_time = 0
-			var remaining = maxf(0,charge_goal*fish.full_charge_time-fish.feeding._charge_time) if state == State.COMMIT else 0.0
-			var aim = intercept_direction(fish,target,remaining) if distance <= commit_reach else (target.position+target.velocity*0.12-fish.position).normalized()
-			# Keep moving through the wind-up; brake only for an imminent overshoot.
-			if state == State.APPROACH and distance > 18:
-				aim = aim.rotated(Vector3.UP,deg_to_rad(12)*stroke_side)
+			var predicted = intercept_point(fish,target)
+			var aim = (predicted-fish.position).normalized() if distance <= commit_reach else (target.position+target.velocity*0.12-fish.position).normalized()
 			var alignment = fish.heading.dot(aim)
-			var throttle = 0.85 if state == State.APPROACH else 0.7
-			var turn_radius = fish.velocity.length()/maxf(0.1,deg_to_rad(fish.forward_turn_rate))
-			if distance < maxf(2,turn_radius) and alignment < 0.4: throttle = 0.2
-			var attack = FishInput.new(throttle,0,0,aim,false,false)
+			# Deliberate strokes during approach; precise continuous aim for wind-up.
+			var attack = FishInput.new(0.85,0,0,aim,false,false)
+			if state == State.APPROACH:
+				attack = FishInput.rhythmic_swim(0.9,fish.heading,aim,stroke_side)
 			if state == State.COMMIT:
 				commit_time += delta
 				if distance > commit_reach*1.5 or fish.heading.dot(direct) < -0.1 or commit_time > fish.full_charge_time+1.0:
 					attack.cancel_bite = true
 					state = State.APPROACH
 				elif fish.feeding.is_charging:
-					# Hold the charge until both power and predicted heading are ready.
-					attack.bite_held = fish.feeding.charge_fraction() < charge_goal or alignment < 0.88
+					# Current charge determines reach; no preselected power percentage.
+					var reach = lerpf(fish.minimum_lunge_distance,fish.maximum_lunge_distance,fish.feeding.charge_fraction())
+					var remaining_distance = fish.position.distance_to(predicted)
+					var closing_speed = (fish.velocity-target.velocity).dot(direct)
+					var launch_distance = preferred_launch_distance+clampf(closing_speed*0.12,-1,1)+clampf(fish.size_multiplier()-1,0,2)
+					var in_launch_zone = distance <= launch_distance or fish.feeding.charge_fraction() >= 1
+					attack.bite_held = not (in_launch_zone and reach+fish.bite_radius*fish.size_multiplier() >= remaining_distance and alignment >= 0.88)
 					if not attack.bite_held: state = State.APPROACH
 				elif not fish.feeding.is_dashing() and fish.feeding.cooldown_remaining <= 0:
 					attack.bite_held = alignment > 0.65
@@ -143,7 +144,6 @@ func input(fish: FishPlayer, candidates: Array, half_width: float, depth: float,
 		if absf(ahead[axis]) > half_width-10: aim[axis] = -signf(ahead[axis])*0.6
 	if ahead.y < 3: aim.y = 0.35
 	elif ahead.y > depth-3: aim.y = -0.3
-	aim = aim.normalized().rotated(Vector3.UP,-stroke_side*deg_to_rad(24))
-	var cruise = FishInput.new(cruise_throttle,stroke_side*0.65 if state == State.WANDER else 0,0,aim,false)
+	var cruise = FishInput.rhythmic_swim(cruise_throttle,fish.heading,aim.normalized(),stroke_side)
 	cruise.cancel_bite = fish.feeding.is_charging
 	return cruise
