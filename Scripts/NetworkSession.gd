@@ -552,6 +552,7 @@ func track(key: String, actor: Node3D, destination: Vector3, angles: Vector2, du
 	tracks[key] = {"actor":actor,"from":actor.position,"to":destination,"rotation":actor.visual.rotation,"target_rotation":Vector3(angles.x,angles.y,roll),"time":0.0,"duration":duration}
 
 func _process(delta: float) -> void:
+	update_test_markers()
 	if hosting or closed: return
 	for record in tracks.values():
 		if not is_instance_valid(record.actor): continue
@@ -694,15 +695,26 @@ func add_test_marker(actor: BaitActor) -> void:
 	var marker = Label3D.new()
 	marker.name = "TestBaitMarker"
 	marker.text = "◇ TEST BAIT"
-	marker.position.y = 1.2
-	marker.font_size = 24
-	marker.pixel_size = 0.003
+	marker.position.y = 0.65
+	marker.font_size = 18
+	marker.pixel_size = 0.0008
 	marker.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	marker.no_depth_test = true
 	marker.fixed_size = true
 	marker.modulate = Color(0.6,1,1)
+	marker.visible = not actor.claimed and not actor.hook_held
 	actor.add_child(marker)
+	marker.add_to_group("test_bait_markers")
 	actor.bitten.connect(func(_bait,_eater): marker.hide())
+
+func update_test_markers() -> void:
+	# Only marked test lures are visited, not the whole bait population. State
+	# checks also cover replicas/late joins that did not receive the bite signal.
+	for marker in get_tree().get_nodes_in_group("test_bait_markers"):
+		var bait = marker.get_parent() as BaitActor
+		if bait == null: continue
+		var fighting = is_instance_valid(bait.fisher_owner) and is_instance_valid(bait.fisher_owner.fight)
+		marker.visible = show_test_bait_markers and not bait.claimed and not bait.hook_held and not fighting and bait.lifecycle == BaitActor.Lifecycle.ALIVE
 
 func publish_fight_result(fish: FishPlayer, fisher: FisherActor, result: int) -> void:
 	if batch_runner != null:

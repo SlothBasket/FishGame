@@ -86,3 +86,5 @@ Milestone subject: `Strengthen Drive reserve and fix feeding pursuit safety` - h
 - **Restore natural AI swimming and recognize smaller body strokes** (2026-10-01): revert body-relative stroke/navigation regression; reduce head-offset recognition gate to 8 degrees while retaining 4-degree actual body travel. Keeps moving feeding, force and counter changes.
 
 - **Keep active counters effective and defend against spool-out** (2026-10-01): remove late grades/control penalty, escalate emergency drag to 60-90%, strengthen hook body recoil and replicate existing stun stars. Import/parse validation only.
+
+- **Shrink test bait labels and hide engaged lures** (2026-10-01): compact marker with continuous fight/lifecycle visibility guard; import checked.

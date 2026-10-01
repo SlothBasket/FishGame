@@ -381,3 +381,7 @@ FisherControls overrides passive line-condition caution when line usage >=65%, l
 Hook impact uses hook_recoil_duration=0.85 s and hook_recoil_authority=1.0. FishSteering retains normal 20% recoil authority for other hits, but hook recoil can turn the body at full authority even when forward speed is low. Head angular caps and the original yank velocity remain. NetworkSession publishes a separate reliable hook_impact visual event reusing CounterHalo stars on host and clients, without counter rewards/banners or batch telemetry contamination. No movement wiggle changes.
 
 Validation: Godot import/parse passed; no fight batches or gameplay simulations. Drag risk balance and hook-turn feel remain manual playtest items.
+
+
+### Compact test-bait marker (2026-10-01)
+NetworkSession uses font_size 18, pixel_size 0.0008 and a 0.65 m offset for the fixed-screen-size test label. Only marked lures are checked for visibility; claimed, hook-held, dead, or fighting lures hide it, including replicated lifecycle updates and late joins. The existing bitten signal still hides it immediately.
