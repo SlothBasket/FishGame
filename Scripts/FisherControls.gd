@@ -60,6 +60,19 @@ static func plan(seen: Dictionary, stamina: float) -> Dictionary:
 		result.vertical = 0.4 if distance < 40 else result.vertical
 		result.power = stamina > 25 and (distance < 20 or opportunity) and danger < 0.55
 		result.label = result.stage if not opportunity else "CAPTURE OPENING"
+	# Continued payout near capacity is a losing position. Accept wear to stop it;
+	# condition alone must not lock the Fisher into a low-drag bleed-out.
+	var used_line = float(seen.get("line_out",0))/maxf(1,float(seen.get("capacity",150)))
+	if used_line >= 0.65 and float(seen.get("line_rate",0)) > 0.1 and slack <= 0.8:
+		var stopping_drag = lerpf(0.60,0.90,clampf((used_line-0.65)/0.25,0,1))
+		# Only acute overload warrants a brief step back, rather than surrendering
+		# to ordinary wear. Reassess promptly and resume escalation when it clears.
+		if danger > 1.25+urgency*0.25:
+			result.drag = maxf(0.4,float(seen.get("drag",0.4))-0.1)
+		else:
+			result.drag = maxf(float(result.drag),stopping_drag)
+		result["spool_pressure"] = true
+		result.label = "STOP PAYOUT"
 	# Observable efficiency sets a ceiling on useful cranking, not a hidden AI advantage.
 	var requested = float(seen.get("requested_retrieve",0))
 	var efficiency = float(seen.get("retrieve_efficiency",1))

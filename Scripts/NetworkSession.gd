@@ -724,6 +724,23 @@ func present_fight_result(fish_id: int, fisher_id: int, result: int) -> void:
 	if spectator_mode or owned == fish_id or owned == fisher_id:
 		outcome_banner.show_result(result,owned == fish_id)
 
+# Hook stars are presentation only: no counter award, banner, or telemetry event.
+func publish_hook_impact(fish: FishPlayer) -> void:
+	if batch_runner != null: return
+	for id in players:
+		if players[id].entity == fish:
+			present_hook_impact(id)
+			if connected: hook_impact.rpc(id)
+			return
+
+@rpc("authority","call_remote","reliable",0)
+func hook_impact(fish_id: int) -> void:
+	if not hosting: present_hook_impact(fish_id)
+
+func present_hook_impact(fish_id: int) -> void:
+	if players.has(fish_id) and players[fish_id].entity is FishPlayer:
+		players[fish_id].entity.add_child(CounterHalo.new())
+
 func publish_fight_counter(fish: FishPlayer, fisher: FisherActor, kind: int, effectiveness: float = 1.0) -> void:
 	if batch_runner != null:
 		batch_runner.counter(fisher.fight,kind)

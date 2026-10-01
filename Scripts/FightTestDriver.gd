@@ -256,12 +256,12 @@ func bait_retrieve(kind: int, delta: float) -> float:
 func persist_settings(plan: Dictionary, seen: Dictionary, delta: float) -> Dictionary:
 	setting_wait = maxf(0,setting_wait-delta)
 	var danger = float(seen.get("tension",0))/maxf(1,float(seen.get("break_threshold",93.5)))
-	var mode = "SLACK" if plan.get("capture_slack",false) else "DANGER" if danger > 0.85 else "RUN" if float(seen.get("line_rate",0)) > 0.1 and float(seen.get("payout",0)) > 2 else "DIVE" if seen.get("descending",false) else "OPENING" if seen.get("opportunity",false) else "NORMAL"
+	var mode = "SLACK" if plan.get("capture_slack",false) else "SPOOL" if plan.get("spool_pressure",false) else "DANGER" if danger > 0.85 else "RUN" if float(seen.get("line_rate",0)) > 0.1 and float(seen.get("payout",0)) > 2 else "DIVE" if seen.get("descending",false) else "OPENING" if seen.get("opportunity",false) else "NORMAL"
 	if setting_wait <= 0 or mode != setting_mode:
 		held_retrieve = plan.retrieve
-		if absf(plan.drag-selected_drag) >= 0.09 or mode in ["DANGER","SLACK"] or (plan.get("close_pressure",false) and plan.drag > selected_drag+0.01):
-			selected_drag = snappedf(move_toward(selected_drag,plan.drag,0.2 if mode == "DANGER" else 0.1),0.05)
-		setting_wait = execution_rng.randf_range(1.5,2.5)
+		if absf(plan.drag-selected_drag) >= 0.09 or mode in ["DANGER","SLACK","SPOOL"] or (plan.get("close_pressure",false) and plan.drag > selected_drag+0.01):
+			selected_drag = snappedf(move_toward(selected_drag,plan.drag,0.2 if mode in ["DANGER","SPOOL"] else 0.1),0.05)
+		setting_wait = 0.5 if mode == "SPOOL" else execution_rng.randf_range(1.5,2.5)
 		setting_mode = mode
 	plan.retrieve = held_retrieve
 	plan.drag = selected_drag

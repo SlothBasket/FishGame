@@ -24,6 +24,7 @@ var shake_side: int = 0
 var shake_age: float = 10
 var angular_velocity: float = 0
 var impact_time: float = 0
+var recoil_authority: float = 0.2
 var recoil: Vector2 = Vector2.ZERO
 func step(delta: float, heading: Vector3, input: FishInput, forward_speed: float) -> Vector3:
 	impact_time = maxf(0,impact_time-delta)
@@ -37,7 +38,9 @@ func step(delta: float, heading: Vector3, input: FishInput, forward_speed: float
 	var previous = offset
 	offset = offset.lerp(desired,1-exp(-head_response*delta))
 	angular_velocity = (offset.y-previous.y)/maxf(0.001,delta)
-	var authority = lerpf(idle_authority,1,clampf(forward_speed/6,0,1))*(0.2 if impact_time > 0 else 1.0)
+	var authority = lerpf(idle_authority,1,clampf(forward_speed/6,0,1))*(recoil_authority if impact_time > 0 else 1.0)
+	# A hook yank rotates even a slow/reversing fish; ordinary recoil stays damped.
+	if impact_time > 0 and recoil_authority > 0.2: authority = maxf(authority,recoil_authority)
 	var turn = offset*body_response*authority*delta
 	body.x = clampf(body.x+turn.x,deg_to_rad(-85),deg_to_rad(85))
 	body.y += turn.y
@@ -60,7 +63,8 @@ func step(delta: float, heading: Vector3, input: FishInput, forward_speed: float
 		shake_side = side
 		shake_age = 0
 	return FishInput.from_angles(body.x,body.y)
-func knock(direction: Vector2, duration: float) -> void:
+func knock(direction: Vector2, duration: float, body_authority: float = 0.2) -> void:
+	recoil_authority = clampf(body_authority,0,1)
 	recoil = Vector2(clampf(direction.x,-deg_to_rad(maximum_pitch),deg_to_rad(maximum_pitch)),clampf(direction.y,-deg_to_rad(maximum_yaw),deg_to_rad(maximum_yaw)))
 	offset = recoil
 	impact_time = duration

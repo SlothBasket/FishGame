@@ -11,6 +11,8 @@ enum Outcome { NONE, MISSED, LINE_BROKE, THROWN, LANDED, DISCONNECT, SPOOLED }
 @export var weak_window: float = 0.28
 @export var yank_speed: float = 5
 @export var hook_stamina_damage: float = 12
+@export var hook_recoil_duration: float = 0.85
+@export var hook_recoil_authority: float = 1.0
 @export var recovery_time: float = 0.65
 @export var opening_run_duration: float = 3.5
 @export var spool: FightLine = FightLine.new()
@@ -105,7 +107,7 @@ var power_punishes: int = 0
 @export var gesture: RodGesture = RodGesture.new()
 @export var jerk_counter_force: float = 65
 @export var early_run_window: float = 1.3
-@export var late_jerk_spike: float = 65
+@export var progress_jerk_spike: float = 65
 @export var counter_impulse: float = 4
 var jerk_direction: int = 0
 var jerk_notice_time: float = 0
@@ -126,7 +128,7 @@ var visible_maneuver: String = ""
 var visible_id: int = 0
 var visible_since: float = 0
 var event_clock: float = 0
-@export var counter_lateness_timescale: float = 2.5 # Variable maneuver half-lateness, not expiry.
+@export var counter_risk_timescale: float = 2.5 # Time to half additional shock risk; never a counter deadline.
 var previous_power_notice: bool = false
 var rng = RandomNumberGenerator.new()
 
@@ -216,8 +218,9 @@ func _physics_process(delta: float) -> void:
 			var yank = (hook_tip-fish.position).normalized()*yank_speed*(0.65+quality*0.25)
 			fish.velocity += yank
 			fish.receive_impact(yank,quality/3.0)
-			# Stronger visible head recoil; the existing gameplay yank is unchanged.
-			fish.head.knock(fish.head.recoil*1.6,0.45)
+			# Hook impact turns the body, not just the head; normal hits retain their damping.
+			fish.head.knock(fish.head.recoil*1.6,hook_recoil_duration,hook_recoil_authority)
+			fisher.session.publish_hook_impact(fish)
 			fish.stamina = maxf(0,fish.stamina-hook_stamina_damage*quality/3.0)
 			change_phase(Phase.IMPACT)
 		elif phase_time > opportunity_window: finish(Outcome.MISSED)
@@ -425,11 +428,10 @@ func directional_wear_rate(drive: float, run: float, propulsion: float, leverage
 
 func required_jerk(heading: Vector3, outward: Vector3, right: Vector3) -> int:
 	if fish.airborne or fish.motion.falling or (fish.motion.ascent_power > 0.1 and fish.velocity.y > 0): return RodGesture.Direction.NONE
-	if visible_maneuver.is_empty(): return RodGesture.Direction.NONE
 	if fish.motion.diving: return RodGesture.Direction.UP
 	if fish.motion.side_time > 0:
 		return RodGesture.Direction.RIGHT if fish.motion.side_sign < 0 else RodGesture.Direction.LEFT
-	if fish.motion.side_time <= 0 and (fish.motion.run_build <= 0.3 or not (fish.motion.powered_active or fish.motion.overdrive > 0)): return RodGesture.Direction.NONE
+	if fish.motion.side_time <= 0 and not (fish.motion.powered_active or fish.motion.overdrive > 0): return RodGesture.Direction.NONE
 	var side = heading.dot(right)
 	if absf(side) > 0.25: return RodGesture.Direction.RIGHT if side < 0 else RodGesture.Direction.LEFT
 	return RodGesture.Direction.UP if heading.dot(outward) > 0.6 else RodGesture.Direction.NONE
@@ -441,13 +443,13 @@ func jerk_contest(direction: int, heading: Vector3, outward: Vector3, right: Vec
 	# x = line spike, y = control fraction. Wrong direction always loads the line.
 	var expected = required_jerk(heading,outward,right)
 	var matched = expected != RodGesture.Direction.NONE and direction == expected
-	var late = counter_lateness()
+	var progress = counter_risk_progress()
 	var resistance = 25+fish.motion.propulsion*15+fish.motion.swim_drive*12+fish.motion.overdrive*30+fish.motion.dive_power*20
 	var force = jerk_counter_force*(0.65+0.35*rod_pull)
 	var course = (outward+Vector3.DOWN).normalized() if fish.motion.diving else right*fish.motion.side_sign if fish.motion.side_time > 0 else outward
 	var momentum = (3.2*(1+0.35*fish.growth_fraction()))*maxf(0,fish.velocity.dot(course))
-	var momentum_shock = minf(counter_momentum_cap,momentum*counter_momentum_scale*lerpf(0.35,1.5,late))
-	return Vector2((jerk_spike+late*late_jerk_spike+momentum_shock)*contact,clampf(force/resistance,0,1)*lerpf(1,0.15,late)*contact if matched else 0.0)
+	var momentum_shock = minf(counter_momentum_cap,momentum*counter_momentum_scale*lerpf(0.35,1.5,progress))
+	return Vector2((jerk_spike+progress*progress_jerk_spike+momentum_shock)*contact,clampf(force/resistance,0,1)*contact if matched else 0.0)
 
 func apply_directional_jerk(direction: int, outward: Vector3, right: Vector3, contact: float) -> void:
 	jerk_wait = jerk_cooldown
@@ -466,24 +468,23 @@ func apply_directional_jerk(direction: int, outward: Vector3, right: Vector3, co
 		notice("COUNTER MISSED",jerk_text+" / COUNTER MISSED")
 		return
 	var maneuver = "DIVE" if fish.motion.diving else "SIDE_BURST" if fish.motion.side_time > 0 else "RUN"
-	var timing = counter_lateness()
+	var timing = counter_risk_progress()
 	var impulse_direction = (Vector3.UP-outward*0.6).normalized() if maneuver == "DIVE" else -outward
 	apply_counter_recovery(maneuver,result.y,impulse_direction,timing)
-	var grade = "EARLY" if timing < 0.25 else "GOOD" if timing < 0.6 else "LATE" if timing < 0.9 else "VERY LATE"
-	notice(maneuver+" COUNTERED / "+grade,jerk_text+" / COUNTER "+grade)
+	notice(maneuver+" COUNTERED",jerk_text+" / COUNTER SUCCESS")
 	if interruption > 0: fisher.session.publish_fight_counter(fish,fisher,interruption,result.y)
 	if fisher.session.batch_runner != null: fisher.session.batch_runner.telemetry.record_counter(self)
 
-func counter_lateness() -> float:
-	# Eligibility still follows the authoritative maneuver; timing only grades it.
+func counter_risk_progress() -> float:
+	# Progress increases shock only; validity and control do not deteriorate with age.
 	if fish.motion.side_time > 0:
 		return clampf(fish.motion.side_elapsed/maxf(0.1,fish.motion.side_burst_duration),0,1)
 	var elapsed = maxf(0,event_clock-visible_since)
-	return elapsed/(elapsed+maxf(0.1,counter_lateness_timescale))
+	return elapsed/(elapsed+maxf(0.1,counter_risk_timescale))
 
-func apply_counter_recovery(maneuver: String, effectiveness: float, impulse: Vector3, lateness: float) -> void:
+func apply_counter_recovery(maneuver: String, effectiveness: float, impulse: Vector3, progress: float) -> void:
 	# No line-length awards: gain comes from recoil, lost propulsion and real pull.
-	last_counter = {"maneuver":maneuver,"overdrive_powered":fish.motion.overdrive > 0,"counter_timing":lateness,"effectiveness":effectiveness,"visible_commit_time":visible_since,"counter_input_time":event_clock,"reaction_delay":event_clock-visible_since,"visible_maneuver_id":visible_id,"timing_grade":"EARLY" if lateness < 0.25 else "GOOD" if lateness < 0.6 else "LATE" if lateness < 0.9 else "VERY LATE",
+	last_counter = {"maneuver":maneuver,"overdrive_powered":fish.motion.overdrive > 0,"counter_timing":progress,"effectiveness":effectiveness,"visible_commit_time":visible_since,"counter_input_time":event_clock,"reaction_delay":event_clock-visible_since,"visible_maneuver_id":visible_id,"timing_grade":"SUCCESS",
 		"endurance_before":fish.endurance,"stamina_before":fish.stamina,
 		"distance_before":fish.position.distance_to(neutral_tip),"line_out_before":spool.line_out}
 	var dive = maneuver == "DIVE"
@@ -506,7 +507,7 @@ func apply_counter_recovery(maneuver: String, effectiveness: float, impulse: Vec
 			fish.head.knock(Vector2(0,side*deg_to_rad(30)),0.45)
 		interruption = 3 if dive else 2 if overdrive else 1
 	else:
-		# Late but correct input earns partial physical relief, not a binary stun.
+		# Low force/contact can yield partial relief; maneuver age never weakens control.
 		fish.motion.dive_power *= 1-effectiveness
 		fish.motion.overdrive *= 1-effectiveness
 		fish.motion.run_build *= 1-effectiveness
