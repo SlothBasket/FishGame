@@ -365,3 +365,9 @@ FightSession propulsion_load_scale=0.80 and reserve_load_scale=1.0. Drag calibra
 
 
 See RESERVE_SIDE_AND_FEEDING.md for the checkpoint notes.
+
+
+### Restore course-relative swimming (2026-10-01)
+The previous body-relative AI stroke helper amplified alternating turns and capped navigation correction at 8 degrees. Removed it and restored the prior FightTestDriver/FishInput behavior, course-relative feeding/wander sway, and original side-burst steering constraint. Navigation and wall avoidance again supply the full desired course. No new oscillation strength or direct Drive grants.
+
+FishSteering.stroke_head_degrees is now 8 (was 12): a completed reversal still needs at least 4 degrees of measured body travel. Head shakes below that body threshold remain head shakes, regardless of the overlapping head-angle range. This modest shared recognition adjustment allows smaller head offsets as the body follows; cadence, gain, decay, and boost spending are unchanged. The prior moving feeding charge/reach logic, force scales, and counter timing are preserved. Import-only validation; actual Drive gain and restored movement feel need manual confirmation.

@@ -6,7 +6,9 @@ extends Resource
 @export var head_response: float = 14
 @export var body_response: float = 3.5
 @export var idle_authority: float = 0.2
-@export var stroke_head_degrees: float = 12
+# Head offset shrinks as the body follows. Recognize modest visible strokes
+# without forcing a larger wiggle; the separate 4-degree body gate still applies.
+@export var stroke_head_degrees: float = 8
 @export var stroke_body_degrees: float = 4
 @export var shake_speed: float = 1.2
 var offset: Vector2 = Vector2.ZERO # pitch, yaw radians relative to physical body

@@ -20,17 +20,6 @@ func _init(p_throttle: float = 0.0, p_steering: float = 0.0, p_vertical: float =
 	boost = p_boost
 	bite_held = p_bite
 
-## Legal AI swimming: a bounded course bias plus a deliberate body-relative stroke.
-## Steering reinforces aim (opposite signs in FishSteering), rather than replacing
-## measured strokes. Bounding the course bias keeps both half-strokes visible.
-static func rhythmic_swim(throttle_value: float, heading: Vector3, course: Vector3,
-		side: float, powered: bool = false, swing_degrees: float = 24) -> FishInput:
-	var body = angles(heading)
-	var wanted = angles(course)
-	var course_bias = clampf(angle_difference(body.y,wanted.y),-deg_to_rad(8),deg_to_rad(8))
-	var aim = from_angles(wanted.x,body.y+course_bias+side*deg_to_rad(swing_degrees))
-	return FishInput.new(throttle_value,-side*0.75,0,aim,powered)
-
 static func angles(direction: Vector3) -> Vector2:
 	return Vector2(asin(clampf(direction.y, -1.0, 1.0)), atan2(-direction.x, -direction.z))
 

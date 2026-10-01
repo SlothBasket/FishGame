@@ -46,3 +46,9 @@ FishFoodInterest aims early (0.12 s far lead; arrival prediction capped at 0.55 
 FightSession propulsion_load_scale=0.80 and reserve_load_scale=1.0. Drag calibration and Fisher decisions are unchanged. Counter lateness uses side_elapsed/side_burst_duration for side bursts, or elapsed/(elapsed+counter_lateness_timescale) for variable maneuvers (timescale=2.5 s). Active maneuver state determines eligibility, not a timer. Existing minimum matched control and momentum-dependent late shock remain.
 
 Validation: one import/parse check only; no batches or fight simulations. Movement feel, measured Drive gain and balance are left for manual playtesting. Editor spectator arguments (-- --ai-vs-ai) are preserved.
+
+
+### Restore course-relative swimming (2026-10-01)
+The previous body-relative AI stroke helper amplified alternating turns and capped navigation correction at 8 degrees. Removed it and restored the prior FightTestDriver/FishInput behavior, course-relative feeding/wander sway, and original side-burst steering constraint. Navigation and wall avoidance again supply the full desired course. No new oscillation strength or direct Drive grants.
+
+FishSteering.stroke_head_degrees is now 8 (was 12): a completed reversal still needs at least 4 degrees of measured body travel. Head shakes below that body threshold remain head shakes, regardless of the overlapping head-angle range. This modest shared recognition adjustment allows smaller head offsets as the body follows; cadence, gain, decay, and boost spending are unchanged. The prior moving feeding charge/reach logic, force scales, and counter timing are preserved. Import-only validation; actual Drive gain and restored movement feel need manual confirmation.

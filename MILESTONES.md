@@ -82,3 +82,5 @@ Milestone subject: `Strengthen Drive reserve and fix feeding pursuit safety` - h
 
 
 - **Restore measured AI strokes and moving feeding attacks** (2026-10-01): shared legal rhythmic steering, live charged-reach release, modest Fish load calibration, maneuver-progress counter grading. Import only; no batches. Preserves local AI-vs-AI editor launch preference.
+
+- **Restore natural AI swimming and recognize smaller body strokes** (2026-10-01): revert body-relative stroke/navigation regression; reduce head-offset recognition gate to 8 degrees while retaining 4-degree actual body travel. Keeps moving feeding, force and counter changes.

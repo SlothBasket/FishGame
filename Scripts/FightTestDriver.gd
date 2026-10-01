@@ -104,6 +104,8 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 			if execution_rng.randf() < 0.45+0.35*f.fish_skill: shake_until = 1.1
 		if shake_until > 0:
 			aim = fish.heading.rotated(Vector3.UP,sin(clock*22)*deg_to_rad(9))
+		elif stroke_pause <= 0 and not resting:
+			aim = aim.rotated(Vector3.UP,stroke_side*deg_to_rad(24))
 		side_wait = maxf(0,side_wait-delta)
 		side_hold = maxf(0,side_hold-delta)
 		if action in [FightDecisions.FishAction.RUN,FightDecisions.FishAction.LEFT,FightDecisions.FishAction.RIGHT] and ((sprint and fish.motion.swim_drive >= fish.motion.side_burst_drive) or side_hold > 0 or fish.motion.side_time > 0) and not fish.airborne:
@@ -116,14 +118,9 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 				side_hold = 2.2
 				side_wait = execution_rng.randf_range(3,5)
 			if side_hold > 0 or fish.motion.side_time > 0:
-				aim = side_aim
+				aim = side_aim.rotated(Vector3.UP,stroke_side*deg_to_rad(9))
 		else: side_hold = 0
 		var input = FishInput.new(0.25 if resting else 1,0,0,aim,sprint)
-		if shake_until <= 0 and stroke_pause <= 0 and not resting:
-			input = FishInput.rhythmic_swim(1,fish.heading,aim,stroke_side,sprint)
-			# Keep the committed lateral course authoritative while stroking.
-			if side_hold > 0 or fish.motion.side_time > 0:
-				input.aim_direction = side_aim.rotated(Vector3.UP,stroke_side*deg_to_rad(9))
 		input.vertical = 1 if action == FightDecisions.FishAction.JUMP and not fish.airborne and fish.motion.jump_recovery <= 0 else 0
 		if fish.motion.jump_recovery > 0: input.boost = false; input.aim_direction.y = -0.25
 		# Keep ordinary tools submerged; deliberate jumps retain full upward control.

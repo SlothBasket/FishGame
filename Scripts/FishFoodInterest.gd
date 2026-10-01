@@ -111,10 +111,11 @@ func input(fish: FishPlayer, candidates: Array, half_width: float, depth: float,
 			var predicted = intercept_point(fish,target)
 			var aim = (predicted-fish.position).normalized() if distance <= commit_reach else (target.position+target.velocity*0.12-fish.position).normalized()
 			var alignment = fish.heading.dot(aim)
-			# Deliberate strokes during approach; precise continuous aim for wind-up.
-			var attack = FishInput.new(0.85,0,0,aim,false,false)
-			if state == State.APPROACH:
-				attack = FishInput.rhythmic_swim(0.9,fish.heading,aim,stroke_side)
+			# Course-relative sway preserves pursuit/wall avoidance; never rotate the
+			# desired course around the current heading just to generate Drive.
+			if state == State.APPROACH and distance > 18:
+				aim = aim.rotated(Vector3.UP,deg_to_rad(12)*stroke_side)
+			var attack = FishInput.new(0.9 if state == State.APPROACH else 0.85,0,0,aim,false,false)
 			if state == State.COMMIT:
 				commit_time += delta
 				if distance > commit_reach*1.5 or fish.heading.dot(direct) < -0.1 or commit_time > fish.full_charge_time+1.0:
@@ -144,6 +145,7 @@ func input(fish: FishPlayer, candidates: Array, half_width: float, depth: float,
 		if absf(ahead[axis]) > half_width-10: aim[axis] = -signf(ahead[axis])*0.6
 	if ahead.y < 3: aim.y = 0.35
 	elif ahead.y > depth-3: aim.y = -0.3
-	var cruise = FishInput.rhythmic_swim(cruise_throttle,fish.heading,aim.normalized(),stroke_side)
+	aim = aim.normalized().rotated(Vector3.UP,-stroke_side*deg_to_rad(24))
+	var cruise = FishInput.new(cruise_throttle,stroke_side*0.65 if state == State.WANDER else 0,0,aim,false)
 	cruise.cancel_bite = fish.feeding.is_charging
 	return cruise
