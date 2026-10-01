@@ -35,7 +35,7 @@ func _ready() -> void:
 		batch.start(self,_fish)
 		return
 	add_child(PerformanceProbe.new())
-	_capture = "--capture" in args
+	_capture = "--preview-capture" in args # Legacy one-shot PNG; --capture is spectator filming.
 	_feeding_preview = "--feeding-preview" in args
 	_charge_preview = "--charge-preview" in args
 	_capture = _capture or _feeding_preview or _charge_preview
@@ -222,6 +222,7 @@ func anchor(label: Control, preset: Control.LayoutPreset, offsets: Rect2) -> voi
 func build_hud() -> void:
 	var layer = CanvasLayer.new()
 	add_child(layer)
+	layer.visible = not ("--capture" in OS.get_cmdline_user_args() and "--ai-vs-ai" in OS.get_cmdline_user_args())
 	var root = Control.new()
 	_fish_hud = root
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE

@@ -22,6 +22,7 @@ func _ready() -> void:
 	var layer = CanvasLayer.new()
 	layer.layer = 30
 	add_child(layer)
+	layer.visible = not ("--capture" in OS.get_cmdline_user_args() and "--ai-vs-ai" in OS.get_cmdline_user_args())
 	notice = Label.new()
 	notice.position = Vector2(40,340)
 	notice.add_theme_font_size_override("font_size",22)

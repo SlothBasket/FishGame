@@ -13,6 +13,8 @@ var ai_test_bait_priority: bool = false
 var batch_runner: FightBatch
 var encounter_seed: int = -1
 var spectator_mode: bool = false
+var capture_mode: bool = false
+var spectator_shot: String = ""
 var spectator_check: bool = false
 var spectator_saw_fight: bool = false
 var spectator_vision_used: bool = false
@@ -72,12 +74,18 @@ func start(level: Node3D, fish: FishPlayer, args: PackedStringArray) -> void:
 	var port = 24567
 	for arg in args:
 		if arg == "--host": hosting = true
+		if arg.begins_with("--shot="): spectator_shot = arg.get_slice("=",1)
+		if arg.begins_with("--seed=") or arg.begins_with("--fight-seed="):
+			encounter_seed = clampi(arg.get_slice("=",1).to_int(),0,2147483646)
 		if arg == "--role=fisher": requested_role = ROLE_FISHER
 		if arg.begins_with("--ai="): ai_mode = arg.trim_prefix("--ai=")
 		if arg == "--fight-smoke": fight_smoke = true
 		if arg.begins_with("--join="): address = arg.trim_prefix("--join=")
 		if arg.begins_with("--port="): port = arg.trim_prefix("--port=").to_int()
 	spectator_mode = "--ai-vs-ai" in args
+	capture_mode = spectator_mode and "--capture" in args
+	if capture_mode: show_test_bait_markers = false
+	if encounter_seed >= 0: seed(encounter_seed)
 	spectator_check = "--spectator-check" in args
 	if spectator_mode:
 		hosting = true
@@ -88,6 +96,7 @@ func start(level: Node3D, fish: FishPlayer, args: PackedStringArray) -> void:
 		local_fish.camera.current = false
 	outcome_banner = FightOutcomeBanner.new()
 	add_child(outcome_banner)
+	outcome_banner.visible = not capture_mode
 	multiplayer.allow_object_decoding = false
 	multiplayer.server_relay = false
 	multiplayer.peer_connected.connect(peer_joined)
@@ -97,6 +106,7 @@ func start(level: Node3D, fish: FishPlayer, args: PackedStringArray) -> void:
 	multiplayer.server_disconnected.connect(func(): disconnect_session("Host disconnected"))
 	var layer = CanvasLayer.new()
 	add_child(layer)
+	layer.visible = not capture_mode
 	status = Label.new()
 
 	status.add_theme_font_size_override("font_size",16)
@@ -124,6 +134,7 @@ func start(level: Node3D, fish: FishPlayer, args: PackedStringArray) -> void:
 		connected = true
 		if not spectator_mode: add_server_player(1,requested_role)
 		school = BaitSchool.new()
+		if encounter_seed >= 0: school.seed_value = encounter_seed+101
 		school.arena_half_width = world.arena_width*0.5
 		school.water_depth = world.water_depth
 		school.actor_spawned.connect(register_bait)
@@ -135,6 +146,7 @@ func start(level: Node3D, fish: FishPlayer, args: PackedStringArray) -> void:
 			status.hide()
 			var observer = FightSpectator.new()
 			observer.session = self
+			observer.set_shot(spectator_shot if not spectator_shot.is_empty() else "fisher" if capture_mode else "free")
 			world.add_child(observer)
 			print("SPECTATOR participants=",players.keys()," human_actor=false smoke=false")
 			if spectator_check and not FightReadabilityChecks.run(): get_tree().quit(1)
@@ -220,6 +232,8 @@ func add_server_player(peer: int, role: int = ROLE_FISH, ai: bool = false) -> vo
 		if ai: actor.position = Vector3(0,world.water_depth,12)
 		if peer == 1: setup_fisher_view()
 	players[peer] = {"entity":actor,"role":role,"sequence":-1,"received":clock,"tokens":4.0,"token_time":clock,"ai":FightTestDriver.new() if ai else null}
+	if ai and encounter_seed >= 0:
+		players[peer].ai.execution_rng.seed = encounter_seed+(51 if role == ROLE_FISH else 67)
 
 func setup_fisher_view() -> void:
 	local_fish.visible = false

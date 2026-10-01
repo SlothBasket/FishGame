@@ -88,3 +88,5 @@ Milestone subject: `Strengthen Drive reserve and fix feeding pursuit safety` - h
 - **Keep active counters effective and defend against spool-out** (2026-10-01): remove late grades/control penalty, escalate emergency drag to 60-90%, strengthen hook body recoil and replicate existing stun stars. Import/parse validation only.
 
 - **Shrink test bait labels and hide engaged lures** (2026-10-01): compact marker with continuous fight/lifecycle visibility guard; import checked.
+
+- **Add clean seeded spectator capture and camera presets** (2026-10-01): --capture with --ai-vs-ai, six local shots, Movie Maker usage in CAPTURE.md, hidden debug/HUD layers. Import/parse only; no movies or fights rendered.

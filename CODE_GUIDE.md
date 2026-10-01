@@ -385,3 +385,7 @@ Validation: Godot import/parse passed; no fight batches or gameplay simulations.
 
 ### Compact test-bait marker (2026-10-01)
 NetworkSession uses font_size 18, pixel_size 0.0008 and a 0.65 m offset for the fixed-screen-size test label. Only marked lures are checked for visibility; claimed, hook-held, dead, or fighting lures hide it, including replicated lifecycle updates and late joins. The existing bitten signal still hides it immediately.
+
+
+### Cinematic spectator capture (2026-10-01)
+See CAPTURE.md. NetworkSession owns capture_mode, shot argument and seeded spectator setup. FightSpectator.SHOTS/set_shot are the local camera selection seam; keys 1-3 retain their behavior, 4-6 add wide/side/rear. Capture hides presentation layers and markers without changing simulation. Reef reserves --preview-capture for the old screenshot-and-exit path; PerformanceProbe retains diagnostics but hides its notice layer during capture. Existing 1920x1080 is unchanged.
