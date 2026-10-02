@@ -3,9 +3,11 @@ extends Node3D
 ## Development observer only. Never submits intent or changes participant transforms.
 var session: NetworkSession
 # Existing keys 1/2/3 stay Fisher/Fish/free. Presets only affect this local camera.
-const SHOTS = ["fisher","fish","free","wide","fish-side","fish-rear"]
+const SHOTS = ["fisher","fish","free","wide","fish-side","fish-rear","fish-front"]
 var mode: int = 2
 var snap_shot: bool = true
+var director: CinematicDirector
+var framed_target: Vector3 = Vector3.ZERO
 
 func set_shot(preset: String, instant: bool = true) -> bool:
 	var index = SHOTS.find(preset)
@@ -30,6 +32,7 @@ var damage_label: Label
 var yaw: float = 0
 var pitch: float = -0.3
 func _ready() -> void:
+	if session.director_mode: director = CinematicDirector.new(self,session.encounter_seed)
 	equipment = FishingPresentation.new()
 	add_child(equipment)
 	camera = Camera3D.new()
@@ -68,8 +71,9 @@ func _ready() -> void:
 	damage_label.modulate = Color(1,0.35,0.18)
 	damage_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 func _unhandled_input(event: InputEvent) -> void:
+	if director != null: return
 	if event is InputEventKey and event.pressed and not event.echo:
-		if event.keycode in [KEY_1,KEY_2,KEY_3,KEY_4,KEY_5,KEY_6]:
+		if event.keycode in [KEY_1,KEY_2,KEY_3,KEY_4,KEY_5,KEY_6,KEY_7]:
 			set_shot(SHOTS[event.keycode-KEY_1])
 	if event is InputEventMouseMotion and mode == 2 and Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
 		yaw -= event.relative.x*0.003
@@ -79,6 +83,7 @@ func _process(delta: float) -> void:
 	var fish: FishPlayer = session.players[-1].entity
 	var fisher: FisherActor = session.players[-2].entity
 	var fight = fisher.fight
+	if director != null: director.update(delta,fish,fisher)
 	boat.position = fisher.position
 	boat.rotation.y = fisher.boat_yaw
 	draw_equipment(fisher,fish,delta)
@@ -104,13 +109,29 @@ func _process(delta: float) -> void:
 		elif mode == 5:
 			target = fish.position+fish.heading*3
 			desired = fish.position-flat_heading*13+Vector3.UP*3
-		camera.position = desired if snap_shot else camera.position.lerp(desired,1-exp(-delta*5))
+		elif mode == 6:
+			target = fish.position+fish.heading*2
+			desired = fish.position+flat_heading*8+flat_heading.cross(Vector3.UP)*7+Vector3.UP*3
+		var shot_fov = 60.0 if mode == 0 else 70.0
+		var surface_shot = false
+		if director != null:
+			var composition = director.compose(fish,fisher,target,desired)
+			target = composition.target
+			desired = composition.position
+			shot_fov = composition.fov
+			surface_shot = composition.surface
+		var cut = snap_shot
+		camera.position = desired if snap_shot else camera.position.lerp(desired,1-exp(-delta*(2.5 if director != null else 5)))
 		snap_shot = false
-		camera.fov = lerpf(camera.fov,60.0 if mode == 0 else 70.0,1-exp(-delta*4))
+		camera.fov = lerpf(camera.fov,shot_fov,1-exp(-delta*4))
 		if mode == 0: target = FishingPresentation.boat_view_target(fisher.position,forward,fight.rod_direction if is_instance_valid(fight) else forward,target)
+		if director != null:
+			target = director.protect_camera(fish,fisher,target,surface_shot)
+			framed_target = target if cut else framed_target.lerp(target,1-exp(-delta*4))
+			target = framed_target
 		if camera.position.distance_to(target) > 0.1: camera.look_at(target,Vector3.UP)
 	if session.capture_mode: return # Camera/equipment keep updating; no debug work.
-	debug.text = "AI vs AI — OBSERVER ONLY\n1 Fisher | 2 Fish | 3 Free (WASD, Q/E, RMB look) | 4 Wide | 5 Side | 6 Rear\nView: %s | Participants: %d\nDrive %.0f%% %s | Stamina %.0f / %.0f" % [SHOTS[mode],session.players.size(),fish.motion.swim_drive*100,"DRIVE DISRUPTED" if fish.motion.drive_lockout > 0 else "OVERDRIVE" if fish.motion.overdrive > 0 else "",fish.stamina,fish.endurance]
+	debug.text = "AI vs AI — OBSERVER ONLY\n1 Fisher | 2 Fish | 3 Free (WASD, Q/E, RMB look) | 4 Wide | 5 Side | 6 Rear | 7 Front\nView: %s | Participants: %d\nDrive %.0f%% %s | Stamina %.0f / %.0f" % [SHOTS[mode],session.players.size(),fish.motion.swim_drive*100,"DRIVE DISRUPTED" if fish.motion.drive_lockout > 0 else "OVERDRIVE" if fish.motion.overdrive > 0 else "",fish.stamina,fish.endurance]
 	if is_instance_valid(fight):
 		debug.text += "\nFish: %s | Fisher: %s\n%s | Line %.1f / %.0f m | Tension %.1f | Drag %.0f%%" % [FightDecisions.fish_text(fight.fish_action),FisherControls.plan(fight.perception.observation,fisher.stamina).label,FightSession.Phase.keys()[fight.phase],fight.spool.line_out,fight.spool.maximum_line_out,fight.tension,fisher.drag_setting*100]
 		debug.text += "\n"+FightSession.force_readout(fight.spool.fish_load,fight.spool.drag_threshold,fish.force_capacity(),fish.motion.stored_force_multiplier())

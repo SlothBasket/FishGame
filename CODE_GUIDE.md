@@ -389,3 +389,7 @@ NetworkSession uses font_size 18, pixel_size 0.0008 and a 0.65 m offset for the 
 
 ### Cinematic spectator capture (2026-10-01)
 See CAPTURE.md. NetworkSession owns capture_mode, shot argument and seeded spectator setup. FightSpectator.SHOTS/set_shot are the local camera selection seam; keys 1-3 retain their behavior, 4-6 add wide/side/rear. Capture hides presentation layers and markers without changing simulation. Reef reserves --preview-capture for the old screenshot-and-exit path; PerformanceProbe retains diagnostics but hides its notice layer during capture. Existing 1920x1080 is unchanged.
+
+
+### Live cinematic director (2026-10-01)
+--capture --director --ai-vs-ai enables CinematicDirector via NetworkSession.director_mode. The new RefCounted object only observes actors and selects local FightSpectator presets; independent seeded RNG prevents camera choices from changing gameplay randomness. Request/watch APIs, event priorities, protected feeding holds, shot variation and geometry-based camera fallback are described in CAPTURE.md. Fish-front is preset/key 7. Manual behavior remains available with Director off. No AI/fight rules changed.

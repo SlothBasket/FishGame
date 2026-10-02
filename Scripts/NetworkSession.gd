@@ -14,6 +14,7 @@ var batch_runner: FightBatch
 var encounter_seed: int = -1
 var spectator_mode: bool = false
 var capture_mode: bool = false
+var director_mode: bool = false
 var spectator_shot: String = ""
 var spectator_check: bool = false
 var spectator_saw_fight: bool = false
@@ -84,6 +85,7 @@ func start(level: Node3D, fish: FishPlayer, args: PackedStringArray) -> void:
 		if arg.begins_with("--port="): port = arg.trim_prefix("--port=").to_int()
 	spectator_mode = "--ai-vs-ai" in args
 	capture_mode = spectator_mode and "--capture" in args
+	director_mode = capture_mode and "--director" in args
 	if capture_mode: show_test_bait_markers = false
 	if encounter_seed >= 0: seed(encounter_seed)
 	spectator_check = "--spectator-check" in args
