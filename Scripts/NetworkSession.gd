@@ -15,6 +15,7 @@ var encounter_seed: int = -1
 var spectator_mode: bool = false
 var capture_mode: bool = false
 var director_mode: bool = false
+var capture_events: CaptureEventLog
 var spectator_shot: String = ""
 var spectator_check: bool = false
 var spectator_saw_fight: bool = false
@@ -86,7 +87,9 @@ func start(level: Node3D, fish: FishPlayer, args: PackedStringArray) -> void:
 	spectator_mode = "--ai-vs-ai" in args
 	capture_mode = spectator_mode and "--capture" in args
 	director_mode = capture_mode and "--director" in args
-	if capture_mode: show_test_bait_markers = false
+	if capture_mode:
+		show_test_bait_markers = false
+		capture_events = CaptureEventLog.new()
 	if encounter_seed >= 0: seed(encounter_seed)
 	spectator_check = "--spectator-check" in args
 	if spectator_mode:
@@ -307,6 +310,7 @@ func fish_intent(sequence: int, axes: PackedFloat32Array, flags: int) -> void:
 
 func _physics_process(delta: float) -> void:
 	clock += delta
+	if capture_events != null: capture_events.sample(self)
 	if batch_runner != null:
 		if closed: return
 		for record in players.values():
@@ -733,6 +737,9 @@ func update_test_markers() -> void:
 		marker.visible = show_test_bait_markers and not bait.claimed and not bait.hook_held and not fighting and bait.lifecycle == BaitActor.Lifecycle.ALIVE
 
 func publish_fight_result(fish: FishPlayer, fisher: FisherActor, result: int) -> void:
+	if capture_events != null:
+		var event = {FightSession.Outcome.LINE_BROKE:"line-break",FightSession.Outcome.THROWN:"thrown-hook",FightSession.Outcome.LANDED:"landing"}.get(result,"fight-ended")
+		capture_events.record(self,event,{"outcome":FightSession.Outcome.keys()[result]})
 	if batch_runner != null:
 		batch_runner.completed(fisher.fight,FightSession.Outcome.keys()[result])
 		return
@@ -793,6 +800,8 @@ func present_fight_counter(fish_id: int, fisher_id: int, kind: int, effectivenes
 	if spectator_mode or owned == fish_id or owned == fisher_id: outcome_banner.show_counter(kind)
 
 func publish_fight_notice(fish: FishPlayer, fisher: FisherActor, fish_text: String, fisher_text: String) -> void:
+	if capture_events != null and ("COUNTER SUCCESS" in fisher_text or "COUNTER MISSED" in fisher_text):
+		capture_events.record(self,"counter-success" if "COUNTER SUCCESS" in fisher_text else "counter-miss",{"notice":fisher_text})
 	if batch_runner != null:
 		batch_runner.telemetry.event("NOTICE: "+fisher_text,fisher.fight)
 		return

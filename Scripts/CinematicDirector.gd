@@ -26,6 +26,16 @@ var safety_cooldown: float = 0
 var clearance = SphereShape3D.new()
 var terrain_wait: float = 0
 var near_terrain: bool = false
+var recent_families: Array[String] = []
+var shot_event: String = "swim"
+var rear_offset: float = 0
+var jump_hold: bool = false
+var was_airborne: bool = false
+var reaction_hold: float = 0
+
+static func family(shot: String) -> String:
+	if shot in ["fish","fish-rear"]: return "rear"
+	return {"fish-side":"side","fish-front":"front","wide":"wide","fisher":"boat"}.get(shot,shot)
 
 func _init(observer: FightSpectator, seed_value: int) -> void:
 	view = observer
@@ -34,28 +44,46 @@ func _init(observer: FightSpectator, seed_value: int) -> void:
 	clearance.radius = 0.4
 
 ## Small future-control seam: subjects are fish, prey, or boat. Requests expire.
-func request_shot(shot: String, duration: float = 5, interest: int = 4, subject: String = "fish") -> void:
+func request_shot(shot: String, duration: float = 5, interest: int = 4, subject: String = "fish", event: String = "external") -> void:
 	if not shot in FightSpectator.SHOTS or shot == "free": return
 	if not pending.is_empty() and interest < int(pending.priority): return
-	pending = {"shot":shot,"duration":clampf(duration,3,8),"priority":interest,"subject":subject,"ttl":3.0}
+	pending = {"shot":shot,"duration":clampf(duration,5,10),"priority":interest,"subject":subject,"ttl":3.0,"event":event}
 
 func watch_event(event: String, shot: String, duration: float = 5) -> void:
 	watches[event] = {"shot":shot,"duration":duration}
 
-func cue(event: String, shots: Array, interest: int, subject: String = "fish") -> void:
+func cue(event: String, shots: Array, interest: int, subject: String = "fish", refresh: bool = false) -> void:
 	event_name = event
+	var current: String = view.SHOTS[view.mode]
+	# Compatible action transitions do not change distance/side or restart a cut.
+	if not refresh and current in shots and shot_age < hold_time and not watches.has(event):
+		preferred_subject = subject
+		priority = maxi(priority,interest)
+		if event == "counter": reaction_hold = 2.5
+		if event in ["ascent","breach"]: jump_hold = true
+		if event in ["side-dash","ascent","breach","counter"]: shot_event = event
+		return
 	var options = shots.duplicate()
-	if options.size() > 1: options.erase(view.SHOTS[view.mode])
+	var different = options.filter(func(shot): return family(shot) != family(current) and not family(shot) in recent_families)
+	if different.is_empty(): different = options.filter(func(shot): return family(shot) != family(current))
+	if not different.is_empty(): options = different
 	var selected = options[rng.randi_range(0,options.size()-1)]
-	var duration = rng.randf_range(3.5,7.0)
+	var duration = rng.randf_range(5,10)
 	if watches.has(event):
 		selected = watches[event].shot
 		duration = watches[event].duration
-	request_shot(selected,duration,interest,subject)
+	request_shot(selected,duration,interest,subject,event)
 
 func update(delta: float, fish: FishPlayer, fisher: FisherActor) -> void:
 	shot_age += delta
 	bite_hold = maxf(0,bite_hold-delta)
+	reaction_hold = maxf(0,reaction_hold-delta)
+	if was_airborne and not fish.airborne:
+		jump_hold = false
+		reaction_hold = maxf(reaction_hold,1.5) # Let the splash settle.
+	if jump_hold and not fish.airborne and fish.motion.ascent_power <= 0.1 and not was_airborne:
+		jump_hold = false
+	was_airborne = fish.airborne
 	safety_cooldown = maxf(0,safety_cooldown-delta)
 	if not pending.is_empty():
 		pending.ttl -= delta
@@ -81,17 +109,17 @@ func update(delta: float, fish: FishPlayer, fisher: FisherActor) -> void:
 		if fight.phase == FightSession.Phase.IMPACT:
 			event = "hookset"; shots = ["fisher"]; interest = 3; subject = "boat"
 		elif fish.airborne:
-			event = "breach"; shots = ["wide"]; interest = 3
+			event = "breach"; shots = ["fish-side","fish-front","wide"]; interest = 3
 		elif fish.motion.ascent_power > 0.1:
-			event = "ascent"; shots = ["fish-side"]; interest = 2
+			event = "ascent"; shots = ["fish-side","fish-rear"]; interest = 2
 		elif fish.motion.diving:
 			event = "dive"; shots = ["fish-side","fish-rear"]; interest = 2
 		elif fish.motion.side_time > 0:
-			event = "side-dash"; shots = ["fish-side","fish-front"]; interest = 2
+			event = "side-dash"; shots = ["fish-side"]; interest = 2
 		elif fish.motion.overdrive > 0 or fish.motion.powered_active:
 			event = "powered-run"; shots = ["fish-rear","fish-front"]; interest = 2
 		elif fight.phase == FightSession.Phase.OPENING:
-			event = "opening"; shots = ["fish-rear","fish-side"]; interest = 2
+			event = "opening"; shots = ["fish-rear","fish"]; interest = 2
 		else:
 			event = "fight"; shots = ["fish-rear","fish-side","fisher"]
 		var counter = float(fight.last_counter.get("counter_input_time",-1))
@@ -104,7 +132,7 @@ func update(delta: float, fish: FishPlayer, fisher: FisherActor) -> void:
 	elif fish.feeding.is_charging:
 		event = "feeding-charge"; shots = ["fish-side","fish-front"]; interest = 2; subject = "prey"
 	elif is_instance_valid(prey):
-		event = "approach"; shots = ["fish-side","fish-front","fish"]; interest = 1; subject = "prey"
+		event = "approach"; shots = ["fish-side","fish-front"]; interest = 1; subject = "prey"
 	if event == "swim" and near_terrain:
 		event = "terrain"; shots = ["fish-side","fish-front","wide"]; interest = 1
 	elif event == "swim" and shot_age >= 3 and fish.heading.dot(last_heading) < 0.25:
@@ -120,35 +148,52 @@ func update(delta: float, fish: FishPlayer, fisher: FisherActor) -> void:
 		bite_hold = 2.0
 		pending.clear()
 	# Ordinary cuts wait for the full hold. Higher interest can interrupt after
-	# 1.5 s, but an actual feeding dash and bite aftermath are protected.
-	var locked = (fish.feeding.is_dashing() and event != "hookset") or bite_hold > 0
-	if not locked and not pending.is_empty() and (shot_age >= hold_time or (int(pending.priority) > priority and shot_age >= 1.5)):
+	# 2.5 s for major events; dash, jump, bite and counter motion are protected.
+	var locked = ((fish.feeding.is_dashing() and event != "hookset") or bite_hold > 0 or (fish.motion.side_time > 0 and shot_event == "side-dash") or jump_hold or reaction_hold > 0) and event != "hookset"
+	if not locked and not pending.is_empty() and (shot_age >= hold_time or (int(pending.priority) >= 3 and int(pending.priority) > priority and shot_age >= 2.5)):
 		select_pending(fish)
 	elif not locked and shot_age >= hold_time and pending.is_empty():
 		if fish.heading.dot(last_heading) < 0.25: event_name = "course-change"
 		else: event_name = event
-		cue(event_name,shots,interest,subject)
-		select_pending(fish)
+		cue(event_name,shots,interest,subject,true)
+		if not pending.is_empty(): select_pending(fish)
 
 func select_pending(fish: FishPlayer) -> void:
-	view.set_shot(pending.shot)
+	shot_event = pending.get("event","external")
+	var changed = pending.shot != view.SHOTS[view.mode]
+	if changed:
+		recent_families.append(family(view.SHOTS[view.mode]))
+		if recent_families.size() > 2: recent_families.pop_front()
+		view.set_shot(pending.shot,shot_event in ["hookset","breach","counter","landing"])
+	if shot_event in ["ascent","breach"]: jump_hold = true
+	if shot_event == "counter": reaction_hold = 2.5
 	hold_time = pending.duration
 	priority = pending.priority
 	preferred_subject = pending.subject
 	pending.clear()
 	shot_age = 0
 	last_heading = fish.heading
-	distance_scale = rng.randf_range(0.92,1.12)
-	height_offset = rng.randf_range(-0.3,0.7)
+	if not changed: return
+	distance_scale = rng.randf_range(0.85,1.2)
+	height_offset = rng.randf_range(-1.3,2.0)
 	side = -1 if rng.randf() < 0.5 else 1
 	fov_offset = rng.randf_range(-3,3)
+	rear_offset = rng.randf_range(-3,3)
 
 func compose(fish: FishPlayer, fisher: FisherActor, target: Vector3, desired: Vector3) -> Dictionary:
 	var shot = view.SHOTS[view.mode]
 	var fighting = is_instance_valid(fisher.fight)
-	if shot == "wide" and not fighting and preferred_subject != "boat":
+	var jumping = jump_hold or fish.airborne or fish.motion.ascent_power > 0.1
+	if shot == "wide" and jumping:
+		# A jump wide frames the Fish/waterline, never the full boat separation.
+		target = fish.position
+		desired = fish.position+Vector3(16*side,7,15)*distance_scale
+	elif shot == "wide" and preferred_subject == "boat":
+		target = fisher.position+Vector3.UP
+		desired = fisher.position+Vector3(12*side,9,16)*distance_scale
+	elif shot == "wide" and not fighting and preferred_subject != "boat":
 		target = fish.position+fish.heading*3
-		desired = fish.position+Vector3(16,9,19)
+		desired = fish.position+Vector3(16*side,9+height_offset,19)*distance_scale
 	elif shot != "fisher" and shot != "wide":
 		target = fish.position+fish.heading*2
 		if preferred_subject == "prey" and is_instance_valid(prey) and fish.position.distance_to(prey.position) < 24:
@@ -158,13 +203,18 @@ func compose(fish: FishPlayer, fisher: FisherActor, target: Vector3, desired: Ve
 		if shot == "fish-side" or shot == "fish-front":
 			var right = BaitMotion.horizontal(fish.heading).cross(Vector3.UP)
 			desired -= right*(desired-fish.position).dot(right)*(1-side)
+	if family(shot) == "rear":
+		desired += BaitMotion.horizontal(fish.heading).cross(Vector3.UP)*rear_offset
+	if jumping and shot in ["fish-side","fish-front","fish-rear","fish"]:
+		target = fish.position+Vector3.UP*0.7
+		desired.y = fish.position.y+0.5 # Stay close/low during ascent and fall.
 	var surface_shot = shot == "fisher" or (shot == "wide" and (fighting or preferred_subject == "boat"))
 	if surface_shot: desired.y = maxf(desired.y,fisher.position.y+2)
 	return {"target":target,"position":desired,"fov":(60 if shot == "fisher" else 75 if shot == "wide" else 68)+fov_offset,"surface":surface_shot}
 
 func protect_camera(fish: FishPlayer, fisher: FisherActor, target: Vector3, surface_shot: bool) -> Vector3:
 	var camera = view.camera
-	var anchor = fisher.position+Vector3.UP*3 if surface_shot else fish.position
+	var anchor = (fish.position+Vector3.UP*2 if jump_hold or fish.airborne else fisher.position+Vector3.UP*3) if surface_shot else fish.position
 	var space = fish.get_world_3d().direct_space_state
 	# Sphere sweep catches terrain/rocks along the full camera path (mask 1),
 	# independent of flat-floor assumptions. Gameplay actors are excluded.

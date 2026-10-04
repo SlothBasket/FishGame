@@ -393,3 +393,7 @@ See CAPTURE.md. NetworkSession owns capture_mode, shot argument and seeded spect
 
 ### Live cinematic director (2026-10-01)
 --capture --director --ai-vs-ai enables CinematicDirector via NetworkSession.director_mode. The new RefCounted object only observes actors and selects local FightSpectator presets; independent seeded RNG prevents camera choices from changing gameplay randomness. Request/watch APIs, event priorities, protected feeding holds, shot variation and geometry-based camera fallback are described in CAPTURE.md. Fish-front is preset/key 7. Manual behavior remains available with Director off. No AI/fight rules changed.
+
+
+### Capture continuity and timestamps (2026-10-04)
+CinematicDirector now uses 5-10 second holds, smooth ordinary transitions, recent shot families, compatible-event retention, action holds and modest side/rear/front/wide variants. Jump wides frame Fish rather than boat separation; ascent/flight can retain close low framing. CaptureEventLog writes sparse simulation-time CSV events under user://capture-events using session state edges and existing notice/result paths. No gameplay mutations or shared random draws. See CAPTURE.md for API, events, columns and paths.
