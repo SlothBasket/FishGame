@@ -430,3 +430,7 @@ LandingShow is a short server-owned post-fight sequence (excluded from batches):
 
 Import/parse and small direct checks passed for the delay gate, completion scheduling with targeting off, held pose, water reentry and missed-water reset. No movie or fight batch was run. Camera feel and comedy timing need manual viewing.
 
+
+
+### Release throw development test
+`GameControls.test_release` defaults to **P**. `Reef` routes it to the solo test boat or `NetworkSession.test_release()`. Joined clients request the host-owned sequence; Fish players test their own fish, Fisher players use their hooked fish (otherwise an available fish), and spectators use an available fish. An active fight finishes as LANDED. Repeated presses during the gag are ignored. Solo bait/boat testing returns to the Fish camera. `LandingShow` uses optional fisherman/session references and an explicit boat anchor so the same hold, random throw, splash return and timeout respawn run with or without Director/capture/networking. Normal landed fights already call this same sequence. P is a development shortcut, not a fight mechanic.

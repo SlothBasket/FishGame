@@ -194,7 +194,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		_camera_yaw -= event.relative.x * mouse_sensitivity * (hooked_sway_camera_scale if fight_active else 1.0)
 		_camera_pitch = clampf(_camera_pitch - event.relative.y * mouse_sensitivity, -1.35, 1.35)
 		pivot.rotation = Vector3(_camera_pitch, _camera_yaw, 0.0)
-	if not networked and not is_instance_valid(fight) and event.is_action_pressed("reset"):
+	if not networked and not is_instance_valid(fight) and not is_instance_valid(landing_show) and event.is_action_pressed("reset"):
 		reset_fish()
 
 func read_local_input() -> FishInput:

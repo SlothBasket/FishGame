@@ -79,6 +79,22 @@ func _ready() -> void:
 			bait.driver = BaitMotion.ControlledBaitDriver.new()
 			add_child(bait)
 
+func _unhandled_input(event: InputEvent) -> void:
+	if event.is_echo() or not event.is_action_pressed("test_release"): return
+	get_viewport().set_input_as_handled()
+	if is_instance_valid(network_session):
+		network_session.test_release()
+	elif is_instance_valid(_lure_test) and not is_instance_valid(_fish.landing_show):
+		# Return from bait/boat controls so the normal Fish camera follows the throw.
+		_lure_test.set_active(false)
+		_lure_test.boat.visible = true
+		var show = LandingShow.new()
+		show.fish = _fish
+		show.anchor_position = _lure_test.anchor_position
+		show.anchor_yaw = _lure_test.boat_yaw
+		show.arena_half_width = arena_width*0.5
+		add_child(show)
+
 func build_water() -> void:
 	var world = WorldEnvironment.new()
 	var environment = Environment.new()

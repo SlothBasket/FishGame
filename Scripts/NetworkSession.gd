@@ -191,6 +191,48 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F10:
 		disconnect_session("Disconnected")
 
+## Development release test: clients request it; only the host moves actors.
+func test_release() -> void:
+	if closed: return
+	if hosting: release_test_for(1)
+	elif connected: request_release_test.rpc_id(1)
+
+@rpc("any_peer","call_remote","reliable",0)
+func request_release_test() -> void:
+	if hosting and not closed:
+		release_test_for(multiplayer.get_remote_sender_id())
+
+func release_test_for(peer: int) -> void:
+	if not players.has(peer) and not (peer == 1 and spectator_mode): return
+	var fish: FishPlayer
+	var fisher: FisherActor
+	if players.has(peer):
+		var actor = players[peer].entity
+		if actor is FishPlayer: fish = actor
+		elif actor is FisherActor: fisher = actor
+	if is_instance_valid(fisher) and is_instance_valid(fisher.fight): fish = fisher.fight.fish
+	if not is_instance_valid(fish):
+		for record in players.values():
+			if record.entity is FishPlayer and not is_instance_valid(record.entity.fight):
+				fish = record.entity
+				break
+	if not is_instance_valid(fish) or is_instance_valid(fish.landing_show): return
+	if is_instance_valid(fish.fight):
+		fish.fight.finish(FightSession.Outcome.LANDED)
+		return
+	if not is_instance_valid(fisher):
+		for record in players.values():
+			if record.entity is FisherActor and not is_instance_valid(record.entity.fight) and not is_instance_valid(record.entity.landing_show):
+				fisher = record.entity
+				break
+	if is_instance_valid(fisher) and is_instance_valid(fisher.landing_show): return
+	var show = LandingShow.new()
+	show.fish = fish
+	show.fisher = fisher
+	show.session = self
+	show.anchor_position.y = world.water_depth
+	add_child(show)
+
 func disconnect_session(message: String) -> void:
 	if closed: return
 	closed = true

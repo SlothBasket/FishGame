@@ -104,3 +104,5 @@ Milestone subject: `Strengthen Drive reserve and fix feeding pursuit safety` - h
 - **Fix boat camera feedback and stalled Fish commitments** (2026-10-04): consistent surface framing, slower return to boat, preserve surface dive intent and release invalid/unpowered AI commitments. Import/parse only; manual feel/reproduction pending.
 
 - **Fix capture gates and add comic landing release** (2026-10-04): actual lure eligibility gate, reliable bounded capture completion, right-side events in recordings, pre-oriented boat transitions/committed event viewpoints, and bounded server-owned landing toss with splash-position reuse. Import and direct path checks; no movie/batch.
+
+- **Add P release test across play modes** — Shared landing throw available in solo Fish/bait testing, hosted roles, joined clients and AI spectator/capture modes; no Director dependency.

@@ -4,7 +4,7 @@ extends RefCounted
 static func install() -> void:
 	var keys = {"forward":KEY_W,"back":KEY_S,"left":KEY_A,"right":KEY_D,
 		"rise":KEY_SPACE,"dive":KEY_CTRL,"boost":KEY_SHIFT,"reset":KEY_R,
-		"cast":KEY_G,"bait_mode":KEY_TAB,"bait_camera":KEY_C,"bait_reset":KEY_F,"bait_species":KEY_X}
+		"test_release":KEY_P,"cast":KEY_G,"bait_mode":KEY_TAB,"bait_camera":KEY_C,"bait_reset":KEY_F,"bait_species":KEY_X}
 	for action in keys:
 		var event = InputEventKey.new()
 		event.physical_keycode = keys[action]
