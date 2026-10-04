@@ -397,3 +397,7 @@ See CAPTURE.md. NetworkSession owns capture_mode, shot argument and seeded spect
 
 ### Capture continuity and timestamps (2026-10-04)
 CinematicDirector now uses 5-10 second holds, smooth ordinary transitions, recent shot families, compatible-event retention, action holds and modest side/rear/front/wide variants. Jump wides frame Fish rather than boat separation; ascent/flight can retain close low framing. CaptureEventLog writes sparse simulation-time CSV events under user://capture-events using session state edges and existing notice/result paths. No gameplay mutations or shared random draws. See CAPTURE.md for API, events, columns and paths.
+
+
+### Dev Launcher (2026-10-04)
+Scenes/DevLauncher.tscn is the startup scene; Scripts/DevLauncher.gd decides whether to show UI or defer loading Reef for explicit CLI modes. No Reef/Fish logic changes. The frontend builds tokenized OS.create_process arguments for all existing modes, resolves current executable/project, and quits only after a positive PID. Movie Maker options precede --; gameplay options follow it. Safe filename and duplicate handling are isolated static helpers. Settings use user://dev-launcher.cfg and movies user://captures/. See DEV_LAUNCHER.md.

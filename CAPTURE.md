@@ -70,3 +70,7 @@ Each capture session (with or without Director) creates `user://capture-events/c
 Columns: `timestamp` (simulation seconds since session start), `event`, `encounter_seed`, `metadata_json`. Events include feeding-charge/dash, bite-success, fight-start/opening/hookset, Drive/Overdrive, left/right dash, dive, ascent/breach, counter-success/miss, Power Reel and fight outcomes (line break, thrown hook, landing). State edges are sampled in the session physics tick; counters and outcomes reuse existing authoritative notification paths. Only events are written/flushed, never frame-by-frame actor state. Timestamps identify simulation moments for future editing; no movie editing or frame-offset calibration is performed here.
 
 Implementation: `CaptureEventLog` owns the CSV writer; `NetworkSession` samples it and forwards existing notices/results; `CinematicDirector` handles families, holds and composition. Parse/import checked only; no movie, batch or preview rendered for this pass.
+
+
+## Dev Launcher
+F5 with empty Main Run Args now opens a developer launcher. Director Preview is realtime only; Record Director Fight starts Movie Maker in a separate Godot process and writes duplicate-safe AVI names under user://captures/. Optional seed and AI skills are remembered. See DEV_LAUNCHER.md. Existing explicit capture/movie command lines bypass the menu.

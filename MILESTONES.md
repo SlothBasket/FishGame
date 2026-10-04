@@ -94,3 +94,5 @@ Milestone subject: `Strengthen Drive reserve and fix feeding pursuit safety` - h
 - **Add live cinematic capture director** (2026-10-01): timed event-interest camera selection for exploration/feeding and fights; fish-front preset, conservative variations and collision/framing fallback. Import/parse only; no fights or recordings.
 
 - **Smooth cinematic direction and log capture events** (2026-10-04): longer family-aware shots, action holds, closer breach framing and sparse simulation-time CSV logs. Import/parse only; preserves the user's capture/director editor arguments.
+
+- **Add development mode launcher and Movie Maker frontend** (2026-10-04): no-argument startup menu, six modes, optional persisted seed/skills, safe duplicate-free recordings in user://captures/. Existing CLI workflows preserved; import and headless menu/argument checks only. Editor recording arguments first checkpointed as 531daff.
