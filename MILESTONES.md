@@ -110,3 +110,5 @@ Milestone subject: `Strengthen Drive reserve and fix feeding pursuit safety` - h
 - **Restore smooth boat retreat and arc release throws** — Restore continuous camera travel with bounded rotation; forward/inward arcing throws, stronger wind-up/tumbling, sky and distant water/seabed scenery.
 
 - **Add social hunting and steadier multi-actor cinematography** - Inches and retained growth, once-only landing score, finite hotspots, hunting Drive, prey preferences, inshore patches, five-actor observer and varied cameras.
+
+- **Add parallel seed recording and multi-actor directing** - Bounded Movie Maker queue, distinct ports/files/logs, automatic subject selection, bounded wide/surface shots, and multiplayer host/join/local-pair launcher.

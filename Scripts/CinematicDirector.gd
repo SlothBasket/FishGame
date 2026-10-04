@@ -34,6 +34,73 @@ var was_airborne: bool = false
 var reaction_hold: float = 0
 const MIN_SHOT_SECONDS = 6.0
 var obstruction_age: float = 0
+var subject_age: float = 0
+var subject_wait: float = 0
+var subject_visits: Dictionary = {}
+var manual_focus_until: float = 0
+
+func subject_interest(fish: FishPlayer) -> float:
+	if is_instance_valid(fish.landing_show): return 9
+	var fight = fish.fight
+	if is_instance_valid(fight):
+		if fight.phase == FightSession.Phase.IMPACT: return 8
+		if fish.airborne or fish.head.impact_time > 0: return 7
+		if fish.motion.ascent_power > 0.1 or fish.motion.diving or fish.motion.side_time > 0: return 6
+		return 4
+	if fish.feeding.is_dashing() or fish.feeding.is_charging: return 3
+	return 1
+
+func choose_subject(delta: float) -> void:
+	if not view.session.multi_actor_mode: return
+	subject_age += delta
+	subject_wait -= delta
+	if subject_wait > 0 or view.session.clock < manual_focus_until: return
+	subject_wait = 1
+	# Keep subjects at least 8 seconds and never cut away during committed motion.
+	var pair = view.subjects()
+	var current: FishPlayer = pair[0]
+	if subject_age < 8 or shot_age < MIN_SHOT_SECONDS or current.feeding.is_dashing() or current.airborne or is_instance_valid(current.landing_show): return
+	subject_visits[view.focus_peer] = view.session.clock # Currently watched actors are not neglected.
+	var chosen = view.focus_peer
+	var best = -INF
+	for id in view.session.players:
+		var actor = view.session.players[id].entity
+		var interest = 0.0
+		if actor is FishPlayer: interest = subject_interest(actor)
+		elif actor is FisherActor and not is_instance_valid(actor.fight) and is_instance_valid(actor.lure) and actor.lure.cast_remaining > 0: interest = 4
+		else: continue
+		var unseen = clampf((view.session.clock-float(subject_visits.get(id,-20)))/20,0,2)
+		var score = interest+unseen+(0.5 if actor == current and subject_age < 15 else 0)
+		if score > best: best = score; chosen = id
+	if chosen == view.focus_peer: return
+	view.focus_actor(chosen)
+	var chosen_fight = view.session.players[chosen].entity.fight
+	if is_instance_valid(chosen_fight) and chosen_fight.phase == FightSession.Phase.IMPACT: view.set_shot("fisher",true)
+	manual_focus_until = 0 # This was automatic, not the user's focus hotkey.
+	subject_visits[chosen] = view.session.clock
+	subject_age = 0
+	previous_fight = 0
+	previous_counter = -1
+	previous_event = ""
+	previous_eaten = view.subjects()[0].feeding.bait_eaten
+	previous_outcome = 0
+	jump_hold = false
+	was_airborne = false
+	reaction_hold = 0
+	bite_hold = 0
+	priority = 0
+	hold_time = 8
+	shot_age = 0
+	shot_event = "subject-change"
+	preferred_subject = "boat" if view.session.players[chosen].entity is FisherActor else "fish"
+	framing_reset()
+
+func framing_reset() -> void:
+	view.framed_target = view.subjects()[0].position
+	view.tracking_heading = BaitMotion.horizontal(view.subjects()[0].heading)
+	distance_scale = 1
+	height_offset = 0
+
 
 static func family(shot: String) -> String:
 	if shot in ["fish","fish-rear"]: return "rear"
@@ -95,7 +162,7 @@ func update(delta: float, fish: FishPlayer, fisher: FisherActor) -> void:
 	if not pending.is_empty():
 		pending.ttl -= delta
 		if pending.ttl <= 0: pending.clear()
-	var fight = fisher.fight
+	var fight = fish.fight
 	if is_instance_valid(fish.landing_show):
 		if shot_event != "landing-show":
 			request_shot("wide",6,4,"boat","landing-show")
@@ -123,9 +190,9 @@ func update(delta: float, fish: FishPlayer, fisher: FisherActor) -> void:
 		if fight.phase == FightSession.Phase.IMPACT:
 			event = "hookset"; shots = ["fisher"]; interest = 3; subject = "boat"
 		elif fish.airborne:
-			event = "breach"; shots = ["fish-side","fish-front","wide"]; interest = 3
+			event = "breach"; shots = ["breach-side","surface-down","wide"]; interest = 3
 		elif fish.motion.ascent_power > 0.1 or fight.jump_commit > 0:
-			event = "ascent"; shots = ["fish-side","fish-rear"]; interest = 2
+			event = "ascent"; shots = ["breach-side","surface-down","fish-side"]; interest = 2
 		elif fish.motion.diving:
 			event = "dive"; shots = ["fish-side","fish-rear"]; interest = 2
 		elif fish.motion.side_time > 0:
@@ -200,7 +267,6 @@ func select_pending(fish: FishPlayer) -> void:
 
 func compose(fish: FishPlayer, fisher: FisherActor, target: Vector3, desired: Vector3) -> Dictionary:
 	var shot = view.SHOTS[view.mode]
-	var fighting = is_instance_valid(fisher.fight)
 	if is_instance_valid(fish.landing_show):
 		var span = clampf(fish.position.distance_to(fisher.position),12,45)
 		return {"target":fish.position,"position":fisher.position+Vector3(0.6,0.55,1)*span,"fov":75.0,"surface":true}
@@ -212,10 +278,10 @@ func compose(fish: FishPlayer, fisher: FisherActor, target: Vector3, desired: Ve
 	elif shot == "wide" and preferred_subject == "boat":
 		target = fisher.position+Vector3.UP
 		desired = fisher.position+Vector3(12*side,9,16)*distance_scale
-	elif shot == "wide" and not fighting and preferred_subject != "boat":
+	elif shot == "wide" and preferred_subject != "boat":
 		target = fish.position+fish.heading*3
 		desired = fish.position+Vector3(16*side,9+height_offset,19)*distance_scale
-	elif shot not in ["fisher","wide","fish-shoulder","fish-pov"]:
+	elif shot not in ["fisher","wide","fish-shoulder","fish-pov","surface-down","breach-side"]:
 		target = fish.position+fish.heading*2
 		if preferred_subject == "prey" and is_instance_valid(prey) and fish.position.distance_to(prey.position) < 24:
 			target = fish.position.lerp(prey.position,0.35)
@@ -229,7 +295,7 @@ func compose(fish: FishPlayer, fisher: FisherActor, target: Vector3, desired: Ve
 	if jumping and shot in ["fish-side","fish-front","fish-rear","fish"]:
 		target = fish.position+Vector3.UP*0.7
 		desired.y = fish.position.y+0.5 # Stay close/low during ascent and fall.
-	var surface_shot = shot == "fisher" or (shot == "wide" and (fighting or preferred_subject == "boat"))
+	var surface_shot = shot in ["fisher","surface-down","breach-side"] or (shot == "wide" and preferred_subject == "boat")
 	if surface_shot: desired.y = maxf(desired.y,fisher.position.y+2)
 	return {"target":target,"position":desired,"fov":(60 if shot == "fisher" else 75 if shot == "wide" else 68)+fov_offset,"surface":surface_shot}
 
@@ -239,7 +305,7 @@ func protect_camera(fish: FishPlayer, fisher: FisherActor, target: Vector3, surf
 	# The spectator already rejects below-boat transitions. Do not re-anchor a
 	# moving camera to the Fish: that caused the intermediate snap behind the boat.
 	if transitioning: return target
-	var anchor = (fish.position+Vector3.UP*2 if jump_hold or fish.airborne else fisher.position+Vector3.UP*3) if surface_shot else fish.position
+	var anchor = Vector3(target.x,fish.water_height+3,target.z) if view.SHOTS[view.mode] in ["surface-down","breach-side"] else (fisher.position+Vector3.UP*3 if surface_shot else fish.position)
 	var space = fish.get_world_3d().direct_space_state
 	# Sphere sweep catches terrain/rocks along the full camera path (mask 1),
 	# independent of flat-floor assumptions. Gameplay actors are excluded.

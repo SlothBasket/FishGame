@@ -3,7 +3,7 @@ extends Node3D
 ## Development observer only. Never submits intent or changes participant transforms.
 var session: NetworkSession
 # Existing keys 1/2/3 stay Fisher/Fish/free. Presets only affect this local camera.
-const SHOTS = ["fisher","fish","free","wide","fish-side","fish-rear","fish-front","fish-shoulder","fish-pov","fish-high"]
+const SHOTS = ["fisher","fish","free","wide","fish-side","fish-rear","fish-front","fish-shoulder","fish-pov","fish-high","surface-down","breach-side"]
 var mode: int = 2
 var snap_shot: bool = true
 var director: CinematicDirector
@@ -18,7 +18,10 @@ var shot_changed: bool = false
 func focus_actor(peer: int) -> void:
 	if not session.players.has(peer): return
 	focus_peer = peer
-	if director != null: director.pending.clear(); director.shot_age = 0
+	if director != null:
+		director.pending.clear()
+		director.shot_age = 0
+		director.manual_focus_until = session.clock+15
 	set_shot("fish-rear" if session.players[peer].role == NetworkSession.ROLE_FISH else "fisher",true)
 
 func subjects() -> Array:
@@ -29,9 +32,21 @@ func subjects() -> Array:
 		if actor is FishPlayer:
 			fish = actor
 			if is_instance_valid(fish.fight): fisher = fish.fight.fisher
+			else:
+				var best = INF
+				for record in session.players.values():
+					if record.entity is FisherActor and not is_instance_valid(record.entity.fight):
+						var distance = fish.position.distance_squared_to(record.entity.position)
+						if distance < best: best = distance; fisher = record.entity
 		else:
 			fisher = actor
 			if is_instance_valid(fisher.fight): fish = fisher.fight.fish
+			else:
+				var best = INF
+				for record in session.players.values():
+					if record.entity is FishPlayer and not is_instance_valid(record.entity.fight):
+						var distance = record.entity.position.distance_squared_to(fisher.position)
+						if distance < best: best = distance; fish = record.entity
 	return [fish,fisher]
 
 func driver_for(actor: Node):
@@ -133,10 +148,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		pitch = clampf(pitch-event.relative.y*0.003,-1.4,1.4)
 func _process(delta: float) -> void:
 	if not session.players.has(-1) or not session.players.has(-2): return
+	if director != null: director.choose_subject(delta)
 	var pair = subjects()
 	var fish: FishPlayer = pair[0]
 	var fisher: FisherActor = pair[1]
-	var fight = fisher.fight
+	var fight = fish.fight
 	tracking_heading = FishInput.turn_toward(tracking_heading,BaitMotion.horizontal(fish.heading),delta*0.7)
 	for id in extra_boats:
 		extra_boats[id].position = session.players[id].entity.position
@@ -160,8 +176,8 @@ func _process(delta: float) -> void:
 		var desired = FishingPresentation.edge_camera(fisher.position,forward) if mode == 0 else fish.position-tracking_heading*9+Vector3.UP*2
 		var flat_heading = tracking_heading
 		if mode == 3: # Frame both participants with room around their separation.
-			target = (fish.position+fisher.position)*0.5
-			var span = maxf(20,fish.position.distance_to(fisher.position))
+			target = fish.position
+			var span = clampf(fish.position.distance_to(fisher.position),20,38)
 			desired = target+Vector3(0,0.55,1.0)*span
 		elif mode == 4:
 			target = fish.position+fish.heading*2
@@ -178,11 +194,17 @@ func _process(delta: float) -> void:
 		elif mode == 8: # Near first person, just above the nose.
 			target = fish.position+flat_heading*15
 			desired = fish.position+flat_heading*1.8*fish.size_multiplier()+Vector3.UP*0.7
+		elif mode in [10,11]:
+			var seconds = clampf((fish.water_height-fish.position.y)/maxf(2,fish.velocity.y),0,1.5)
+			var breach = fish.position+fish.velocity*seconds
+			breach.y = fish.water_height
+			target = breach
+			desired = breach+Vector3.UP*16-flat_heading*3 if mode == 10 else breach+flat_heading.cross(Vector3.UP)*14+Vector3.UP*1.8
 		elif mode == 9:
 			target = fish.position+flat_heading*3
 			desired = fish.position-flat_heading*6+Vector3.UP*12
 		var shot_fov = 60.0 if mode == 0 else 70.0
-		var surface_shot = mode == 0
+		var surface_shot = mode in [0,10,11]
 		if director != null:
 			var composition = director.compose(fish,fisher,target,desired)
 			target = composition.target
@@ -236,6 +258,7 @@ func _process(delta: float) -> void:
 
 func draw_equipment(fisher: FisherActor, fish: FishPlayer, delta: float) -> void:
 	var f = fisher.fight
+	if is_instance_valid(f): fish = f.fish
 	var hand = fisher.position+Vector3.UP*1.3
 	var direction = Vector3(0,0.6,-0.8).rotated(Vector3.UP,fisher.boat_yaw)
 	var tip = hand+direction*3

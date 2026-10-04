@@ -738,7 +738,7 @@ func fisher_state(actor: FisherActor) -> PackedFloat32Array:
 func fisher_snapshot(peer: int, state: PackedFloat32Array) -> void:
 	if hosting or closed or state.size() != 73 or not players.has(peer) or players[peer].role != ROLE_FISHER: return
 	players[peer].entity.position = Vector3(state[0],state[1],state[2])
-	players[peer].entity.score_inches = state[72]
+	players[peer]["score_inches"] = state[72] # Remote Fisher is a visual Node3D, not an authoritative FisherActor.
 	if peer == multiplayer.get_unique_id() and fisher_view != null:
 		if fight_smoke and (fisher_view.data.is_empty() or fisher_view.data[10] != state[10]): print("CLIENT FIGHT PHASE ",state[10]," fields=",state.size())
 		fisher_view.data = state
@@ -834,8 +834,10 @@ func capture_recording_tick() -> bool:
 		ai_test_bait_priority = true
 		if capture_events != null: capture_events.record(self,"test-bait-priority")
 	if not capture_one_fight: return false # Preview honors targeting, but never auto-quits.
-	if capture_stop_at >= 0 and players.has(-1) and is_instance_valid(players[-1].entity.landing_show):
-		capture_stop_at = clock+1.0 # Keep the bounded landing gag and a short tail.
+	if capture_stop_at >= 0:
+		for record in players.values():
+			if is_instance_valid(record.entity.landing_show):
+				capture_stop_at = clock+1.0 # Any actor's landing, not only Fish 1.
 	if capture_stop_at >= 0 and clock >= capture_stop_at:
 		if capture_events != null: capture_events.record(self,"capture-complete")
 		get_tree().quit()
@@ -848,18 +850,18 @@ func capture_recording_tick() -> bool:
 	return false
 
 func publish_fight_result(fish: FishPlayer, fisher: FisherActor, result: int) -> void:
+	var fish_id = 0
+	for id in players:
+		if players[id].entity == fish: fish_id = id
 	# A missed hook set may retry within the cap; a completed fight ends the take.
 	if capture_one_fight and capture_stop_at < 0 and result != FightSession.Outcome.MISSED:
 		capture_stop_at = clock+3
 	if capture_events != null:
 		var event = {FightSession.Outcome.LINE_BROKE:"line-break",FightSession.Outcome.THROWN:"thrown-hook",FightSession.Outcome.LANDED:"landing"}.get(result,"fight-ended")
-		capture_events.record(self,event,{"outcome":FightSession.Outcome.keys()[result]})
+		capture_events.record(self,event,{"outcome":FightSession.Outcome.keys()[result],"fisher_peer":fisher.peer_id,"fish_peer":fish_id})
 	if batch_runner != null:
 		batch_runner.completed(fisher.fight,FightSession.Outcome.keys()[result])
 		return
-	var fish_id = 0
-	for id in players:
-		if players[id].entity == fish: fish_id = id
 	present_fight_result(fish_id,fisher.peer_id,result)
 	if connected: fight_result.rpc(fish_id,fisher.peer_id,result)
 
