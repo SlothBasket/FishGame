@@ -434,3 +434,7 @@ Import/parse and small direct checks passed for the delay gate, completion sched
 
 ### Release throw development test
 `GameControls.test_release` defaults to **P**. `Reef` routes it to the solo test boat or `NetworkSession.test_release()`. Joined clients request the host-owned sequence; Fish players test their own fish, Fisher players use their hooked fish (otherwise an available fish), and spectators use an available fish. An active fight finishes as LANDED. Repeated presses during the gag are ignored. Solo bait/boat testing returns to the Fish camera. `LandingShow` uses optional fisherman/session references and an explicit boat anchor so the same hold, random throw, splash return and timeout respawn run with or without Director/capture/networking. Normal landed fights already call this same sequence. P is a development shortcut, not a fight mechanic.
+
+
+### Camera retreat and release arc polish
+Fisher spectator shots again use continuous exponential position following, with shortest-path rotation capped at 55 degrees/second and smoothing retained after arrival. There is no rotate-first phase. LandingShow holds for 2.2 seconds with a 0.9-second backswing, then throws in a narrow forward cone (biased inward for outward-facing boats). Gravity throws (90%) solve a 12–22m rise and 35–65m travel to a splash destination clamped 18m inside the arena. Rare gravity-free launches retain the timed reset. Tumbling uses 15 rad/s pitch and 25 rad/s roll. Reef adds a procedural sky and two visual-only horizon planes; playable bounds and collision are unchanged.

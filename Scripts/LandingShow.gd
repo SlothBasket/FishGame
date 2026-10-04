@@ -14,7 +14,10 @@ var gravity: bool = true
 var flight_velocity: Vector3 = Vector3.ZERO
 var rng = RandomNumberGenerator.new()
 var previous_layer: int = 2
-const HOLD_SECONDS = 1.5
+const HOLD_SECONDS = 2.2
+const WINDUP_SECONDS = 0.9
+const THROW_GRAVITY = 28.0
+var throw_forward = Vector3.FORWARD
 const FLIGHT_SECONDS = 4.0
 
 func _ready() -> void:
@@ -30,13 +33,20 @@ func _ready() -> void:
 	previous_layer = fish.collision_layer
 	fish.collision_layer = 0
 	fish.velocity = Vector3.ZERO
+	throw_forward = Vector3.FORWARD.rotated(Vector3.UP,anchor_yaw)
+	# Keep outward-facing boats from throwing straight across the nearby boundary.
+	var inward = Vector3(-anchor_position.x,0,-anchor_position.z).normalized()
+	if inward.length_squared() > 0.1 and throw_forward.dot(inward) < 0.35:
+		throw_forward = (throw_forward*0.25+inward).normalized()
 	pose_held()
 
 func pose_held() -> void:
 	var side = Vector3.RIGHT.rotated(Vector3.UP,anchor_yaw)
-	fish.position = anchor_position+side*1.35+Vector3.UP*2.8
+	var windup = smoothstep(HOLD_SECONDS-WINDUP_SECONDS,HOLD_SECONDS-0.18,age)
+	var release = smoothstep(HOLD_SECONDS-0.18,HOLD_SECONDS,age)
+	fish.position = anchor_position+side*1.35+Vector3.UP*(2.8+windup*1.0)-throw_forward*(windup*2.2-release*3.6)
 	fish.heading = Vector3.UP
-	fish.visual.rotation = Vector3(PI*0.5,anchor_yaw,0)
+	fish.visual.rotation = Vector3(PI*0.5+windup*1.1-release*2.3,anchor_yaw,windup*0.5)
 	fish.visual.swim_intensity = 0.1
 
 func _physics_process(delta: float) -> void:
@@ -49,17 +59,26 @@ func _physics_process(delta: float) -> void:
 		return
 	if not thrown:
 		thrown = true
-		gravity = rng.randf() < 0.5
-		var pitch = rng.randf_range(0.25,0.85) if gravity else rng.randf_range(-0.3,0.7)
-		flight_velocity = FishInput.from_angles(pitch,rng.randf_range(-PI,PI))*rng.randf_range(55,85)
+		gravity = rng.randf() < 0.9 # Rare gravity-free comedy throws remain.
+		var direction = throw_forward.rotated(Vector3.UP,rng.randf_range(-0.3,0.3))
+		var destination = fish.position+direction*rng.randf_range(35,65)
+		var margin = arena_half_width-18
+		destination.x = clampf(destination.x,-margin,margin)
+		destination.z = clampf(destination.z,-margin,margin)
+		destination.y = fish.water_height
+		# Solve a real arc to an in-bounds splash instead of random skyward velocity.
+		var vertical_speed = sqrt(2*THROW_GRAVITY*rng.randf_range(12,22))
+		var flight_time = (vertical_speed+sqrt(vertical_speed*vertical_speed+2*THROW_GRAVITY*maxf(0,fish.position.y-destination.y)))/THROW_GRAVITY
+		flight_velocity = (destination-fish.position)/flight_time
+		flight_velocity.y = vertical_speed
 		if is_instance_valid(session) and session.capture_events != null: session.capture_events.record(session,"landing-launch",{"gravity":gravity})
 	var before = fish.position
-	if gravity: flight_velocity.y -= 28*delta
+	if gravity: flight_velocity.y -= THROW_GRAVITY*delta
 	fish.position += flight_velocity*delta
 	fish.velocity = flight_velocity
 	fish.heading = flight_velocity.normalized()
 	var angles = FishInput.angles(fish.heading)
-	fish.visual.rotation = Vector3(angles.x,angles.y,(age-HOLD_SECONDS)*12)
+	fish.visual.rotation = Vector3(angles.x+(age-HOLD_SECONDS)*15,angles.y,(age-HOLD_SECONDS)*25)
 	if before.y > fish.water_height and fish.position.y <= fish.water_height:
 		var hit = before.lerp(fish.position,(before.y-fish.water_height)/maxf(0.001,before.y-fish.position.y))
 		var edge = arena_half_width-3

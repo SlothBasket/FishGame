@@ -98,7 +98,15 @@ func _unhandled_input(event: InputEvent) -> void:
 func build_water() -> void:
 	var world = WorldEnvironment.new()
 	var environment = Environment.new()
-	environment.background_mode = Environment.BG_COLOR
+	environment.background_mode = Environment.BG_SKY
+	var sky = Sky.new()
+	var sky_material = ProceduralSkyMaterial.new()
+	sky_material.sky_top_color = Color("427a9b")
+	sky_material.sky_horizon_color = Color("b1cccf")
+	sky_material.ground_horizon_color = Color("b1cccf")
+	sky_material.ground_bottom_color = Color("245461")
+	sky.sky_material = sky_material
+	environment.sky = sky
 	environment.background_color = Color("124555")
 	environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	environment.ambient_light_color = Color("95b7bf")
@@ -128,6 +136,28 @@ func build_water() -> void:
 	surface.material_override = water
 	surface.name = "WaterSurface"
 	add_child(surface)
+	# Cheap scenery beyond the gameplay walls; no added collision or habitat.
+	var horizon = MeshInstance3D.new()
+	horizon.name = "DistantWater"
+	var horizon_plane = PlaneMesh.new()
+	horizon_plane.size = Vector2.ONE*arena_width*16
+	horizon.mesh = horizon_plane
+	horizon.position.y = water_depth-0.2
+	var horizon_material = ShaderMaterial.new()
+	var horizon_shader = Shader.new()
+	horizon_shader.code = "shader_type spatial; varying vec3 world; uniform float edge; void vertex(){world=(MODEL_MATRIX*vec4(VERTEX,1.0)).xyz;} void fragment(){if(abs(world.x)<edge && abs(world.z)<edge){discard;} ALBEDO=vec3(0.22,0.48,0.52); ROUGHNESS=0.6;}"
+	horizon_material.shader = horizon_shader
+	horizon_material.set_shader_parameter("edge",arena_width*0.5)
+	horizon.material_override = horizon_material
+	add_child(horizon)
+	var distant_floor = MeshInstance3D.new()
+	distant_floor.name = "DistantSeabed"
+	var floor_plane = PlaneMesh.new()
+	floor_plane.size = Vector2.ONE*arena_width*16
+	distant_floor.mesh = floor_plane
+	distant_floor.position.y = -2
+	distant_floor.material_override = Geometry.material("526b65")
+	add_child(distant_floor)
 	var feedback = SurfaceFeedback.new()
 	feedback.water_height = water_depth
 	add_child(feedback)
