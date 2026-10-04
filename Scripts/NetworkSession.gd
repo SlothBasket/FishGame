@@ -17,6 +17,8 @@ var capture_mode: bool = false
 var director_mode: bool = false
 var capture_events: CaptureEventLog
 var capture_one_fight: bool = false
+var capture_target_bait: bool = true
+var capture_bait_delay: float = 3
 var capture_max_seconds: float = 300
 var capture_stop_at: float = -1
 var capture_priority_enabled: bool = false
@@ -92,7 +94,11 @@ func start(level: Node3D, fish: FishPlayer, args: PackedStringArray) -> void:
 	capture_mode = spectator_mode and "--capture" in args
 	director_mode = capture_mode and "--director" in args
 	capture_one_fight = capture_mode and "--capture-one-fight" in args
+	capture_target_bait = not "--capture-natural" in args
 	for arg in args:
+		if arg.begins_with("--capture-bait-delay="):
+			var delay = arg.get_slice("=",1).to_float()
+			if is_finite(delay): capture_bait_delay = clampf(delay,0,3600)
 		if arg.begins_with("--capture-max-seconds="):
 			var limit = arg.get_slice("=",1).to_float()
 			if is_finite(limit) and limit > 0: capture_max_seconds = clampf(limit,30,3600)
@@ -748,7 +754,7 @@ func update_test_markers() -> void:
 
 ## Bounded filming workflow; no force/outcome changes or bait teleporting.
 func capture_recording_tick() -> bool:
-	if not capture_priority_enabled and clock >= 3:
+	if capture_target_bait and not capture_priority_enabled and clock >= capture_bait_delay:
 		capture_priority_enabled = true
 		ai_test_bait_priority = true
 		if capture_events != null: capture_events.record(self,"test-bait-priority")
@@ -765,7 +771,7 @@ func capture_recording_tick() -> bool:
 
 func publish_fight_result(fish: FishPlayer, fisher: FisherActor, result: int) -> void:
 	# A missed hook set may retry within the cap; a completed fight ends the take.
-	if capture_one_fight and capture_stop_at < 0 and result != FightSession.Outcome.MISSED:
+	if capture_one_fight and capture_target_bait and capture_stop_at < 0 and result != FightSession.Outcome.MISSED:
 		capture_stop_at = clock+3
 	if capture_events != null:
 		var event = {FightSession.Outcome.LINE_BROKE:"line-break",FightSession.Outcome.THROWN:"thrown-hook",FightSession.Outcome.LANDED:"landing"}.get(result,"fight-ended")

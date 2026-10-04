@@ -43,3 +43,7 @@ A blank recording seed is generated, displayed and saved as the launcher's last 
 ```
 
 The recording launcher additionally supplies an engine `--quit-after` frame cap at (limit + 5) * 60 as a startup safeguard. Capture CSVs include `test-bait-priority`, the normal outcome, and `capture-complete` or `capture-timeout`. Movies and event logs retain their existing folders. No fight mechanics or normal AI modes are changed.
+
+
+### Optional test-bait targeting
+Record now remembers a Target test bait checkbox and Seconds before targeting (default 3, range 0-3600). Enabled: --capture-bait-delay=N controls the lead-in, with stop after one fight. Disabled: --capture-natural leaves normal food selection active and records until the maximum duration, even if an incidental fight occurs. This does not prohibit naturally eating a lure. Options apply to Record; preview behavior is unchanged.

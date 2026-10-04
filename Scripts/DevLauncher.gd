@@ -7,6 +7,8 @@ var filename: LineEdit
 var seed_field: LineEdit
 var fish_skill: LineEdit
 var fisher_skill: LineEdit
+var target_bait: CheckBox
+var bait_delay: SpinBox
 var max_seconds: SpinBox
 var status: Label
 var launching: bool = false
@@ -52,6 +54,20 @@ func _ready() -> void:
 	label(panel,"RECORD DIRECTOR FIGHT — 1920×1080, 60 fps",22)
 	filename = field(panel,"Filename","fight_capture")
 	filename.text = "fight_capture"
+	target_bait = CheckBox.new()
+	target_bait.text = "Target test bait, then stop after the fight"
+	target_bait.button_pressed = true
+	panel.add_child(target_bait)
+	var delay_row = HBoxContainer.new()
+	panel.add_child(delay_row)
+	label(delay_row,"Seconds before targeting",17).custom_minimum_size.x = 260
+	bait_delay = SpinBox.new()
+	bait_delay.min_value = 0
+	bait_delay.max_value = 3600
+	bait_delay.value = 3
+	bait_delay.step = 1
+	delay_row.add_child(bait_delay)
+	target_bait.toggled.connect(func(enabled): bait_delay.editable = enabled)
 	var limit_row = HBoxContainer.new()
 	panel.add_child(limit_row)
 	label(limit_row,"Maximum recording seconds",17).custom_minimum_size.x = 260
@@ -61,9 +77,9 @@ func _ready() -> void:
 	max_seconds.value = 300
 	max_seconds.step = 30
 	limit_row.add_child(max_seconds)
-	mode_button(panel,"RECORD","Targets test bait; stops after one fight (or time limit)",["--ai-vs-ai","--capture","--director"],true)
+	mode_button(panel,"RECORD","Selected targeting options → AVI; always bounded by time limit",["--ai-vs-ai","--capture","--director"],true)
 	label(panel,"Movies: "+ProjectSettings.globalize_path(CAPTURES),15)
-	status = label(panel,"Recording stops automatically 3 seconds after the fight ends.",16)
+	status = label(panel,"Targeting OFF: natural feeding, no forced bait target; record until time limit.",16)
 	load_settings()
 
 func label(parent: Node, text: String, size: int) -> Label:
@@ -97,6 +113,9 @@ func mode_button(parent: Node, title: String, description: String, args: PackedS
 func load_settings() -> void:
 	var config = ConfigFile.new()
 	config.load(SETTINGS)
+	target_bait.button_pressed = bool(config.get_value("launcher","target_bait",true))
+	bait_delay.value = float(config.get_value("launcher","bait_delay",3))
+	bait_delay.editable = target_bait.button_pressed
 	max_seconds.value = float(config.get_value("launcher","max_seconds",300))
 	filename.text = str(config.get_value("launcher","filename","fight_capture"))
 	seed_field.text = str(config.get_value("launcher","seed",""))
@@ -110,6 +129,8 @@ func load_settings() -> void:
 func save_settings() -> void:
 	if filename == null: return
 	var config = ConfigFile.new()
+	config.set_value("launcher","target_bait",target_bait.button_pressed)
+	config.set_value("launcher","bait_delay",bait_delay.value)
 	config.set_value("launcher","max_seconds",max_seconds.value)
 	config.set_value("launcher","filename",filename.text)
 	config.set_value("launcher","seed",seed_field.text)
@@ -161,6 +182,8 @@ func launch(mode_args: PackedStringArray, record: bool) -> void:
 	var args = mode_args.duplicate()
 	if record:
 		args.append("--capture-one-fight")
+		args.append("--capture-bait-delay=%d" % int(bait_delay.value))
+		if not target_bait.button_pressed: args.append("--capture-natural")
 		args.append("--capture-max-seconds=%d" % int(max_seconds.value))
 	var seed_text = seed_field.text.strip_edges()
 	if record and seed_text.is_empty():

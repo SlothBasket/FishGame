@@ -405,3 +405,7 @@ Scenes/DevLauncher.tscn is the startup scene; Scripts/DevLauncher.gd decides whe
 
 ### Bounded seeded takes (2026-10-04)
 DevLauncher Record adds --capture-one-fight and a persisted maximum seconds value (300 default), supplies a concrete saved seed when blank, and adds Movie Maker --quit-after as a frame cap. NetworkSession.capture_recording_tick enables existing lure priority after 3 seconds and checks simulation-time deadline/end-tail; publish_fight_result schedules shutdown after 3 seconds for non-MISSED outcomes. No synthetic fight result is generated on timeout. Normal modes are unaffected.
+
+
+### Optional test-bait targeting
+Record now remembers a Target test bait checkbox and Seconds before targeting (default 3, range 0-3600). Enabled: --capture-bait-delay=N controls the lead-in, with stop after one fight. Disabled: --capture-natural leaves normal food selection active and records until the maximum duration, even if an incidental fight occurs. This does not prohibit naturally eating a lure. Options apply to Record; preview behavior is unchanged.
