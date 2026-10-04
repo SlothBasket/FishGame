@@ -79,7 +79,7 @@ func _ready() -> void:
 	limit_row.add_child(max_seconds)
 	mode_button(panel,"RECORD","Selected targeting options → AVI; always bounded by time limit",["--ai-vs-ai","--capture","--director"],true)
 	label(panel,"Movies: "+ProjectSettings.globalize_path(CAPTURES),15)
-	status = label(panel,"Targeting OFF: natural feeding, no forced bait target; record until time limit.",16)
+	status = label(panel,"Targeting OFF: live bait only. Record stops after any fight or at the time limit.",16)
 	load_settings()
 
 func label(parent: Node, text: String, size: int) -> Label:
@@ -180,10 +180,11 @@ func launch(mode_args: PackedStringArray, record: bool) -> void:
 	if launching: return
 	save_settings()
 	var args = mode_args.duplicate()
-	if record:
-		args.append("--capture-one-fight")
+	if "--capture" in args:
 		args.append("--capture-bait-delay=%d" % int(bait_delay.value))
 		if not target_bait.button_pressed: args.append("--capture-natural")
+	if record:
+		args.append("--capture-one-fight")
 		args.append("--capture-max-seconds=%d" % int(max_seconds.value))
 	var seed_text = seed_field.text.strip_edges()
 	if record and seed_text.is_empty():

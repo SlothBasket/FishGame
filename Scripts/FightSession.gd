@@ -364,7 +364,13 @@ func finish(result: int) -> void:
 		fish.feeding.sweep_bite_disabled = false
 		fish.fight = null
 		if result == Outcome.LANDED:
-			fish.reset_fish()
+			if is_instance_valid(fisher) and fisher.session.batch_runner == null:
+				var show = LandingShow.new()
+				show.fish = fish
+				show.fisher = fisher
+				show.session = fisher.session
+				fisher.session.add_child(show)
+			else: fish.reset_fish()
 			fish.stamina = fish.stamina_capacity
 	if is_instance_valid(fisher):
 		fisher.outcome = result

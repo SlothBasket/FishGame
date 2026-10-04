@@ -2,6 +2,7 @@ class_name FisherActor
 extends Node3D
 ## Server-owned boat/bait controller. No cameras, device reads, HUD or local art.
 enum State { SETUP, BAIT, FIGHT }
+var landing_show: Node
 @export var boat_speed: float = 12
 @export var cast_distance: float = 65
 @export var cast_variation: float = 0.22
@@ -40,6 +41,7 @@ func _ready() -> void:
 	boat_yaw = FishInput.angles(BaitMotion.horizontal(-position)).y
 
 func _physics_process(delta: float) -> void:
+	if is_instance_valid(landing_show): return
 	stamina = minf(stamina_capacity,stamina+stamina_regen*delta)
 	if not command.vision: focus_exhausted = false
 	if focus <= 0: focus_exhausted = true
@@ -101,6 +103,7 @@ func cast() -> void:
 	state = State.BAIT
 
 func take_bait(fish: FishPlayer) -> bool:
+	if not session.test_bait_allowed() or is_instance_valid(fish.landing_show): return false
 	if state != State.BAIT or is_instance_valid(fight) or is_instance_valid(fish.fight) or not is_instance_valid(lure) or lure.claimed: return false
 	fight = FightSession.new()
 	fight.fisher = self

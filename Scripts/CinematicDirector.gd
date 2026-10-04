@@ -55,6 +55,14 @@ func watch_event(event: String, shot: String, duration: float = 5) -> void:
 func cue(event: String, shots: Array, interest: int, subject: String = "fish", refresh: bool = false) -> void:
 	event_name = event
 	var current: String = view.SHOTS[view.mode]
+	# A counter is too short to chase across the line. Keep this perspective.
+	if event in ["counter","counter-prepare"] and current != "free":
+		if view.boat_transition > 0:
+			view.boat_transition = 0
+			view.set_shot("fish-side",true)
+		reaction_hold = 3.0
+		pending.clear()
+		return
 	# Compatible action transitions do not change distance/side or restart a cut.
 	if not refresh and current in shots and shot_age < hold_time and not watches.has(event):
 		preferred_subject = subject
@@ -89,6 +97,13 @@ func update(delta: float, fish: FishPlayer, fisher: FisherActor) -> void:
 		pending.ttl -= delta
 		if pending.ttl <= 0: pending.clear()
 	var fight = fisher.fight
+	if is_instance_valid(fish.landing_show):
+		if shot_event != "landing-show":
+			request_shot("wide",6,4,"boat","landing-show")
+			select_pending(fish)
+		return
+	if is_instance_valid(fight) and view.session.players[-2].ai.gesture_phase >= 0:
+		cue("counter-prepare",[view.SHOTS[view.mode]],3)
 	var fight_id = fight.get_instance_id() if is_instance_valid(fight) else 0
 	if fight_id != previous_fight:
 		previous_fight = fight_id
@@ -110,7 +125,7 @@ func update(delta: float, fish: FishPlayer, fisher: FisherActor) -> void:
 			event = "hookset"; shots = ["fisher"]; interest = 3; subject = "boat"
 		elif fish.airborne:
 			event = "breach"; shots = ["fish-side","fish-front","wide"]; interest = 3
-		elif fish.motion.ascent_power > 0.1:
+		elif fish.motion.ascent_power > 0.1 or fight.jump_commit > 0:
 			event = "ascent"; shots = ["fish-side","fish-rear"]; interest = 2
 		elif fish.motion.diving:
 			event = "dive"; shots = ["fish-side","fish-rear"]; interest = 2
@@ -149,6 +164,9 @@ func update(delta: float, fish: FishPlayer, fisher: FisherActor) -> void:
 		pending.clear()
 	# Ordinary cuts wait for the full hold. Higher interest can interrupt after
 	# 2.5 s for major events; dash, jump, bite and counter motion are protected.
+	# Select the jump angle at commitment, not halfway through the breach.
+	if event == "ascent" and not jump_hold and reaction_hold <= 0 and not pending.is_empty() and pending.get("event","") == "ascent":
+		select_pending(fish)
 	var locked = ((fish.feeding.is_dashing() and event != "hookset") or bite_hold > 0 or (fish.motion.side_time > 0 and shot_event == "side-dash") or jump_hold or reaction_hold > 0) and event != "hookset"
 	if not locked and not pending.is_empty() and (shot_age >= hold_time or (int(pending.priority) >= 3 and int(pending.priority) > priority and shot_age >= 2.5)):
 		select_pending(fish)
@@ -164,7 +182,7 @@ func select_pending(fish: FishPlayer) -> void:
 	if changed:
 		recent_families.append(family(view.SHOTS[view.mode]))
 		if recent_families.size() > 2: recent_families.pop_front()
-		view.set_shot(pending.shot,shot_event in ["hookset","breach","counter","landing"])
+		view.set_shot(pending.shot,shot_event in ["hookset","ascent","breach","counter","landing","landing-show"])
 	if shot_event in ["ascent","breach"]: jump_hold = true
 	if shot_event == "counter": reaction_hold = 2.5
 	hold_time = pending.duration
@@ -183,6 +201,9 @@ func select_pending(fish: FishPlayer) -> void:
 func compose(fish: FishPlayer, fisher: FisherActor, target: Vector3, desired: Vector3) -> Dictionary:
 	var shot = view.SHOTS[view.mode]
 	var fighting = is_instance_valid(fisher.fight)
+	if is_instance_valid(fish.landing_show):
+		var span = clampf(fish.position.distance_to(fisher.position),12,45)
+		return {"target":fish.position,"position":fisher.position+Vector3(0.6,0.55,1)*span,"fov":75.0,"surface":true}
 	var jumping = jump_hold or fish.airborne or fish.motion.ascent_power > 0.1
 	if shot == "wide" and jumping:
 		# A jump wide frames the Fish/waterline, never the full boat separation.
@@ -214,6 +235,8 @@ func compose(fish: FishPlayer, fisher: FisherActor, target: Vector3, desired: Ve
 
 func protect_camera(fish: FishPlayer, fisher: FisherActor, target: Vector3, surface_shot: bool) -> Vector3:
 	var camera = view.camera
+	var transitioning = view.boat_transition > 0
+	if transitioning: surface_shot = false # Avoid an instant vertical surface snap.
 	var anchor = (fish.position+Vector3.UP*2 if jump_hold or fish.airborne else fisher.position+Vector3.UP*3) if surface_shot else fish.position
 	var space = fish.get_world_3d().direct_space_state
 	# Sphere sweep catches terrain/rocks along the full camera path (mask 1),
@@ -239,7 +262,7 @@ func protect_camera(fish: FishPlayer, fisher: FisherActor, target: Vector3, surf
 	if not obstruction.is_empty() and not surface_shot:
 		camera.position = obstruction.position+obstruction.normal*0.5
 	var bad = camera.position.distance_to(subject) < 1.2 or not obstruction.is_empty()
-	if bad and safety_cooldown <= 0:
+	if bad and safety_cooldown <= 0 and not transitioning:
 		view.set_shot("fish-rear")
 		preferred_subject = "fish"
 		hold_time = 3
@@ -253,7 +276,7 @@ func protect_camera(fish: FishPlayer, fisher: FisherActor, target: Vector3, surf
 		target = fish.position
 	# Check the intended frame, not last frame's camera rotation. Comparing the
 	# old orientation toggled between boat target and Fish while tracking.
-	if not surface_shot:
+	if not surface_shot and not transitioning:
 		var toward_target = target-camera.position
 		var toward_fish = fish.position-camera.position
 		if toward_target.length_squared() > 0.01 and toward_fish.length_squared() > 0.01 and toward_target.angle_to(toward_fish) > deg_to_rad(camera.fov*0.35):

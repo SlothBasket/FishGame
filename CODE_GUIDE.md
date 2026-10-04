@@ -417,3 +417,16 @@ CinematicDirector checks obstruction relative to the intended surface-shot targe
 FightTestDriver's near-surface submerging guard no longer flattens deliberate DIVE aim to a shallow downward heading. A powered commitment releases if actual powered swimming has stalled for 1.5 seconds, or its dive/jump has become invalid. Releasing refreshes the current decision before constructing that frame's input; it clears residual side-hold intent and uses the existing recovery pause. Commitment/side-hold state is also cleared on fight exit. Drive gains, stroke wiggle, force, drag and stamina calibration are unchanged. This fixes identified lock paths; the reported late-fight behavior still needs manual confirmation.
 
 Validation: import/parse passed; no movie, batch, or long simulation.
+
+
+## Recording fixes, event text and landing gag (2026-10-04)
+This supersedes the earlier natural-targeting and clean-HUD notes. The test-bait delay is now an eligibility gate, not merely a delayed priority boost: AI feeding ignores fisherman-owned bait until the delay expires, and take_bait rejects incidental early contact. Targeting OFF blocks those lures for the whole configured take. Live bait remains available. Launcher Director Preview now also receives the targeting options, without automatic shutdown.
+
+Movie Maker + Capture enables bounded recording even without the explicit one-fight flag. A non-MISSED fight outcome schedules shutdown independently of the targeting checkbox. The 3-second tail is extended while the short landing gag is active, then closes after another second; the total duration cap remains authoritative. Right-side event/counter text is now visible in capture. Large central result banners and other debug panels remain hidden; results also appear on the right.
+
+Returning to the boat first orients to the planned Fish-facing angle for 0.65 seconds, then retreats along the line over the rest of a 3.6-second transition. Jump framing is selected at jump commitment; counter preparation retains an existing perspective (or selects Fish-side immediately if caught transitioning to the boat). These holds avoid moving across the line during the actual moment.
+
+LandingShow is a short server-owned post-fight sequence (excluded from batches): hold upright beside the rod for 1.5 seconds, then fling at 55-85 m/s with a 50% chance of gravity (28 m/s squared). Flight is bounded to 4 seconds. Crossing the water inside the arena resets the existing network Fish actor as a fresh life at that splash position. Missing the water resets it at its normal spawn. Food/size and effort resources reset for that next life. Actor transforms use existing replication; gameplay resumes after the sequence. Camera framing follows the gag; CSV events include landing-launch (gravity metadata), landing-splash or landing-new-fish.
+
+Import/parse and small direct checks passed for the delay gate, completion scheduling with targeting off, held pose, water reentry and missed-water reset. No movie or fight batch was run. Camera feel and comedy timing need manual viewing.
+

@@ -114,6 +114,7 @@ var command: FishInput = FishInput.new()
 var boosting: bool = false
 var feeding: FishFeeding
 var suppress_bite_until_release: bool = false
+var landing_show: Node
 var _spawn: Vector3
 var _camera_yaw: float = 0.0
 var _camera_pitch: float = -0.08
@@ -222,6 +223,7 @@ func aim_through_crosshair() -> Vector3:
 	return direction.normalized() if direction.dot(-pivot.global_basis.z) > 0.1 else -pivot.global_basis.z.normalized()
 
 func _physics_process(delta: float) -> void:
+	if is_instance_valid(landing_show): return
 	if camera.current:
 		var roll_target = clampf(-line_force.dot(pivot.global_basis.x)/45,-1,1)*max_tension_camera_roll
 		camera_roll = lerpf(camera_roll,roll_target,1-exp(-tension_camera_smoothing*delta))

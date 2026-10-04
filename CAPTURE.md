@@ -87,3 +87,24 @@ A blank recording seed is generated, displayed and saved as the launcher's last 
 ```
 
 The recording launcher additionally supplies an engine `--quit-after` frame cap at (limit + 5) * 60 as a startup safeguard. Capture CSVs include `test-bait-priority`, the normal outcome, and `capture-complete` or `capture-timeout`. Movies and event logs retain their existing folders. No fight mechanics or normal AI modes are changed.
+
+
+## Recording fixes, event text and landing gag (2026-10-04)
+This supersedes the earlier natural-targeting and clean-HUD notes. The test-bait delay is now an eligibility gate, not merely a delayed priority boost: AI feeding ignores fisherman-owned bait until the delay expires, and take_bait rejects incidental early contact. Targeting OFF blocks those lures for the whole configured take. Live bait remains available. Launcher Director Preview now also receives the targeting options, without automatic shutdown.
+
+Movie Maker + Capture enables bounded recording even without the explicit one-fight flag. A non-MISSED fight outcome schedules shutdown independently of the targeting checkbox. The 3-second tail is extended while the short landing gag is active, then closes after another second; the total duration cap remains authoritative. Right-side event/counter text is now visible in capture. Large central result banners and other debug panels remain hidden; results also appear on the right.
+
+Returning to the boat first orients to the planned Fish-facing angle for 0.65 seconds, then retreats along the line over the rest of a 3.6-second transition. Jump framing is selected at jump commitment; counter preparation retains an existing perspective (or selects Fish-side immediately if caught transitioning to the boat). These holds avoid moving across the line during the actual moment.
+
+LandingShow is a short server-owned post-fight sequence (excluded from batches): hold upright beside the rod for 1.5 seconds, then fling at 55-85 m/s with a 50% chance of gravity (28 m/s squared). Flight is bounded to 4 seconds. Crossing the water inside the arena resets the existing network Fish actor as a fresh life at that splash position. Missing the water resets it at its normal spawn. Food/size and effort resources reset for that next life. Actor transforms use existing replication; gameplay resumes after the sequence. Camera framing follows the gag; CSV events include landing-launch (gravity metadata), landing-splash or landing-new-fish.
+
+Import/parse and small direct checks passed for the delay gate, completion scheduling with targeting off, held pose, water reentry and missed-water reset. No movie or fight batch was run. Camera feel and comedy timing need manual viewing.
+
+### MP4
+Godot Movie Maker does not include a built-in MP4 writer. Keep recording AVI, then convert with FFmpeg if installed:
+
+```text
+ffmpeg -i "fight_capture.avi" -c:v libx264 -crf 18 -pix_fmt yuv420p -c:a aac -movflags +faststart "fight_capture.mp4"
+```
+
+FFmpeg was not found on PATH in this environment; no encoder was installed and no video conversion was run. See https://docs.godotengine.org/en/4.5/tutorials/animation/creating_movies.html for Godot's conversion guidance.

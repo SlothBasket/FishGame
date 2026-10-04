@@ -61,6 +61,8 @@ func _init() -> void:
 
 func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 	clock += delta
+	if is_instance_valid(fish.landing_show): return FishInput.new()
+	food.allow_lures = session.test_bait_allowed()
 	var aim = fish.heading
 	if is_instance_valid(fish.fight):
 		fish_was_fighting = true
@@ -153,6 +155,9 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 func fisher_input(actor: FisherActor, delta: float) -> FisherIntent:
 	clock += delta
 	var input = FisherIntent.new()
+	if is_instance_valid(actor.landing_show):
+		input.cast_serial = actor.last_cast
+		return input
 	input.drag = selected_drag
 	input.species = BaitMotion.Kind.MINNOW
 	input.tier = 12

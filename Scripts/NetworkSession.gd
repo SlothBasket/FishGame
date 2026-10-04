@@ -17,6 +17,7 @@ var capture_mode: bool = false
 var director_mode: bool = false
 var capture_events: CaptureEventLog
 var capture_one_fight: bool = false
+var capture_targeting_configured: bool = false
 var capture_target_bait: bool = true
 var capture_bait_delay: float = 3
 var capture_max_seconds: float = 300
@@ -93,7 +94,8 @@ func start(level: Node3D, fish: FishPlayer, args: PackedStringArray) -> void:
 	spectator_mode = "--ai-vs-ai" in args
 	capture_mode = spectator_mode and "--capture" in args
 	director_mode = capture_mode and "--director" in args
-	capture_one_fight = capture_mode and "--capture-one-fight" in args
+	capture_one_fight = capture_mode and ("--capture-one-fight" in args or "--write-movie" in OS.get_cmdline_args())
+	capture_targeting_configured = capture_one_fight or (capture_mode and ("--capture-natural" in args or Array(args).any(func(arg): return arg.begins_with("--capture-bait-delay="))))
 	capture_target_bait = not "--capture-natural" in args
 	for arg in args:
 		if arg.begins_with("--capture-bait-delay="):
@@ -116,7 +118,7 @@ func start(level: Node3D, fish: FishPlayer, args: PackedStringArray) -> void:
 		local_fish.camera.current = false
 	outcome_banner = FightOutcomeBanner.new()
 	add_child(outcome_banner)
-	outcome_banner.visible = not capture_mode
+	outcome_banner.show_center_result = not capture_mode
 	multiplayer.allow_object_decoding = false
 	multiplayer.server_relay = false
 	multiplayer.peer_connected.connect(peer_joined)
@@ -326,7 +328,7 @@ func fish_intent(sequence: int, axes: PackedFloat32Array, flags: int) -> void:
 func _physics_process(delta: float) -> void:
 	clock += delta
 	if capture_events != null: capture_events.sample(self)
-	if capture_one_fight and capture_recording_tick(): return
+	if capture_targeting_configured and capture_recording_tick(): return
 	if batch_runner != null:
 		if closed: return
 		for record in players.values():
@@ -753,11 +755,17 @@ func update_test_markers() -> void:
 		marker.visible = show_test_bait_markers and not bait.claimed and not bait.hook_held and not fighting and bait.lifecycle == BaitActor.Lifecycle.ALIVE
 
 ## Bounded filming workflow; no force/outcome changes or bait teleporting.
+func test_bait_allowed() -> bool:
+	return not capture_targeting_configured or (capture_target_bait and clock >= capture_bait_delay)
+
 func capture_recording_tick() -> bool:
 	if capture_target_bait and not capture_priority_enabled and clock >= capture_bait_delay:
 		capture_priority_enabled = true
 		ai_test_bait_priority = true
 		if capture_events != null: capture_events.record(self,"test-bait-priority")
+	if not capture_one_fight: return false # Preview honors targeting, but never auto-quits.
+	if capture_stop_at >= 0 and players.has(-1) and is_instance_valid(players[-1].entity.landing_show):
+		capture_stop_at = clock+1.0 # Keep the bounded landing gag and a short tail.
 	if capture_stop_at >= 0 and clock >= capture_stop_at:
 		if capture_events != null: capture_events.record(self,"capture-complete")
 		get_tree().quit()
@@ -771,7 +779,7 @@ func capture_recording_tick() -> bool:
 
 func publish_fight_result(fish: FishPlayer, fisher: FisherActor, result: int) -> void:
 	# A missed hook set may retry within the cap; a completed fight ends the take.
-	if capture_one_fight and capture_target_bait and capture_stop_at < 0 and result != FightSession.Outcome.MISSED:
+	if capture_one_fight and capture_stop_at < 0 and result != FightSession.Outcome.MISSED:
 		capture_stop_at = clock+3
 	if capture_events != null:
 		var event = {FightSession.Outcome.LINE_BROKE:"line-break",FightSession.Outcome.THROWN:"thrown-hook",FightSession.Outcome.LANDED:"landing"}.get(result,"fight-ended")

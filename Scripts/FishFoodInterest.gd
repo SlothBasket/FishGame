@@ -14,6 +14,7 @@ var stroke_time: float = 0
 var stroke_side: float = 1
 var rng = RandomNumberGenerator.new()
 var prioritize_lures: bool = false
+var allow_lures: bool = true # Recording lead-in gate; natural bait remains eligible.
 var commit_time: float = 0
 var attack_reset: float = 0
 var reset_course: Vector3 = Vector3.FORWARD
@@ -47,7 +48,7 @@ func disengage() -> void:
 	state = State.WANDER
 	wander_wait = 0
 func eligible(bait, fish: FishPlayer) -> bool:
-	return is_instance_valid(bait) and bait is BaitActor and not bait.claimed and bait.lifecycle == BaitActor.Lifecycle.ALIVE and fish.size_multiplier() >= bait.minimum_eater_scale and (prioritize_lures or lure_reset <= 0 or not is_instance_valid(bait.fisher_owner))
+	return is_instance_valid(bait) and bait is BaitActor and not bait.claimed and bait.lifecycle == BaitActor.Lifecycle.ALIVE and (allow_lures or not is_instance_valid(bait.fisher_owner)) and fish.size_multiplier() >= bait.minimum_eater_scale and (prioritize_lures or lure_reset <= 0 or not is_instance_valid(bait.fisher_owner))
 func choose(fish: FishPlayer, candidates: Array) -> BaitActor:
 	var chosen: BaitActor
 	var score: float = INF

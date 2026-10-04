@@ -2,6 +2,7 @@ class_name FightOutcomeBanner
 extends CanvasLayer
 ## Local presentation of reliable authoritative results; survives encounter cleanup.
 @export var duration: float = 2.5
+var show_center_result: bool = true
 var remaining: float = 0
 var label: Label
 var notices: Label
@@ -41,7 +42,8 @@ func show_result(result: int, fish_role: bool) -> void:
 	var fisher_messages = ["","HOOK MISSED","LINE BROKE","FISH GOT LOOSE","FISH LANDED","FIGHT ENDED","SPOOLED"]
 	label.text = (fish_messages if fish_role else fisher_messages)[clampi(result,0,6)]
 	remaining = duration
-	label.show()
+	label.visible = show_center_result
+	if not show_center_result: show_notice(label.text)
 func show_counter(kind: int) -> void:
 	show_notice(["","RUN STOPPED!","OVERDRIVE BROKEN!","DIVE STOPPED!"][clampi(kind,0,3)])
 func _process(delta: float) -> void:
@@ -50,7 +52,7 @@ func _process(delta: float) -> void:
 	notices.modulate.a = clampf(notice_time/maxf(0.01,notice_fade),0,1)
 	if notice_time <= 0: recent_notices.clear()
 	remaining = maxf(0,remaining-delta)
-	label.visible = remaining > 0
+	label.visible = remaining > 0 and show_center_result
 
 func show_notice(text: String) -> void:
 	if notice_time > 0 and not recent_notices.is_empty() and recent_notices[-1] == text: return
