@@ -409,3 +409,11 @@ DevLauncher Record adds --capture-one-fight and a persisted maximum seconds valu
 
 ### Optional test-bait targeting
 Record now remembers a Target test bait checkbox and Seconds before targeting (default 3, range 0-3600). Enabled: --capture-bait-delay=N controls the lead-in, with stop after one fight. Disabled: --capture-natural leaves normal food selection active and records until the maximum duration, even if an incidental fight occurs. This does not prohibit naturally eating a lure. Options apply to Record; preview behavior is unchanged.
+
+
+### Boat framing and stalled Fish commitments (2026-10-04)
+CinematicDirector checks obstruction relative to the intended surface-shot target rather than the underwater Fish, and no longer forces boat shots to recenter the Fish. Fish-shot framing checks use the intended target angle, not the previous frame's camera orientation, avoiding alternating targets. FightSpectator entering fisher view now uses a 3-second slow position/rotation transition, even when an instant shot was requested; other hard-cut preferences remain.
+
+FightTestDriver's near-surface submerging guard no longer flattens deliberate DIVE aim to a shallow downward heading. A powered commitment releases if actual powered swimming has stalled for 1.5 seconds, or its dive/jump has become invalid. Releasing refreshes the current decision before constructing that frame's input; it clears residual side-hold intent and uses the existing recovery pause. Commitment/side-hold state is also cleared on fight exit. Drive gains, stroke wiggle, force, drag and stamina calibration are unchanged. This fixes identified lock paths; the reported late-fight behavior still needs manual confirmation.
+
+Validation: import/parse passed; no movie, batch, or long simulation.

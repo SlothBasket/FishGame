@@ -17,6 +17,7 @@ var cast_sent: bool = false
 var stroke_clock: float = 0
 var stroke_side: float = 1
 var run_committed: bool = false
+var run_stall_time: float = 0
 var run_budget: float = 0
 var run_spent_start: float = 0
 var run_pause: float = 0
@@ -64,13 +65,13 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 	if is_instance_valid(fish.fight):
 		fish_was_fighting = true
 		var f = fish.fight
-		var action = committed_action if run_committed else f.fish_action
-		if (side_hold > 0 or fish.motion.side_time > 0) and fish.motion.drive_lockout <= 0: action = FightDecisions.FishAction.RUN
-		aim = FightDecisions.heading_for(f,action)
-		var resting = action == FightDecisions.FishAction.REST
 		var energy = fish.stamina/maxf(1,fish.endurance)
 		run_pause = maxf(0,run_pause-delta)
-		if run_committed and (energy < 0.22 or fish.motion.drive_spent-run_spent_start >= run_budget or fish.motion.drive_lockout > 0 or fish.motion.jump_recovery > 0):
+		# A commitment must yield to recovery/invalid maneuvers, and cannot stay
+		# latched forever while legal inputs produce no actual powered swimming.
+		run_stall_time = run_stall_time+delta if run_committed and not fish.motion.powered_active else 0.0
+		var invalid_move = (committed_action == FightDecisions.FishAction.DIVE and (fish.motion.dive_blocked or bottom_recovery)) or (committed_action == FightDecisions.FishAction.JUMP and f.jump_commit <= 0 and not fish.airborne)
+		if run_committed and (run_stall_time > 1.5 or invalid_move or energy < 0.22 or fish.motion.drive_spent-run_spent_start >= run_budget or fish.motion.drive_lockout > 0 or fish.motion.jump_recovery > 0):
 			completed_commitments.append({"start_drive":run_start_drive,"end_drive":fish.motion.swim_drive,"spent_fraction":fish.motion.drive_spent-run_spent_start,"target":run_budget,"interrupted":fish.motion.drive_lockout > 0})
 			if session.batch_runner != null:
 				session.batch_runner.telemetry.event("AI_COMMITMENT_END",f)
@@ -78,12 +79,19 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 			if completed_commitments.size() > 64: completed_commitments.pop_front()
 			run_committed = false
 			run_pause = 1.0
+			side_hold = 0
+			f.fish_action = FightDecisions.fish_choice(f,f.fish_action)
+		var action = committed_action if run_committed else f.fish_action
+		if (side_hold > 0 or fish.motion.side_time > 0) and fish.motion.drive_lockout <= 0: action = FightDecisions.FishAction.RUN
+		aim = FightDecisions.heading_for(f,action)
+		var resting = action == FightDecisions.FishAction.REST
 		if fish.motion.swim_drive < 0.9: reserve_wait = -1
 		elif reserve_wait < 0: reserve_wait = execution_rng.randf_range(0.5,5.0)
 		else: reserve_wait = maxf(0,reserve_wait-delta)
 		var spend_reserve = reserve_wait == 0 or f.spool.line_rate < -0.8 or f.tension > f.spool.strength*0.65 or action in [FightDecisions.FishAction.DIVE,FightDecisions.FishAction.JUMP]
 		if not run_committed and not resting and spend_reserve and run_pause <= 0 and fish.motion.swim_drive >= 0.95:
 			run_committed = true
+			run_stall_time = 0
 			committed_action = action
 			run_start_drive = fish.motion.swim_drive
 			run_budget = minf(fish.motion.swim_drive,choose_run_budget(f.spool.distance < 12))
@@ -124,7 +132,7 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 		input.vertical = 1 if action == FightDecisions.FishAction.JUMP and not fish.airborne and fish.motion.jump_recovery <= 0 else 0
 		if fish.motion.jump_recovery > 0: input.boost = false; input.aim_direction.y = -0.25
 		# Keep ordinary tools submerged; deliberate jumps retain full upward control.
-		if action != FightDecisions.FishAction.JUMP and not fish.airborne and fish.water_height-fish.position.y < 3:
+		if action not in [FightDecisions.FishAction.JUMP,FightDecisions.FishAction.DIVE] and not fish.airborne and fish.water_height-fish.position.y < 3:
 			input.aim_direction = (BaitMotion.horizontal(input.aim_direction)+Vector3.DOWN*0.2).normalized()
 		input = avoid_bottom(input,fish,FightDecisions.bottom_clearance(fish))
 		input.cancel_bite = fish.feeding.is_charging
@@ -134,6 +142,9 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 		food_seeded = true
 	if fish_was_fighting:
 		fish_was_fighting = false
+		run_committed = false
+		run_stall_time = 0
+		side_hold = 0
 		food.disengage()
 	if food.prioritize_lures != session.ai_test_bait_priority:
 		food.set_lure_priority(session.ai_test_bait_priority)

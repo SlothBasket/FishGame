@@ -231,11 +231,14 @@ func protect_camera(fish: FishPlayer, fisher: FisherActor, target: Vector3, surf
 	if absf(boat_offset.y) < 1.5 and Vector2(boat_offset.x,boat_offset.z).length() < 4:
 		camera.position.y = fisher.position.y+2
 	if surface_shot: camera.position.y = maxf(camera.position.y,fisher.position.y+1.5)
-	var ray = PhysicsRayQueryParameters3D.create(fish.position,camera.position,1,[fish.get_rid()])
+	# Judge a boat/surface composition from its own focus, not through the
+	# submerged Fish. The latter repeatedly rejected valid boat angles.
+	var subject = target if surface_shot else fish.position
+	var ray = PhysicsRayQueryParameters3D.create(subject,camera.position,1,[fish.get_rid()])
 	var obstruction = space.intersect_ray(ray)
 	if not obstruction.is_empty() and not surface_shot:
 		camera.position = obstruction.position+obstruction.normal*0.5
-	var bad = camera.position.distance_to(fish.position) < 1.2 or not obstruction.is_empty()
+	var bad = camera.position.distance_to(subject) < 1.2 or not obstruction.is_empty()
 	if bad and safety_cooldown <= 0:
 		view.set_shot("fish-rear")
 		preferred_subject = "fish"
@@ -248,8 +251,11 @@ func protect_camera(fish: FishPlayer, fisher: FisherActor, target: Vector3, surf
 		var fallback_safe = space.cast_motion(query)
 		camera.position = fish.position+query.motion*maxf(0,fallback_safe[0]-0.03)
 		target = fish.position
-	# Keep framing on the fish when a lagging/prey-centered view loses it.
-	var frame = Rect2(Vector2.ZERO,camera.get_viewport().get_visible_rect().size).grow(-60)
-	if camera.is_position_behind(fish.position) or not frame.has_point(camera.unproject_position(fish.position)):
-		target = fish.position
+	# Check the intended frame, not last frame's camera rotation. Comparing the
+	# old orientation toggled between boat target and Fish while tracking.
+	if not surface_shot:
+		var toward_target = target-camera.position
+		var toward_fish = fish.position-camera.position
+		if toward_target.length_squared() > 0.01 and toward_fish.length_squared() > 0.01 and toward_target.angle_to(toward_fish) > deg_to_rad(camera.fov*0.35):
+			target = fish.position
 	return target

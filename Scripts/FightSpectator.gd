@@ -8,14 +8,17 @@ var mode: int = 2
 var snap_shot: bool = true
 var director: CinematicDirector
 var framed_target: Vector3 = Vector3.ZERO
+var boat_transition: float = 0
 
 func set_shot(preset: String, instant: bool = true) -> bool:
 	var index = SHOTS.find(preset)
 	if index < 0:
 		push_warning("Unknown spectator shot: "+preset)
 		return false
+	var entering_boat = index == 0 and mode != 0 and is_instance_valid(camera)
+	if entering_boat: boat_transition = 3.0
 	mode = index
-	snap_shot = instant
+	snap_shot = instant and not entering_boat
 	if is_instance_valid(camera) and mode == 2:
 		pitch = camera.rotation.x
 		yaw = camera.rotation.y
@@ -83,6 +86,7 @@ func _process(delta: float) -> void:
 	var fish: FishPlayer = session.players[-1].entity
 	var fisher: FisherActor = session.players[-2].entity
 	var fight = fisher.fight
+	boat_transition = maxf(0,boat_transition-delta)
 	if director != null: director.update(delta,fish,fisher)
 	boat.position = fisher.position
 	boat.rotation.y = fisher.boat_yaw
@@ -121,7 +125,7 @@ func _process(delta: float) -> void:
 			shot_fov = composition.fov
 			surface_shot = composition.surface
 		var cut = snap_shot
-		camera.position = desired if snap_shot else camera.position.lerp(desired,1-exp(-delta*(2.5 if director != null else 5)))
+		camera.position = desired if snap_shot else camera.position.lerp(desired,1-exp(-delta*(0.9 if boat_transition > 0 else 2.5 if director != null else 5)))
 		snap_shot = false
 		camera.fov = lerpf(camera.fov,shot_fov,1-exp(-delta*4))
 		if mode == 0: target = FishingPresentation.boat_view_target(fisher.position,forward,fight.rod_direction if is_instance_valid(fight) else forward,target)
@@ -129,7 +133,11 @@ func _process(delta: float) -> void:
 			target = director.protect_camera(fish,fisher,target,surface_shot)
 			framed_target = target if cut else framed_target.lerp(target,1-exp(-delta*4))
 			target = framed_target
-		if camera.position.distance_to(target) > 0.1: camera.look_at(target,Vector3.UP)
+		if camera.position.distance_to(target) > 0.1:
+			var old_rotation = camera.quaternion
+			camera.look_at(target,Vector3.UP)
+			if boat_transition > 0 and not cut:
+				camera.quaternion = old_rotation.slerp(camera.quaternion,1-exp(-delta*1.8))
 	if session.capture_mode: return # Camera/equipment keep updating; no debug work.
 	debug.text = "AI vs AI — OBSERVER ONLY\n1 Fisher | 2 Fish | 3 Free (WASD, Q/E, RMB look) | 4 Wide | 5 Side | 6 Rear | 7 Front\nView: %s | Participants: %d\nDrive %.0f%% %s | Stamina %.0f / %.0f" % [SHOTS[mode],session.players.size(),fish.motion.swim_drive*100,"DRIVE DISRUPTED" if fish.motion.drive_lockout > 0 else "OVERDRIVE" if fish.motion.overdrive > 0 else "",fish.stamina,fish.endurance]
 	if is_instance_valid(fight):
