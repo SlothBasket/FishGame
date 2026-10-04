@@ -75,6 +75,11 @@ static func requested(args: PackedStringArray) -> bool:
 	return false
 
 func start(level: Node3D, fish: FishPlayer, args: PackedStringArray) -> void:
+	if JoinClient.enabled():
+		args = JoinClient.arguments() # Discard --host/test/capture args in distribution.
+		if args.is_empty():
+			JoinClient.return_to_menu(get_tree(),"Enter the host address to join.")
+			return
 	world = level
 	local_fish = fish
 	local_fish.networked = true
@@ -136,6 +141,12 @@ func start(level: Node3D, fish: FishPlayer, args: PackedStringArray) -> void:
 
 	status.add_theme_font_size_override("font_size",16)
 	layer.add_child(status)
+	if JoinClient.enabled():
+		var leave = Button.new()
+		leave.text = "Leave match (F10)"
+		leave.position = Vector2(24,24)
+		leave.pressed.connect(func(): disconnect_session("Left match"))
+		layer.add_child(leave)
 	status.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
 	status.anchor_left = 0.34
 	status.anchor_right = 0.66
@@ -192,7 +203,7 @@ func start(level: Node3D, fish: FishPlayer, args: PackedStringArray) -> void:
 		show_status("Connecting to %s:%d" % [address,port])
 
 func show_status(message: String) -> void:
-	if status != null: status.text = message+"\nT AI test-bait priority (host) | F10 disconnect"
+	if status != null: status.text = message+("\nF10 leave match" if JoinClient.enabled() else "\nT AI test-bait priority (host) | F10 disconnect")
 	print("NETWORK "+message)
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -207,7 +218,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 ## Development release test: clients request it; only the host moves actors.
 func test_release() -> void:
-	if closed: return
+	if closed or JoinClient.enabled(): return
 	if hosting: release_test_for(1)
 	elif connected: request_release_test.rpc_id(1)
 
@@ -260,7 +271,10 @@ func disconnect_session(message: String) -> void:
 	if school != null: school.process_mode = Node.PROCESS_MODE_DISABLED
 	local_fish.set_physics_process(false)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	show_status(message+"; close this window or relaunch to play again")
+	if JoinClient.enabled():
+		JoinClient.return_to_menu(get_tree(),message+". Check the address/port and ask whether the host is ready.")
+	else:
+		show_status(message+"; close this window or relaunch to play again")
 
 func peer_joined(peer: int) -> void:
 	if hosting and spectator_mode:

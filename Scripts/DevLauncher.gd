@@ -38,6 +38,9 @@ static func explicit_mode(args: PackedStringArray) -> bool:
 	return false
 
 func _ready() -> void:
+	if JoinClient.enabled():
+		get_tree().change_scene_to_file.call_deferred("res://Scenes/JoinMenu.tscn")
+		return
 	if explicit_mode(OS.get_cmdline_user_args()) or "--write-movie" in OS.get_cmdline_args():
 		get_tree().change_scene_to_file.call_deferred(GAME)
 		return

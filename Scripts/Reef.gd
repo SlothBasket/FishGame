@@ -25,8 +25,11 @@ var _lure_test: LureTestController
 func _ready() -> void:
 	_fish = $FishPlayer
 	_fish.water_height = water_depth
-	var args = OS.get_cmdline_user_args()
-	if FightBatch.requested():
+	var args = JoinClient.arguments()
+	if JoinClient.enabled() and args.is_empty():
+		JoinClient.return_to_menu(get_tree(),"Enter the host address to join.")
+		return
+	if not JoinClient.enabled() and FightBatch.requested():
 		build_reef()
 		visible = false
 		set_process(false)
@@ -80,7 +83,7 @@ func _ready() -> void:
 			add_child(bait)
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event.is_echo() or not event.is_action_pressed("test_release"): return
+	if JoinClient.enabled() or event.is_echo() or not event.is_action_pressed("test_release"): return
 	get_viewport().set_input_as_handled()
 	if is_instance_valid(network_session):
 		network_session.test_release()
@@ -197,7 +200,7 @@ func build_reef() -> void:
 		shape.points = points
 		collision.shape = shape
 		rock.add_child(collision)
-	if FightBatch.requested(): return
+	if not JoinClient.enabled() and FightBatch.requested(): return
 	var habitat_art = InshoreHabitat.new()
 	add_child(habitat_art)
 	habitat_art.build(half)
@@ -304,6 +307,7 @@ func build_hud() -> void:
 	var hint = hud_text(root, "Hold LMB. Line it up. Release.", 24, cream, Vector2.ZERO)
 	anchor(hint, Control.PRESET_BOTTOM_LEFT, Rect2(40, -125, 520, 40))
 	var controls = hud_text(root, "W forward / S reverse    A/D steer    MOUSE look    SHIFT boost   F9 hitch report\nSPACE / CTRL rise / dive    R reset    ESC release cursor", 15, muted, Vector2.ZERO)
+	if JoinClient.enabled(): controls.text = "W/S swim | A/D steer | Mouse look | Shift boost | Space/Ctrl rise/dive\nHold/release left click to feed | Esc cursor | F10 leave match"
 	anchor(controls, Control.PRESET_BOTTOM_LEFT, Rect2(40, -83, 740, 58))
 	_telemetry = hud_text(root, "", 20, cream, Vector2.ZERO)
 	anchor(_telemetry, Control.PRESET_BOTTOM_RIGHT, Rect2(-260, -103, 220, 60))

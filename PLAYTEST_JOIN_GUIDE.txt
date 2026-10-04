@@ -1,0 +1,42 @@
+PELAGIC - MULTIPLAYER PLAYTEST (WINDOWS 64-BIT)
+
+1. Right-click the ZIP and choose Extract All. Open the extracted folder.
+2. Double-click Pelagic Join.exe. No Godot editor, .NET or installation needed.
+3. Ask the host for their IPv4 address and UDP port (normally 24567).
+4. Enter them, choose Fish or Fisher, and click JOIN MATCH.
+5. If it fails, check the host has started a match and has the same build.
+
+This build only joins matches. It has no hosting, solo, AI-test, Director,
+recording or development launcher. The host uses their development copy.
+
+CONNECTION DETAILS
+Same Wi-Fi/LAN: use the host PC's LAN IPv4 (usually 192.168.x.x or 10.x.x.x).
+127.0.0.1 only works when the host runs on YOUR computer.
+Different homes: the host must provide a reachable public IPv4/forwarded UDP
+port, or the reachable IPv4 from an already configured shared VPN network.
+There is no account, matchmaking service, relay or automatic router setup.
+Only the host normally needs inbound UDP forwarding. If connection fails,
+ask the host to check their address, port, firewall and network setup.
+
+CONTROLS
+Fish: mouse look; W/S swim/reverse; A/D steer; Space/Ctrl rise/dive;
+Shift boost; hold left mouse to charge a feeding lunge, release to attack.
+Fisher: mouse aim; G cast; X select bait; W retrieve; mouse wheel reel speed;
+A/D rod/bait steering; Space/Ctrl rise/descend; left mouse bait escape;
+Q hook-set/rod jerk; Shift power reel; [ and ] drag; V Fish Vision;
+C alternate camera. Follow the hook-set prompt when a Fish bites.
+Esc releases/captures the mouse. F10 leaves and returns to Join.
+Close the window to quit. Connection failures also return to Join.
+
+REPORTING PROBLEMS
+Tell the host your build version (shown on Join), role and what happened.
+F9 saves performance diagnostics if requested. Logs/settings are under
+%APPDATA%\Godot\app_userdata\Pelagic Join.
+
+HOST CHECKLIST (send the ZIP, not the project)
+Dev Launcher > Multiplayer Testing > Host; choose Fish or Fisher.
+Send friends your reachable IPv4 address, UDP port, and matching build ZIP.
+For LAN, allow Godot private-network access if Windows asks.
+For different networks, forward the chosen UDP port to the host PC as needed.
+Start with one friend. Check movement, feeding, casting, hookset and landing.
+Rebuild and resend when the network protocol changes.

@@ -112,3 +112,5 @@ Milestone subject: `Strengthen Drive reserve and fix feeding pursuit safety` - h
 - **Add social hunting and steadier multi-actor cinematography** - Inches and retained growth, once-only landing score, finite hotspots, hunting Drive, prey preferences, inshore patches, five-actor observer and varied cameras.
 
 - **Add parallel seed recording and multi-actor directing** - Bounded Movie Maker queue, distinct ports/files/logs, automatic subject selection, bounded wide/surface shots, and multiplayer host/join/local-pair launcher.
+
+- **Package join-only multiplayer playtest client** - Separate friend-facing Join screen, guarded launch paths, return-on-disconnect, reproducible Windows ZIP builder and setup guide.
