@@ -401,3 +401,7 @@ CinematicDirector now uses 5-10 second holds, smooth ordinary transitions, recen
 
 ### Dev Launcher (2026-10-04)
 Scenes/DevLauncher.tscn is the startup scene; Scripts/DevLauncher.gd decides whether to show UI or defer loading Reef for explicit CLI modes. No Reef/Fish logic changes. The frontend builds tokenized OS.create_process arguments for all existing modes, resolves current executable/project, and quits only after a positive PID. Movie Maker options precede --; gameplay options follow it. Safe filename and duplicate handling are isolated static helpers. Settings use user://dev-launcher.cfg and movies user://captures/. See DEV_LAUNCHER.md.
+
+
+### Bounded seeded takes (2026-10-04)
+DevLauncher Record adds --capture-one-fight and a persisted maximum seconds value (300 default), supplies a concrete saved seed when blank, and adds Movie Maker --quit-after as a frame cap. NetworkSession.capture_recording_tick enables existing lure priority after 3 seconds and checks simulation-time deadline/end-tail; publish_fight_result schedules shutdown after 3 seconds for non-MISSED outcomes. No synthetic fight result is generated on timeout. Normal modes are unaffected.

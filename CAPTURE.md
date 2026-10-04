@@ -74,3 +74,16 @@ Implementation: `CaptureEventLog` owns the CSV writer; `NetworkSession` samples 
 
 ## Dev Launcher
 F5 with empty Main Run Args now opens a developer launcher. Director Preview is realtime only; Record Director Fight starts Movie Maker in a separate Godot process and writes duplicate-safe AVI names under user://captures/. Optional seed and AI skills are remembered. See DEV_LAUNCHER.md. Existing explicit capture/movie command lines bypass the menu.
+
+
+## Unattended one-fight recording
+
+The launcher's Record button now adds `--capture-one-fight` and `--capture-max-seconds=300` (adjustable 30–3600 seconds). After a 3-second lead-in, it enables the existing AI test-bait priority, without teleporting bait or changing combat. A missed hook set may retry. Landing, thrown hook, line break, spool-out or disconnect schedules a normal Godot shutdown 3 seconds later so Movie Maker finishes its file. The total simulation-time cap stops a take even if no hook-up or fight outcome occurs. Timeout is logged without inventing a gameplay result. Movie Maker may take longer in wall-clock time than the footage duration.
+
+A blank recording seed is generated, displayed and saved as the launcher's last seed; clear it for another random take. Ordinary Director Preview remains unlimited and keeps normal targeting. For a bounded preview or manual Movie Maker invocation use these user arguments:
+
+```text
+-- --ai-vs-ai --capture --director --seed=12345 --capture-one-fight --capture-max-seconds=300
+```
+
+The recording launcher additionally supplies an engine `--quit-after` frame cap at (limit + 5) * 60 as a startup safeguard. Capture CSVs include `test-bait-priority`, the normal outcome, and `capture-complete` or `capture-timeout`. Movies and event logs retain their existing folders. No fight mechanics or normal AI modes are changed.

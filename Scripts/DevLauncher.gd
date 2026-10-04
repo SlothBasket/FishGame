@@ -7,6 +7,7 @@ var filename: LineEdit
 var seed_field: LineEdit
 var fish_skill: LineEdit
 var fisher_skill: LineEdit
+var max_seconds: SpinBox
 var status: Label
 var launching: bool = false
 
@@ -51,9 +52,18 @@ func _ready() -> void:
 	label(panel,"RECORD DIRECTOR FIGHT — 1920×1080, 60 fps",22)
 	filename = field(panel,"Filename","fight_capture")
 	filename.text = "fight_capture"
-	mode_button(panel,"RECORD","AI vs AI + Capture + Director → AVI",["--ai-vs-ai","--capture","--director"],true)
+	var limit_row = HBoxContainer.new()
+	panel.add_child(limit_row)
+	label(limit_row,"Maximum recording seconds",17).custom_minimum_size.x = 260
+	max_seconds = SpinBox.new()
+	max_seconds.min_value = 30
+	max_seconds.max_value = 3600
+	max_seconds.value = 300
+	max_seconds.step = 30
+	limit_row.add_child(max_seconds)
+	mode_button(panel,"RECORD","Targets test bait; stops after one fight (or time limit)",["--ai-vs-ai","--capture","--director"],true)
 	label(panel,"Movies: "+ProjectSettings.globalize_path(CAPTURES),15)
-	status = label(panel,"Close the recorded game normally to finish the movie.",16)
+	status = label(panel,"Recording stops automatically 3 seconds after the fight ends.",16)
 	load_settings()
 
 func label(parent: Node, text: String, size: int) -> Label:
@@ -87,6 +97,7 @@ func mode_button(parent: Node, title: String, description: String, args: PackedS
 func load_settings() -> void:
 	var config = ConfigFile.new()
 	config.load(SETTINGS)
+	max_seconds.value = float(config.get_value("launcher","max_seconds",300))
 	filename.text = str(config.get_value("launcher","filename","fight_capture"))
 	seed_field.text = str(config.get_value("launcher","seed",""))
 	fish_skill.text = str(config.get_value("launcher","fish_skill",""))
@@ -99,6 +110,7 @@ func load_settings() -> void:
 func save_settings() -> void:
 	if filename == null: return
 	var config = ConfigFile.new()
+	config.set_value("launcher","max_seconds",max_seconds.value)
 	config.set_value("launcher","filename",filename.text)
 	config.set_value("launcher","seed",seed_field.text)
 	config.set_value("launcher","fish_skill",fish_skill.text)
@@ -135,6 +147,10 @@ static func process_arguments(project_path: String, user_args: PackedStringArray
 	var args = PackedStringArray(["--path",project_path])
 	if not movie.is_empty():
 		args.append_array(["--resolution","1920x1080","--write-movie",movie,"--fixed-fps","60"])
+		# Engine-level frame cap also bounds a startup/connection failure.
+		for option in user_args:
+			if option.begins_with("--capture-max-seconds="):
+				args.append_array(["--quit-after",str((option.get_slice("=",1).to_int()+5)*60)])
 	args.append("--")
 	args.append_array(user_args)
 	return args
@@ -143,7 +159,16 @@ func launch(mode_args: PackedStringArray, record: bool) -> void:
 	if launching: return
 	save_settings()
 	var args = mode_args.duplicate()
+	if record:
+		args.append("--capture-one-fight")
+		args.append("--capture-max-seconds=%d" % int(max_seconds.value))
 	var seed_text = seed_field.text.strip_edges()
+	if record and seed_text.is_empty():
+		var random = RandomNumberGenerator.new()
+		random.randomize()
+		seed_text = str(random.randi_range(0,2147483646))
+		seed_field.text = seed_text
+		save_settings()
 	if not seed_text.is_empty():
 		if not seed_text.is_valid_int() or seed_text.to_int() < 0 or seed_text.to_int() > 2147483646:
 			status.text = "Seed must be blank or a whole number from 0 to 2147483646."

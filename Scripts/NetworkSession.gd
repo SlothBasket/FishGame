@@ -16,6 +16,10 @@ var spectator_mode: bool = false
 var capture_mode: bool = false
 var director_mode: bool = false
 var capture_events: CaptureEventLog
+var capture_one_fight: bool = false
+var capture_max_seconds: float = 300
+var capture_stop_at: float = -1
+var capture_priority_enabled: bool = false
 var spectator_shot: String = ""
 var spectator_check: bool = false
 var spectator_saw_fight: bool = false
@@ -87,6 +91,11 @@ func start(level: Node3D, fish: FishPlayer, args: PackedStringArray) -> void:
 	spectator_mode = "--ai-vs-ai" in args
 	capture_mode = spectator_mode and "--capture" in args
 	director_mode = capture_mode and "--director" in args
+	capture_one_fight = capture_mode and "--capture-one-fight" in args
+	for arg in args:
+		if arg.begins_with("--capture-max-seconds="):
+			var limit = arg.get_slice("=",1).to_float()
+			if is_finite(limit) and limit > 0: capture_max_seconds = clampf(limit,30,3600)
 	if capture_mode:
 		show_test_bait_markers = false
 		capture_events = CaptureEventLog.new()
@@ -311,6 +320,7 @@ func fish_intent(sequence: int, axes: PackedFloat32Array, flags: int) -> void:
 func _physics_process(delta: float) -> void:
 	clock += delta
 	if capture_events != null: capture_events.sample(self)
+	if capture_one_fight and capture_recording_tick(): return
 	if batch_runner != null:
 		if closed: return
 		for record in players.values():
@@ -736,7 +746,27 @@ func update_test_markers() -> void:
 		var fighting = is_instance_valid(bait.fisher_owner) and is_instance_valid(bait.fisher_owner.fight)
 		marker.visible = show_test_bait_markers and not bait.claimed and not bait.hook_held and not fighting and bait.lifecycle == BaitActor.Lifecycle.ALIVE
 
+## Bounded filming workflow; no force/outcome changes or bait teleporting.
+func capture_recording_tick() -> bool:
+	if not capture_priority_enabled and clock >= 3:
+		capture_priority_enabled = true
+		ai_test_bait_priority = true
+		if capture_events != null: capture_events.record(self,"test-bait-priority")
+	if capture_stop_at >= 0 and clock >= capture_stop_at:
+		if capture_events != null: capture_events.record(self,"capture-complete")
+		get_tree().quit()
+		return true
+	if clock >= capture_max_seconds:
+		# Stop recording normally; do not manufacture a fight result on timeout.
+		if capture_events != null: capture_events.record(self,"capture-timeout",{"limit_seconds":capture_max_seconds})
+		get_tree().quit()
+		return true
+	return false
+
 func publish_fight_result(fish: FishPlayer, fisher: FisherActor, result: int) -> void:
+	# A missed hook set may retry within the cap; a completed fight ends the take.
+	if capture_one_fight and capture_stop_at < 0 and result != FightSession.Outcome.MISSED:
+		capture_stop_at = clock+3
 	if capture_events != null:
 		var event = {FightSession.Outcome.LINE_BROKE:"line-break",FightSession.Outcome.THROWN:"thrown-hook",FightSession.Outcome.LANDED:"landing"}.get(result,"fight-ended")
 		capture_events.record(self,event,{"outcome":FightSession.Outcome.keys()[result]})

@@ -30,3 +30,16 @@ Explicit mode/test/batch/preview/network arguments skip the menu and load Reef d
 The previously saved editor movie arguments were checkpointed in local commit `531daff` before clearing Main Run Args. The existing fight_test.avi was left untouched.
 
 Validation: import/parse plus one headless menu initialization/argument check. No movie, child gameplay process or fight batch was run.
+
+
+## Unattended one-fight recording
+
+The launcher's Record button now adds `--capture-one-fight` and `--capture-max-seconds=300` (adjustable 30–3600 seconds). After a 3-second lead-in, it enables the existing AI test-bait priority, without teleporting bait or changing combat. A missed hook set may retry. Landing, thrown hook, line break, spool-out or disconnect schedules a normal Godot shutdown 3 seconds later so Movie Maker finishes its file. The total simulation-time cap stops a take even if no hook-up or fight outcome occurs. Timeout is logged without inventing a gameplay result. Movie Maker may take longer in wall-clock time than the footage duration.
+
+A blank recording seed is generated, displayed and saved as the launcher's last seed; clear it for another random take. Ordinary Director Preview remains unlimited and keeps normal targeting. For a bounded preview or manual Movie Maker invocation use these user arguments:
+
+```text
+-- --ai-vs-ai --capture --director --seed=12345 --capture-one-fight --capture-max-seconds=300
+```
+
+The recording launcher additionally supplies an engine `--quit-after` frame cap at (limit + 5) * 60 as a startup safeguard. Capture CSVs include `test-bait-priority`, the normal outcome, and `capture-complete` or `capture-timeout`. Movies and event logs retain their existing folders. No fight mechanics or normal AI modes are changed.

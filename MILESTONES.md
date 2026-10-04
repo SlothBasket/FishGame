@@ -96,3 +96,5 @@ Milestone subject: `Strengthen Drive reserve and fix feeding pursuit safety` - h
 - **Smooth cinematic direction and log capture events** (2026-10-04): longer family-aware shots, action holds, closer breach framing and sparse simulation-time CSV logs. Import/parse only; preserves the user's capture/director editor arguments.
 
 - **Add development mode launcher and Movie Maker frontend** (2026-10-04): no-argument startup menu, six modes, optional persisted seed/skills, safe duplicate-free recordings in user://captures/. Existing CLI workflows preserved; import and headless menu/argument checks only. Editor recording arguments first checkpointed as 531daff.
+
+- **Bound seeded recordings to one test-bait fight** (2026-10-04): automatic lure priority, 3-second result tail, configurable total duration and engine frame cap; blank recording seeds saved for reuse. Import checked; no movie or fight batch.
