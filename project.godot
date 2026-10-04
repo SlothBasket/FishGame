@@ -24,7 +24,7 @@ window/stretch/mode="canvas_items"
 
 [editor]
 
-run/main_run_args="-- --ai-vs-ai --capture --director --seed=12345"
+run/main_run_args="--write-movie \"fight_test.avi\" --fixed-fps 60 -- --ai-vs-ai --capture --director --seed=12345"
 
 [rendering]
 
