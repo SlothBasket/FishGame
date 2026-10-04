@@ -15,6 +15,10 @@ var stroke_side: float = 1
 var rng = RandomNumberGenerator.new()
 var prioritize_lures: bool = false
 var allow_lures: bool = true # Recording lead-in gate; natural bait remains eligible.
+# Profile seam: keys are BaitMotion.Kind integers, with "lure" as an override.
+var prey_weights: Dictionary = {}
+var last_prey_kind: int = -1
+var hotspot: FeedingHotspot
 var commit_time: float = 0
 var attack_reset: float = 0
 var reset_course: Vector3 = Vector3.FORWARD
@@ -48,7 +52,7 @@ func disengage() -> void:
 	state = State.WANDER
 	wander_wait = 0
 func eligible(bait, fish: FishPlayer) -> bool:
-	return is_instance_valid(bait) and bait is BaitActor and not bait.claimed and bait.lifecycle == BaitActor.Lifecycle.ALIVE and (allow_lures or not is_instance_valid(bait.fisher_owner)) and fish.size_multiplier() >= bait.minimum_eater_scale and (prioritize_lures or lure_reset <= 0 or not is_instance_valid(bait.fisher_owner))
+	return is_instance_valid(bait) and bait is BaitActor and not bait.claimed and bait.lifecycle == BaitActor.Lifecycle.ALIVE and (allow_lures or not is_instance_valid(bait.fisher_owner)) and fish.can_eat(bait) and (prioritize_lures or lure_reset <= 0 or not is_instance_valid(bait.fisher_owner))
 func choose(fish: FishPlayer, candidates: Array) -> BaitActor:
 	var chosen: BaitActor
 	var score: float = INF
@@ -56,8 +60,14 @@ func choose(fish: FishPlayer, candidates: Array) -> BaitActor:
 		if not eligible(item,fish): continue
 		var distance = fish.position.distance_to(item.position)
 		var lure = is_instance_valid(item.fisher_owner)
-		if distance > detection_radius and not (prioritize_lures and lure): continue
-		var interest = distance/(1.15 if is_instance_valid(item.fisher_owner) else 1.0)
+		if distance > detection_radius*(1.6 if hotspot != null and hotspot.contains(item.position) else 1.0) and not (prioritize_lures and lure): continue
+		# Modest reward/variety weighting prevents ubiquitous minnows always winning.
+		var weight = float(prey_weights.get("lure" if lure else item.kind,1.0))
+		weight *= 1.0+minf(0.75,item.nutrition()*0.15)
+		if item.kind != last_prey_kind: weight *= 1.15
+		var alignment = fish.heading.dot((item.position-fish.position).normalized())
+		if hotspot != null and hotspot.contains(item.position): weight *= 1.45
+		var interest = distance*(1+0.18*(1-alignment))/maxf(0.05,weight)
 		if prioritize_lures and lure: interest -= 100000
 		if interest < score: chosen = item; score = interest
 	return chosen
@@ -117,6 +127,7 @@ func input(fish: FishPlayer, candidates: Array, half_width: float, depth: float,
 			if state == State.APPROACH and distance > 18:
 				aim = aim.rotated(Vector3.UP,deg_to_rad(12)*stroke_side)
 			var attack = FishInput.new(0.9 if state == State.APPROACH else 0.85,0,0,aim,false,false)
+			attack.boost = state == State.APPROACH and distance > 18 and fish.motion.swim_drive > 0.20
 			if state == State.COMMIT:
 				commit_time += delta
 				if distance > commit_reach*1.5 or fish.heading.dot(direct) < -0.1 or commit_time > fish.full_charge_time+1.0:
@@ -130,7 +141,7 @@ func input(fish: FishPlayer, candidates: Array, half_width: float, depth: float,
 					var launch_distance = preferred_launch_distance+clampf(closing_speed*0.12,-1,1)+clampf(fish.size_multiplier()-1,0,2)
 					var in_launch_zone = distance <= launch_distance or fish.feeding.charge_fraction() >= 1
 					attack.bite_held = not (in_launch_zone and reach+fish.bite_radius*fish.size_multiplier() >= remaining_distance and alignment >= 0.88)
-					if not attack.bite_held: state = State.APPROACH
+					if not attack.bite_held: state = State.APPROACH; last_prey_kind = target.kind
 				elif not fish.feeding.is_dashing() and fish.feeding.cooldown_remaining <= 0:
 					attack.bite_held = alignment > 0.65
 			return attack

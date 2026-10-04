@@ -30,6 +30,7 @@ var fight
 var last_cast: int = 0
 var cast_cooldown: float = 0
 var outcome: int = 0
+var score_inches: float = 0 # Authority-owned cumulative landed length.
 var rng = RandomNumberGenerator.new()
 
 func _ready() -> void:

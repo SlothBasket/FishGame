@@ -106,6 +106,11 @@ func nearby_fleeing() -> Array:
 func hit_radius() -> float:
 	return [0.28, 0.28, 0.42, 0.38, 0.34, 0.55][kind] * body_size
 
+func required_length(fish: FishPlayer) -> float:
+	if minimum_eater_scale == 0: return 8.0
+	if kind == BaitMotion.Kind.CRAB: return 12.0
+	return fish.inches_for_scale(maxf(0,minimum_eater_scale))
+
 func nutrition() -> int:
 	return [1, 4, 3, 5, 3, 5][kind]
 
@@ -411,8 +416,8 @@ func try_bite(eater) -> bool:
 		set_physics_process(false)
 		bitten.emit(self,eater)
 		return true
-	if not claimed and eater.size_multiplier() < minimum_eater_scale:
-		eater.feeding.last_meal = "%s needs %.2fx size" % [display_name(), minimum_eater_scale]
+	if not claimed and not eater.can_eat(self):
+		eater.feeding.last_meal = "%s needs %.1f inches" % [display_name(), required_length(eater)]
 		eater.feeding.meal_notice_time = 1.8
 		return false
 	if claimed:

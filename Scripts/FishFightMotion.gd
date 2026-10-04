@@ -100,7 +100,10 @@ func step(delta: float, input: FishInput, heading: Vector3, speed_fraction: floa
 				cadence_grade = 1 if error <= full_credit_window else 3
 		last_side = side
 		stroke_age = 0
-	powered_active = wants_power and last_side != 0 and stroke_age <= powered_rhythm_window and (swim_drive > 0 or stamina > 1)
+	# In hunting, stored earned Drive can fund a straight closing sprint without
+	# demanding continued fight strokes every 0.62s. Fight cadence is unchanged.
+	var hunting_reserve = not fight_mode and swim_drive > 0.001
+	powered_active = wants_power and (hunting_reserve or (last_side != 0 and stroke_age <= powered_rhythm_window)) and (swim_drive > 0 or stamina > 1)
 	if not powered_active: overdrive_remaining = 0
 	var escalating = powered_active and overdrive_remaining > 0
 	stamina_share = 0

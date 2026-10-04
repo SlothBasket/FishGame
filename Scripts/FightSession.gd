@@ -351,6 +351,8 @@ func finish(result: int) -> void:
 	if is_instance_valid(fisher) and fisher.session.fight_smoke: print("FIGHT OUTCOME ",result)
 	if phase == Phase.FINISHED: return
 	phase = Phase.FINISHED
+	if result == Outcome.LANDED and is_instance_valid(fish) and is_instance_valid(fisher):
+		fisher.score_inches += fish.length_inches() # Guard above makes each landing award once.
 	if is_instance_valid(fisher) and is_instance_valid(fish): fisher.session.publish_fight_result(fish,fisher,result)
 	if is_instance_valid(fish):
 		fish.endurance = fish.stamina_capacity

@@ -279,7 +279,7 @@ func _physics_process(delta: float) -> void:
 		var speed = effective_swim_speed() * motion.multiplier() * (charge_swim_multiplier if feeding.is_charging else 1.0)
 		var response = (charge_response_multiplier if feeding.is_charging else 1.0)*(0.3 if head.impact_time > 0 else 1.0)
 		velocity = FishInput.next_velocity(velocity, heading, swim, speed, fight_boost_multiplier(),
-			reverse_speed_multiplier, acceleration * response * motion.multiplier() * motion.stored_force_multiplier() * (fight_force_multiplier() if in_fight and boosting else reserve_force_capacity() if in_fight else 1.0), reverse_acceleration * response, water_drag * response, vertical_speed_multiplier, delta)
+			reverse_speed_multiplier, acceleration * response * motion.multiplier() * motion.stored_force_multiplier() * (fight_force_multiplier() if in_fight and boosting else reserve_force_capacity() if in_fight else fight_boost_multiplier() if boosting else 1.0), reverse_acceleration * response, water_drag * response, vertical_speed_multiplier, delta)
 		if in_fight and motion.diving: velocity.y -= motion.dive_acceleration*motion.dive_power*delta
 		if in_fight and not airborne: velocity.y += motion.ascent_acceleration*motion.ascent_power*delta
 		apply_line_force(delta)
@@ -313,6 +313,15 @@ func _physics_process(delta: float) -> void:
 
 func size_multiplier() -> float:
 	return starting_size + (maximum_size - starting_size) * (1.0 - exp(-growth_rate * feeding.food))
+
+func length_inches() -> float:
+	return lerpf(8.0,46.0,growth_fraction())
+
+func inches_for_scale(value: float) -> float:
+	return lerpf(8.0,46.0,clampf((value-starting_size)/(maximum_size-starting_size),0,1))
+
+func can_eat(bait: BaitActor) -> bool:
+	return length_inches()+0.0001 >= bait.required_length(self)
 
 func mouth_position() -> Vector3:
 	return global_position + heading * 1.25 * size_multiplier()

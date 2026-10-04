@@ -108,3 +108,5 @@ Milestone subject: `Strengthen Drive reserve and fix feeding pursuit safety` - h
 - **Add P release test across play modes** — Shared landing throw available in solo Fish/bait testing, hosted roles, joined clients and AI spectator/capture modes; no Director dependency.
 
 - **Restore smooth boat retreat and arc release throws** — Restore continuous camera travel with bounded rotation; forward/inward arcing throws, stronger wind-up/tumbling, sky and distant water/seabed scenery.
+
+- **Add social hunting and steadier multi-actor cinematography** - Inches and retained growth, once-only landing score, finite hotspots, hunting Drive, prey preferences, inshore patches, five-actor observer and varied cameras.

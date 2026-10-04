@@ -32,10 +32,12 @@ var rear_offset: float = 0
 var jump_hold: bool = false
 var was_airborne: bool = false
 var reaction_hold: float = 0
+const MIN_SHOT_SECONDS = 6.0
+var obstruction_age: float = 0
 
 static func family(shot: String) -> String:
 	if shot in ["fish","fish-rear"]: return "rear"
-	return {"fish-side":"side","fish-front":"front","wide":"wide","fisher":"boat"}.get(shot,shot)
+	return {"fish-side":"side","fish-front":"front","fish-shoulder":"close","fish-pov":"pov","fish-high":"high","wide":"wide","fisher":"boat"}.get(shot,shot)
 
 func _init(observer: FightSpectator, seed_value: int) -> void:
 	view = observer
@@ -47,7 +49,7 @@ func _init(observer: FightSpectator, seed_value: int) -> void:
 func request_shot(shot: String, duration: float = 5, interest: int = 4, subject: String = "fish", event: String = "external") -> void:
 	if not shot in FightSpectator.SHOTS or shot == "free": return
 	if not pending.is_empty() and interest < int(pending.priority): return
-	pending = {"shot":shot,"duration":clampf(duration,5,10),"priority":interest,"subject":subject,"ttl":3.0,"event":event}
+	pending = {"shot":shot,"duration":clampf(duration,6,11),"priority":interest,"subject":subject,"ttl":7.0,"event":event}
 
 func watch_event(event: String, shot: String, duration: float = 5) -> void:
 	watches[event] = {"shot":shot,"duration":duration}
@@ -57,9 +59,6 @@ func cue(event: String, shots: Array, interest: int, subject: String = "fish", r
 	var current: String = view.SHOTS[view.mode]
 	# A counter is too short to chase across the line. Keep this perspective.
 	if event in ["counter","counter-prepare"] and current != "free":
-		if view.boat_transition > 0:
-			view.boat_transition = 0
-			view.set_shot("fish-side",true)
 		reaction_hold = 3.0
 		pending.clear()
 		return
@@ -76,7 +75,7 @@ func cue(event: String, shots: Array, interest: int, subject: String = "fish", r
 	if different.is_empty(): different = options.filter(func(shot): return family(shot) != family(current))
 	if not different.is_empty(): options = different
 	var selected = options[rng.randi_range(0,options.size()-1)]
-	var duration = rng.randf_range(5,10)
+	var duration = rng.randf_range(6,11)
 	if watches.has(event):
 		selected = watches[event].shot
 		duration = watches[event].duration
@@ -102,14 +101,14 @@ func update(delta: float, fish: FishPlayer, fisher: FisherActor) -> void:
 			request_shot("wide",6,4,"boat","landing-show")
 			select_pending(fish)
 		return
-	if is_instance_valid(fight) and view.session.players[-2].ai.gesture_phase >= 0:
+	if is_instance_valid(fight) and view.driver_for(fisher) != null and view.driver_for(fisher).gesture_phase >= 0:
 		cue("counter-prepare",[view.SHOTS[view.mode]],3)
 	var fight_id = fight.get_instance_id() if is_instance_valid(fight) else 0
 	if fight_id != previous_fight:
 		previous_fight = fight_id
 		previous_event = ""
 		previous_counter = -1
-	prey = view.session.players[-1].ai.food.target
+	prey = view.driver_for(fish).food.target if view.driver_for(fish) != null else null
 	terrain_wait -= delta
 	if terrain_wait <= 0:
 		terrain_wait = 0.75
@@ -117,7 +116,7 @@ func update(delta: float, fish: FishPlayer, fisher: FisherActor) -> void:
 		var terrain_ray = PhysicsRayQueryParameters3D.create(fish.position,ahead,1,[fish.get_rid()])
 		near_terrain = not fish.get_world_3d().direct_space_state.intersect_ray(terrain_ray).is_empty()
 	var event = "swim"
-	var shots: Array = ["fish-rear","fish-side","fish","wide","fish-front"]
+	var shots: Array = ["fish-rear","fish-side","wide","fish-front","fish-shoulder","fish-pov","fish-high"]
 	var interest = 0
 	var subject = "fish"
 	if is_instance_valid(fight):
@@ -147,7 +146,7 @@ func update(delta: float, fish: FishPlayer, fisher: FisherActor) -> void:
 	elif fish.feeding.is_charging:
 		event = "feeding-charge"; shots = ["fish-side","fish-front"]; interest = 2; subject = "prey"
 	elif is_instance_valid(prey):
-		event = "approach"; shots = ["fish-side","fish-front"]; interest = 1; subject = "prey"
+		event = "approach"; shots = ["fish-side","fish-front","fish-rear","fish-shoulder","fish-pov","fish-high","wide"]; interest = 1; subject = "prey"
 	if event == "swim" and near_terrain:
 		event = "terrain"; shots = ["fish-side","fish-front","wide"]; interest = 1
 	elif event == "swim" and shot_age >= 3 and fish.heading.dot(last_heading) < 0.25:
@@ -177,6 +176,7 @@ func update(delta: float, fish: FishPlayer, fisher: FisherActor) -> void:
 		if not pending.is_empty(): select_pending(fish)
 
 func select_pending(fish: FishPlayer) -> void:
+	if shot_age < MIN_SHOT_SECONDS and hold_time > 0: return
 	shot_event = pending.get("event","external")
 	var changed = pending.shot != view.SHOTS[view.mode]
 	if changed:
@@ -192,9 +192,9 @@ func select_pending(fish: FishPlayer) -> void:
 	shot_age = 0
 	last_heading = fish.heading
 	if not changed: return
-	distance_scale = rng.randf_range(0.85,1.2)
-	height_offset = rng.randf_range(-1.3,2.0)
-	side = -1 if rng.randf() < 0.5 else 1
+	distance_scale = rng.randf_range(0.95,1.1)
+	height_offset = rng.randf_range(-0.3,0.7)
+	side = 1 # Keep screen direction consistent between neighboring angles.
 	fov_offset = rng.randf_range(-3,3)
 	rear_offset = rng.randf_range(-3,3)
 
@@ -215,17 +215,17 @@ func compose(fish: FishPlayer, fisher: FisherActor, target: Vector3, desired: Ve
 	elif shot == "wide" and not fighting and preferred_subject != "boat":
 		target = fish.position+fish.heading*3
 		desired = fish.position+Vector3(16*side,9+height_offset,19)*distance_scale
-	elif shot != "fisher" and shot != "wide":
+	elif shot not in ["fisher","wide","fish-shoulder","fish-pov"]:
 		target = fish.position+fish.heading*2
 		if preferred_subject == "prey" and is_instance_valid(prey) and fish.position.distance_to(prey.position) < 24:
 			target = fish.position.lerp(prey.position,0.35)
 			desired += (desired-fish.position).normalized()*minf(5,fish.position.distance_to(prey.position)*0.2)
 		desired = fish.position+(desired-fish.position)*distance_scale+Vector3.UP*height_offset
 		if shot == "fish-side" or shot == "fish-front":
-			var right = BaitMotion.horizontal(fish.heading).cross(Vector3.UP)
+			var right = view.tracking_heading.cross(Vector3.UP)
 			desired -= right*(desired-fish.position).dot(right)*(1-side)
 	if family(shot) == "rear":
-		desired += BaitMotion.horizontal(fish.heading).cross(Vector3.UP)*rear_offset
+		desired += view.tracking_heading.cross(Vector3.UP)*rear_offset
 	if jumping and shot in ["fish-side","fish-front","fish-rear","fish"]:
 		target = fish.position+Vector3.UP*0.7
 		desired.y = fish.position.y+0.5 # Stay close/low during ascent and fall.
@@ -236,7 +236,9 @@ func compose(fish: FishPlayer, fisher: FisherActor, target: Vector3, desired: Ve
 func protect_camera(fish: FishPlayer, fisher: FisherActor, target: Vector3, surface_shot: bool) -> Vector3:
 	var camera = view.camera
 	var transitioning = view.boat_transition > 0
-	if transitioning: surface_shot = false # Avoid an instant vertical surface snap.
+	# The spectator already rejects below-boat transitions. Do not re-anchor a
+	# moving camera to the Fish: that caused the intermediate snap behind the boat.
+	if transitioning: return target
 	var anchor = (fish.position+Vector3.UP*2 if jump_hold or fish.airborne else fisher.position+Vector3.UP*3) if surface_shot else fish.position
 	var space = fish.get_world_3d().direct_space_state
 	# Sphere sweep catches terrain/rocks along the full camera path (mask 1),
@@ -261,13 +263,15 @@ func protect_camera(fish: FishPlayer, fisher: FisherActor, target: Vector3, surf
 	var obstruction = space.intersect_ray(ray)
 	if not obstruction.is_empty() and not surface_shot:
 		camera.position = obstruction.position+obstruction.normal*0.5
-	var bad = camera.position.distance_to(subject) < 1.2 or not obstruction.is_empty()
-	if bad and safety_cooldown <= 0 and not transitioning:
+	var close_shot = view.SHOTS[view.mode] in ["fish-shoulder","fish-pov"]
+	var bad = (camera.position.distance_to(subject) < 1.2 and not close_shot) or not obstruction.is_empty()
+	obstruction_age = obstruction_age+view.get_process_delta_time() if bad else 0
+	if bad and obstruction_age > 0.75 and safety_cooldown <= 0 and not transitioning:
 		view.set_shot("fish-rear")
 		preferred_subject = "fish"
-		hold_time = 3
+		hold_time = MIN_SHOT_SECONDS
 		shot_age = 0
-		safety_cooldown = 3
+		safety_cooldown = MIN_SHOT_SECONDS
 		pending.clear()
 		query.transform.origin = fish.position
 		query.motion = -BaitMotion.horizontal(fish.heading)*8+Vector3.UP*3
@@ -276,7 +280,7 @@ func protect_camera(fish: FishPlayer, fisher: FisherActor, target: Vector3, surf
 		target = fish.position
 	# Check the intended frame, not last frame's camera rotation. Comparing the
 	# old orientation toggled between boat target and Fish while tracking.
-	if not surface_shot and not transitioning:
+	if not surface_shot and not transitioning and not close_shot:
 		var toward_target = target-camera.position
 		var toward_fish = fish.position-camera.position
 		if toward_target.length_squared() > 0.01 and toward_fish.length_squared() > 0.01 and toward_target.angle_to(toward_fish) > deg_to_rad(camera.fov*0.35):

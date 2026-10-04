@@ -91,8 +91,7 @@ func _physics_process(delta: float) -> void:
 func finish_at(where: Vector3, splashed: bool) -> void:
 	fish.reset_fish()
 	fish.position = where
-	fish.feeding.food = 0
-	fish.feeding.bait_eaten = 0
+	# Release the same grown Fish; only transient movement/stamina are restored.
 	fish.endurance = fish.stamina_capacity
 	fish.stamina = fish.stamina_capacity
 	fish.motion = FishFightMotion.new()

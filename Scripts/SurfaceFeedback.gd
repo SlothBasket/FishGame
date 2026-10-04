@@ -10,6 +10,7 @@ var ring_mesh: TorusMesh
 var droplet_material: StandardMaterial3D
 
 func _ready() -> void:
+	add_to_group("surface_feedback")
 	ring_mesh = TorusMesh.new()
 	ring_mesh.inner_radius = 0.94
 	ring_mesh.outer_radius = 1.0

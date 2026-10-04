@@ -3,12 +3,41 @@ extends Node3D
 ## Development observer only. Never submits intent or changes participant transforms.
 var session: NetworkSession
 # Existing keys 1/2/3 stay Fisher/Fish/free. Presets only affect this local camera.
-const SHOTS = ["fisher","fish","free","wide","fish-side","fish-rear","fish-front"]
+const SHOTS = ["fisher","fish","free","wide","fish-side","fish-rear","fish-front","fish-shoulder","fish-pov","fish-high"]
 var mode: int = 2
 var snap_shot: bool = true
 var director: CinematicDirector
 var framed_target: Vector3 = Vector3.ZERO
 var boat_transition: float = 0
+var focus_peer: int = -1
+var tracking_heading: Vector3 = Vector3.FORWARD
+var extra_boats: Dictionary = {}
+var observer_panel: Label
+var shot_changed: bool = false
+
+func focus_actor(peer: int) -> void:
+	if not session.players.has(peer): return
+	focus_peer = peer
+	if director != null: director.pending.clear(); director.shot_age = 0
+	set_shot("fish-rear" if session.players[peer].role == NetworkSession.ROLE_FISH else "fisher",true)
+
+func subjects() -> Array:
+	var fish: FishPlayer = session.players[-1].entity
+	var fisher: FisherActor = session.players[-2].entity
+	if session.players.has(focus_peer):
+		var actor = session.players[focus_peer].entity
+		if actor is FishPlayer:
+			fish = actor
+			if is_instance_valid(fish.fight): fisher = fish.fight.fisher
+		else:
+			fisher = actor
+			if is_instance_valid(fisher.fight): fish = fisher.fight.fish
+	return [fish,fisher]
+
+func driver_for(actor: Node):
+	for record in session.players.values():
+		if record.entity == actor: return record.ai
+	return null
 
 func set_shot(preset: String, instant: bool = true) -> bool:
 	var index = SHOTS.find(preset)
@@ -17,6 +46,7 @@ func set_shot(preset: String, instant: bool = true) -> bool:
 		return false
 	var entering_boat = index == 0 and mode != 0 and is_instance_valid(camera)
 	boat_transition = 3.0 if entering_boat else 0
+	shot_changed = index != mode
 	mode = index
 	snap_shot = instant and not entering_boat
 	if is_instance_valid(camera) and mode == 2:
@@ -67,6 +97,19 @@ func _ready() -> void:
 	debug.position = Vector2(24,24)
 	debug.add_theme_font_size_override("font_size",18)
 	debug.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	observer_panel = Label.new()
+	layer.add_child(observer_panel)
+	observer_panel.position = Vector2(1450,24)
+	observer_panel.add_theme_font_size_override("font_size",19)
+	observer_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# Unfocused boats remain visible; only the selected pair needs detailed rod art.
+	if session.multi_actor_mode:
+		for id in [-2,-5]:
+			var hull = Node3D.new()
+			add_child(hull)
+			Geometry.sphere(hull,"Hull",Vector3(0,-0.35,0),Vector3(1.8,0.7,3.4),Geometry.material("785d40"))
+			Geometry.sphere(hull,"Deck",Vector3(0,0.12,0),Vector3(1.7,0.15,3.2),Geometry.material("e2c797"))
+			extra_boats[id] = hull
 	damage_label = Label.new()
 	layer.add_child(damage_label)
 	damage_label.position = Vector2(24,365)
@@ -74,18 +117,31 @@ func _ready() -> void:
 	damage_label.modulate = Color(1,0.35,0.18)
 	damage_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 func _unhandled_input(event: InputEvent) -> void:
+	if session.multi_actor_mode and event is InputEventKey and event.pressed and not event.echo:
+		if event.keycode in [KEY_1,KEY_2,KEY_3,KEY_4,KEY_5]:
+			focus_actor([-1,-3,-4,-2,-5][event.keycode-KEY_1])
+			return
+		if event.keycode == KEY_6: set_shot("wide"); return
+		if event.keycode == KEY_7: set_shot("free"); return
 	if director != null: return
 	if event is InputEventKey and event.pressed and not event.echo:
-		if event.keycode in [KEY_1,KEY_2,KEY_3,KEY_4,KEY_5,KEY_6,KEY_7]:
+		if event.keycode in [KEY_1,KEY_2,KEY_3,KEY_4,KEY_5,KEY_6,KEY_7,KEY_8,KEY_9]:
 			set_shot(SHOTS[event.keycode-KEY_1])
+		if event.keycode == KEY_0: set_shot("fish-high")
 	if event is InputEventMouseMotion and mode == 2 and Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
 		yaw -= event.relative.x*0.003
 		pitch = clampf(pitch-event.relative.y*0.003,-1.4,1.4)
 func _process(delta: float) -> void:
 	if not session.players.has(-1) or not session.players.has(-2): return
-	var fish: FishPlayer = session.players[-1].entity
-	var fisher: FisherActor = session.players[-2].entity
+	var pair = subjects()
+	var fish: FishPlayer = pair[0]
+	var fisher: FisherActor = pair[1]
 	var fight = fisher.fight
+	tracking_heading = FishInput.turn_toward(tracking_heading,BaitMotion.horizontal(fish.heading),delta*0.7)
+	for id in extra_boats:
+		extra_boats[id].position = session.players[id].entity.position
+		extra_boats[id].rotation.y = session.players[id].entity.boat_yaw
+		extra_boats[id].visible = session.players[id].entity != fisher
 	boat_transition = maxf(0,boat_transition-delta)
 	if director != null: director.update(delta,fish,fisher)
 	boat.position = fisher.position
@@ -101,8 +157,8 @@ func _process(delta: float) -> void:
 	else:
 		var forward = Vector3.FORWARD.rotated(Vector3.UP,fisher.boat_yaw)
 		var target = fish.position if is_instance_valid(fight) or mode == 1 else fisher.lure.position if is_instance_valid(fisher.lure) else fisher.position+forward*10
-		var desired = FishingPresentation.edge_camera(fisher.position,forward) if mode == 0 else fish.position-fish.heading*9+Vector3.UP*2
-		var flat_heading = BaitMotion.horizontal(fish.heading)
+		var desired = FishingPresentation.edge_camera(fisher.position,forward) if mode == 0 else fish.position-tracking_heading*9+Vector3.UP*2
+		var flat_heading = tracking_heading
 		if mode == 3: # Frame both participants with room around their separation.
 			target = (fish.position+fisher.position)*0.5
 			var span = maxf(20,fish.position.distance_to(fisher.position))
@@ -116,14 +172,31 @@ func _process(delta: float) -> void:
 		elif mode == 6:
 			target = fish.position+fish.heading*2
 			desired = fish.position+flat_heading*8+flat_heading.cross(Vector3.UP)*7+Vector3.UP*3
+		elif mode == 7: # Close over-shoulder, above/behind the model.
+			target = fish.position+flat_heading*10
+			desired = fish.position-flat_heading*4*fish.size_multiplier()+flat_heading.cross(Vector3.UP)*1.5+Vector3.UP*1.5
+		elif mode == 8: # Near first person, just above the nose.
+			target = fish.position+flat_heading*15
+			desired = fish.position+flat_heading*1.8*fish.size_multiplier()+Vector3.UP*0.7
+		elif mode == 9:
+			target = fish.position+flat_heading*3
+			desired = fish.position-flat_heading*6+Vector3.UP*12
 		var shot_fov = 60.0 if mode == 0 else 70.0
-		var surface_shot = false
+		var surface_shot = mode == 0
 		if director != null:
 			var composition = director.compose(fish,fisher,target,desired)
 			target = composition.target
 			desired = composition.position
 			shot_fov = composition.fov
 			surface_shot = composition.surface
+		# Large perspective changes are clean cuts, not orbiting through the subject.
+		# Boat approaches from below/very far cut straight to the safe final framing.
+		var look = target-desired
+		var turn = (-camera.basis.z).angle_to(look.normalized()) if look.length_squared() > 0.01 else 0.0
+		if shot_changed and (turn > deg_to_rad(70) or (mode == 0 and (camera.position.y < fisher.position.y+2 or camera.position.distance_to(desired) > 45))):
+			snap_shot = true
+			boat_transition = 0
+		shot_changed = false
 		var cut = snap_shot
 		camera.position = desired if snap_shot else camera.position.lerp(desired,1-exp(-delta*(0.9 if boat_transition > 0 else 2.5 if director != null else 5)))
 		snap_shot = false
@@ -136,14 +209,19 @@ func _process(delta: float) -> void:
 		if camera.position.distance_to(target) > 0.1:
 			var old_rotation = camera.quaternion
 			camera.look_at(target,Vector3.UP)
-			if mode == 0 and not cut:
+			if not cut:
 				# Keep the old continuous retreat, but bound shortest-path rotation.
 				# Continue after arrival so the last frame cannot snap to the target.
 				var angle = old_rotation.angle_to(camera.quaternion)
 				var blend = minf(1-exp(-delta*1.8),deg_to_rad(55)*delta/maxf(angle,0.0001))
 				camera.quaternion = old_rotation.slerp(camera.quaternion,blend)
+	if session.multi_actor_mode:
+		observer_panel.text = "1–3 Fish | 4–5 Fishers | 6 wide | 7 free\n"
+		for id in [-1,-3,-4]: observer_panel.text += "Fish %d: %.1f inches\n" % [[-1,-3,-4].find(id)+1,session.players[id].entity.length_inches()]
+		for id in [-2,-5]: observer_panel.text += "Fisher %d: %.1f inches caught\n" % [[-2,-5].find(id)+1,session.players[id].entity.score_inches]
 	if session.capture_mode: return # Camera/equipment keep updating; no debug work.
-	debug.text = "AI vs AI — OBSERVER ONLY\n1 Fisher | 2 Fish | 3 Free (WASD, Q/E, RMB look) | 4 Wide | 5 Side | 6 Rear | 7 Front\nView: %s | Participants: %d\nDrive %.0f%% %s | Stamina %.0f / %.0f" % [SHOTS[mode],session.players.size(),fish.motion.swim_drive*100,"DRIVE DISRUPTED" if fish.motion.drive_lockout > 0 else "OVERDRIVE" if fish.motion.overdrive > 0 else "",fish.stamina,fish.endurance]
+	debug.text = "AI vs AI — OBSERVER ONLY\n1 Fisher | 2 Fish | 3 Free (WASD, Q/E, RMB look) | 4 Wide | 5 Side | 6 Rear | 7 Front | 8 Shoulder | 9 POV | 0 High\nView: %s | Participants: %d\nDrive %.0f%% %s | Stamina %.0f / %.0f" % [SHOTS[mode],session.players.size(),fish.motion.swim_drive*100,"DRIVE DISRUPTED" if fish.motion.drive_lockout > 0 else "OVERDRIVE" if fish.motion.overdrive > 0 else "",fish.stamina,fish.endurance]
+	debug.text += "\nFish %.1f inches | Fisher score %.1f inches" % [fish.length_inches(),fisher.score_inches]
 	if is_instance_valid(fight):
 		debug.text += "\nFish: %s | Fisher: %s\n%s | Line %.1f / %.0f m | Tension %.1f | Drag %.0f%%" % [FightDecisions.fish_text(fight.fish_action),FisherControls.plan(fight.perception.observation,fisher.stamina).label,FightSession.Phase.keys()[fight.phase],fight.spool.line_out,fight.spool.maximum_line_out,fight.tension,fisher.drag_setting*100]
 		debug.text += "\n"+FightSession.force_readout(fight.spool.fish_load,fight.spool.drag_threshold,fish.force_capacity(),fish.motion.stored_force_multiplier())

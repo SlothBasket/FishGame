@@ -45,6 +45,7 @@ func _ready() -> void:
 	mode_button(panel,"FISH VS AI FISHER","Host as Fish against an AI Fisher",["--host","--role=fish","--ai=fisher"])
 	mode_button(panel,"FISHER VS AI FISH","Host as Fisher against an AI Fish",["--host","--role=fisher","--ai=fish"])
 	mode_button(panel,"AI VS AI","Observer with normal development overlays",["--ai-vs-ai"])
+	mode_button(panel,"3 FISH / 2 FISHERS TEST","1–3 Fish | 4–5 Fishers | 6 wide | 7 free",["--multi-actor"])
 	mode_button(panel,"AI VS AI DIRECTOR PREVIEW","Clean realtime Director preview — no movie recorded",["--ai-vs-ai","--capture","--director"])
 	panel.add_child(HSeparator.new())
 	label(panel,"Options (blank keeps existing defaults)",20)

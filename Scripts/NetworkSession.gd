@@ -13,6 +13,7 @@ var ai_test_bait_priority: bool = false
 var batch_runner: FightBatch
 var encounter_seed: int = -1
 var spectator_mode: bool = false
+var multi_actor_mode: bool = false
 var capture_mode: bool = false
 var director_mode: bool = false
 var capture_events: CaptureEventLog
@@ -51,6 +52,7 @@ var next_actor_id: int = 1
 var world: Node3D
 var local_fish: FishPlayer
 var school: BaitSchool
+var remote_hotspot: FeedingHotspot
 var connected: bool = false
 var hosting: bool = false
 var closed: bool = false
@@ -69,7 +71,7 @@ var smoke_disconnected: bool = false
 
 static func requested(args: PackedStringArray) -> bool:
 	for arg in args:
-		if arg in ["--host","--ai-vs-ai"] or arg.begins_with("--join="): return true
+		if arg in ["--host","--ai-vs-ai","--multi-actor"] or arg.begins_with("--join="): return true
 	return false
 
 func start(level: Node3D, fish: FishPlayer, args: PackedStringArray) -> void:
@@ -91,7 +93,8 @@ func start(level: Node3D, fish: FishPlayer, args: PackedStringArray) -> void:
 		if arg == "--fight-smoke": fight_smoke = true
 		if arg.begins_with("--join="): address = arg.trim_prefix("--join=")
 		if arg.begins_with("--port="): port = arg.trim_prefix("--port=").to_int()
-	spectator_mode = "--ai-vs-ai" in args
+	multi_actor_mode = "--multi-actor" in args
+	spectator_mode = "--ai-vs-ai" in args or multi_actor_mode
 	capture_mode = spectator_mode and "--capture" in args
 	director_mode = capture_mode and "--director" in args
 	capture_one_fight = capture_mode and ("--capture-one-fight" in args or "--write-movie" in OS.get_cmdline_args())
@@ -163,6 +166,17 @@ func start(level: Node3D, fish: FishPlayer, args: PackedStringArray) -> void:
 		world.add_child(school)
 		if ai_mode in ["fish","both"]: add_server_player(-1,ROLE_FISH,true)
 		if ai_mode in ["fisher","both"]: add_server_player(-2,ROLE_FISHER,true)
+		if multi_actor_mode:
+			add_server_player(-3,ROLE_FISH,true)
+			add_server_player(-4,ROLE_FISH,true)
+			add_server_player(-5,ROLE_FISHER,true)
+			for id in [-1,-3,-4]:
+				players[id].entity.position = Vector3(([-1,-3,-4].find(id)-1)*16,18,8)
+				players[id].entity._spawn = players[id].entity.position
+			players[-2].entity.position = Vector3(-45,world.water_depth,30)
+			players[-5].entity.position = Vector3(45,world.water_depth,-30)
+			for id in [-2,-5]:
+				players[id].entity.boat_yaw = FishInput.angles(BaitMotion.horizontal(-players[id].entity.position)).y
 		show_status("Hosting UDP %d | peer 1" % port)
 		if spectator_mode:
 			status.hide()
@@ -297,7 +311,8 @@ func add_server_player(peer: int, role: int = ROLE_FISH, ai: bool = false) -> vo
 		if peer == 1: setup_fisher_view()
 	players[peer] = {"entity":actor,"role":role,"sequence":-1,"received":clock,"tokens":4.0,"token_time":clock,"ai":FightTestDriver.new() if ai else null}
 	if ai and encounter_seed >= 0:
-		players[peer].ai.execution_rng.seed = encounter_seed+(51 if role == ROLE_FISH else 67)
+		players[peer].ai.execution_rng.seed = encounter_seed+(51 if role == ROLE_FISH else 67)+(absi(peer)*97 if multi_actor_mode else 0)
+		players[peer].ai.food.rng.seed = encounter_seed+absi(peer)*193
 
 func setup_fisher_view() -> void:
 	local_fish.visible = false
@@ -420,7 +435,7 @@ func _physics_process(delta: float) -> void:
 			if fight_smoke:
 				input.species = BaitMotion.Kind.MINNOW
 				input.cast_serial = 1
-				if fisher_view.data.size() == 72:
+				if fisher_view.data.size() == 73:
 					input.jerk = roundi(fisher_view.data[10]) == FightSession.Phase.CANDIDATE or (roundi(fisher_view.data[10]) == FightSession.Phase.METER and fisher_view.data[11] < 0.72)
 			if hosting: players[owned_id].entity.command = input
 			elif input_clock <= 0:
@@ -473,8 +488,20 @@ func _physics_process(delta: float) -> void:
 		if bait_clock <= 0:
 			bait_clock = 1.0/bait_snapshot_hz
 			broadcast_baits()
+			if school != null and school.hotspot != null: hotspot_state.rpc(school.hotspot.active,school.hotspot.center,school.hotspot.remaining)
 	if smoke: smoke_tick()
 	if fight_smoke: fight_smoke_tick()
+
+@rpc("authority","call_remote","unreliable_ordered",2)
+func hotspot_state(active: bool, center: Vector3, remaining: float) -> void:
+	if hosting or closed: return
+	if remote_hotspot == null:
+		remote_hotspot = FeedingHotspot.new()
+		remote_hotspot.visual_only = true
+		world.add_child(remote_hotspot)
+	remote_hotspot.active = active
+	remote_hotspot.center = center
+	remote_hotspot.remaining = remaining
 
 func fish_state(actor: FishPlayer) -> PackedFloat32Array:
 	var p = actor.position
@@ -705,12 +732,13 @@ func fisher_state(actor: FisherActor) -> PackedFloat32Array:
 		f.rod_tip.x if has_fight else 0,f.rod_tip.y if has_fight else 0,f.rod_tip.z if has_fight else 0,f.rod_hand.x if has_fight else 0,f.rod_hand.y if has_fight else 0,f.rod_hand.z if has_fight else 0,f.spool.strength if has_fight else 110,f.rod_horizontal if has_fight else 0,f.rod_vertical if has_fight else 0,
 		f.spool.maximum_line_out if has_fight else FightLine.DEFAULT_CAPACITY,
 		v.normalized().dot(BaitMotion.horizontal(p-actor.position).cross(Vector3.UP)) if has_fight and actor.vision_active and v.length() > 0.3 else 0,
-		f.tension/maxf(1,f.spool.break_threshold()) if has_fight else 0,f.counter_pressure if has_fight else 0,f.fisher_action if has_fight else 4,f.fish.motion.dive_power if has_fight else 0,int(f.fish.motion.diving) if has_fight else 0,f.line_damage_rate if has_fight else 0,f.spool.rod_take_up if has_fight else 0,f.recovery_total if has_fight else 0,f.jerk_direction if has_fight else 0,f.jerk_notice_time if has_fight else 0,f.fish.motion.ascent_power if has_fight else 0,int(f.fish.motion.falling) if has_fight else 0,int(f.fish.airborne) if has_fight else 0,f.power_recovery if has_fight else 0,f.spool.requested_retrieve if has_fight else 0,f.spool.actual_recovery if has_fight else 0,f.spool.retrieve_efficiency if has_fight else 1,f.counter_hint() if has_fight else 0,f.fish.motion.jump_launch_power if has_fight else 0,f.spool.fish_load if has_fight else 0,f.fish.force_capacity() if has_fight else 1,f.fish.motion.stored_force_multiplier() if has_fight else 1])
+		f.tension/maxf(1,f.spool.break_threshold()) if has_fight else 0,f.counter_pressure if has_fight else 0,f.fisher_action if has_fight else 4,f.fish.motion.dive_power if has_fight else 0,int(f.fish.motion.diving) if has_fight else 0,f.line_damage_rate if has_fight else 0,f.spool.rod_take_up if has_fight else 0,f.recovery_total if has_fight else 0,f.jerk_direction if has_fight else 0,f.jerk_notice_time if has_fight else 0,f.fish.motion.ascent_power if has_fight else 0,int(f.fish.motion.falling) if has_fight else 0,int(f.fish.airborne) if has_fight else 0,f.power_recovery if has_fight else 0,f.spool.requested_retrieve if has_fight else 0,f.spool.actual_recovery if has_fight else 0,f.spool.retrieve_efficiency if has_fight else 1,f.counter_hint() if has_fight else 0,f.fish.motion.jump_launch_power if has_fight else 0,f.spool.fish_load if has_fight else 0,f.fish.force_capacity() if has_fight else 1,f.fish.motion.stored_force_multiplier() if has_fight else 1,actor.score_inches])
 
 @rpc("authority","call_remote","unreliable_ordered",2)
 func fisher_snapshot(peer: int, state: PackedFloat32Array) -> void:
-	if hosting or closed or state.size() != 72 or not players.has(peer) or players[peer].role != ROLE_FISHER: return
+	if hosting or closed or state.size() != 73 or not players.has(peer) or players[peer].role != ROLE_FISHER: return
 	players[peer].entity.position = Vector3(state[0],state[1],state[2])
+	players[peer].entity.score_inches = state[72]
 	if peer == multiplayer.get_unique_id() and fisher_view != null:
 		if fight_smoke and (fisher_view.data.is_empty() or fisher_view.data[10] != state[10]): print("CLIENT FIGHT PHASE ",state[10]," fields=",state.size())
 		fisher_view.data = state
@@ -760,7 +788,7 @@ func fight_smoke_tick() -> void:
 			smoke_connected = clock
 		if smoke_stage == 4 and clock-smoke_connected > 0.4: get_tree().quit(0)
 	else:
-		if fisher_view != null and fisher_view.data.size() == 72:
+		if fisher_view != null and fisher_view.data.size() == 73:
 			if roundi(fisher_view.data[10]) == FightSession.Phase.FIGHT and not smoke_saw_two:
 				smoke_saw_two = true
 				print("FIGHT SMOKE PASS replicated fight/HUD state")

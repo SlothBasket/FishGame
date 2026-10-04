@@ -170,7 +170,7 @@ func sample() -> FisherIntent:
 	return intent
 
 func _process(delta: float) -> void:
-	if data.size() != 72: return
+	if data.size() != 73: return
 	var stick = GameControls.look()
 	apply_look(stick*stick.length()*rod_stick_response*delta)
 	var origin = Vector3(data[0],data[1],data[2])
@@ -245,12 +245,13 @@ func _process(delta: float) -> void:
 	bars["Focus"].value = data[9]
 	hook_panel.visible = fighting and phase == FightSession.Phase.METER
 	bars["Hook meter"].value = data[11]*100
+	readings.text += "\nCATCH SCORE %.1f inches" % data[72]
 	power_status.text = "POWER INTERRUPTED" if data[63] > 0 else "POWER REEL" if data[15] > 0 else "DRAG PAYING OUT" if data[36] > 1 else "REEL READY"
 	power_status.modulate = Color(1,0.45,0.25) if data[63] > 0 else Color(0.5,0.9,1) if data[15] > 0 else Color.WHITE
 	drag_value.text = "%d%%" % roundi(data[32]*100)
 
 func apply_look(movement: Vector2) -> void:
-	if data.size() == 72 and roundi(data[4]) == FisherActor.State.FIGHT:
+	if data.size() == 73 and roundi(data[4]) == FisherActor.State.FIGHT:
 		if data[16] <= 0:
 			rod_horizontal = clampf(rod_horizontal+movement.x,-1,1)
 			rod_vertical = clampf(rod_vertical-movement.y,-1,1)

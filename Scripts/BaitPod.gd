@@ -9,6 +9,8 @@ var destination: Vector3
 var heading: Vector3 = Vector3.FORWARD
 var migration_speed: float = 0.65
 var destination_clock: float = 0.0
+var event_active: bool = false
+var event_destination: Vector3
 
 func _init(where: Vector3) -> void:
 	center = where
@@ -16,6 +18,10 @@ func _init(where: Vector3) -> void:
 
 func migrate(delta: float, rng: RandomNumberGenerator, anchors: Array) -> void:
 	if habitat == null: return
+	if event_active:
+		# Move the shared home, never teleport bait or bypass its legal motor.
+		center = center.move_toward(habitat.bounds.get_center() if not event_destination.is_finite() else event_destination,delta*2.2)
+		return
 	destination_clock -= delta
 	if destination_clock <= 0 or center.distance_to(destination) < 2:
 		destination = habitat.destination(center,heading,rng,anchors)

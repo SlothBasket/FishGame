@@ -27,6 +27,7 @@ var _rng = RandomNumberGenerator.new()
 @export var pod_population: int = 4
 @export var midwater_squid_count: int = 4
 var pods: Array[BaitPod] = []
+var hotspot: FeedingHotspot
 var neighborhood = BaitNeighborhood.new()
 @export var initial_spawn_interval: float = 0.10
 var _initial_queue: Array = []
@@ -88,6 +89,9 @@ func _ready() -> void:
 			var home = center + Vector3(cos(angle) * individual_spacing * _rng.randf_range(0.5, 2.5), _rng.randf_range(-0.5, 0.5), sin(angle) * individual_spacing * _rng.randf_range(0.5, 2.5))
 			_enqueue(ZONE_KINDS[zone], home, _rng.randi(), roam_radius * _rng.randf_range(0.75, 1.2))
 
+	hotspot = FeedingHotspot.new()
+	hotspot.school = self
+	add_child(hotspot)
 	# Shuffle using the seeded generator, without touching global RNG state.
 	for i in range(_initial_queue.size()-1,0,-1):
 		var j = _rng.randi_range(0,i)
