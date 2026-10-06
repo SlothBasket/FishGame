@@ -67,8 +67,10 @@ var directional_pressure: float = 0
 var fight_slack: bool = false
 @export_group("Growth")
 @export var starting_size: float = 0.58
-@export var growth_rate: float = 0.006
+@export var growth_rate: float = 0.0042
 @export var maximum_size: float = 2.1
+@export var free_drive_speed_bonus: float = 0.25
+@export var free_drive_acceleration_bonus: float = 0.35
 
 @export_group("Stamina and size speed")
 @export var stamina_capacity: float = 130
@@ -276,10 +278,11 @@ func _physics_process(delta: float) -> void:
 	else:
 		# Head steering above supplies the physical body heading for this motor tick.
 		var swim = FishInput.new(intent.throttle, intent.steering, intent.vertical, intent.aim_direction, boosting)
-		var speed = effective_swim_speed() * motion.multiplier() * (charge_swim_multiplier if feeding.is_charging else 1.0)
+		var movement_multiplier = motion.multiplier() if in_fight else free_swim_drive_multiplier()
+		var speed = effective_swim_speed() * movement_multiplier * (charge_swim_multiplier if feeding.is_charging else 1.0)
 		var response = (charge_response_multiplier if feeding.is_charging else 1.0)*(0.3 if head.impact_time > 0 else 1.0)
 		velocity = FishInput.next_velocity(velocity, heading, swim, speed, fight_boost_multiplier(),
-			reverse_speed_multiplier, acceleration * response * motion.multiplier() * motion.stored_force_multiplier() * (fight_force_multiplier() if in_fight and boosting else reserve_force_capacity() if in_fight else fight_boost_multiplier() if boosting else 1.0), reverse_acceleration * response, water_drag * response, vertical_speed_multiplier, delta)
+			reverse_speed_multiplier, acceleration * response * (motion.multiplier()*motion.stored_force_multiplier() if in_fight else free_swim_acceleration_multiplier()) * (fight_force_multiplier() if in_fight and boosting else reserve_force_capacity() if in_fight else fight_boost_multiplier() if boosting else 1.0), reverse_acceleration * response, water_drag * response, vertical_speed_multiplier, delta)
 		if in_fight and motion.diving: velocity.y -= motion.dive_acceleration*motion.dive_power*delta
 		if in_fight and not airborne: velocity.y += motion.ascent_acceleration*motion.ascent_power*delta
 		apply_line_force(delta)
@@ -354,6 +357,16 @@ func _notification(what: int) -> void:
 func limit_breach_velocity() -> void:
 	var flat = Vector3(velocity.x, 0, velocity.z).limit_length(max_breach_horizontal_speed)
 	velocity = flat + Vector3.UP * minf(velocity.y, max_breach_vertical_speed)
+
+func stored_drive_fraction() -> float:
+	return smoothstep(0,1,clampf(motion.swim_drive/maxf(0.01,motion.sustainable_max),0,1))
+
+func free_swim_drive_multiplier() -> float:
+	# Replace the fight multiplier in free swimming; do not double-apply its 22% bonus.
+	return (1+free_drive_speed_bonus*stored_drive_fraction()+motion.overdrive)*(0.65 if motion.counter_recovery > 0 else 1.0)
+
+func free_swim_acceleration_multiplier() -> float:
+	return 1+free_drive_acceleration_bonus*stored_drive_fraction()+motion.overdrive
 
 func effective_swim_speed() -> float:
 	return swim_speed*(1+swim_growth_bonus*growth_fraction())*(lerpf(exhausted_swim_fraction,1,power_capacity()) if is_instance_valid(fight) else 1.0)

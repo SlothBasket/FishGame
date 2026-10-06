@@ -43,6 +43,7 @@ func choose_run_budget(major: bool = false) -> float:
 var vision_remaining: float = 0
 var vision_cooldown: float = 0
 var selected_drag: float = 0.4
+var stalled_seconds: float = 0
 var steady_rod: Vector2 = Vector2.ZERO
 @export var pressure_rod_rate: float = 0.85
 @export var flick_rod_rate: float = 8.0
@@ -166,6 +167,7 @@ func fisher_input(actor: FisherActor, delta: float) -> FisherIntent:
 	if is_instance_valid(actor.fight): fisher_was_fighting = true
 	elif fisher_was_fighting:
 		fisher_was_fighting = false
+		stalled_seconds = 0
 		recast_wait = execution_rng.randf_range(6,9)
 		cast_sent = false
 	recast_wait = maxf(0,recast_wait-delta)
@@ -190,8 +192,12 @@ func fisher_input(actor: FisherActor, delta: float) -> FisherIntent:
 			was_observed_run = observed_run
 			var planning = seen.duplicate()
 			planning["opportunity"] = progress_window > 0
+			if float(seen.get("line_rate",0)) >= -0.1 and float(seen.get("slack",0)) < 0.8:
+				stalled_seconds = minf(8,stalled_seconds+delta)
+			else: stalled_seconds = maxf(0,stalled_seconds-delta*2)
+			planning["stalled_seconds"] = stalled_seconds
 			var plan = FisherControls.plan(planning,actor.stamina)
-			plan = persist_settings(plan,seen,delta)
+			plan = persist_settings(plan,planning,delta)
 			if plan.power and power_pause <= 0:
 				power_push = 0.9
 				power_pause = 3.5
@@ -272,13 +278,12 @@ func bait_retrieve(kind: int, delta: float) -> float:
 # Hold ordinary settings; only observable state transitions bypass the hold.
 func persist_settings(plan: Dictionary, seen: Dictionary, delta: float) -> Dictionary:
 	setting_wait = maxf(0,setting_wait-delta)
-	var danger = float(seen.get("tension",0))/maxf(1,float(seen.get("break_threshold",93.5)))
-	var mode = "SLACK" if plan.get("capture_slack",false) else "SPOOL" if plan.get("spool_pressure",false) else "DANGER" if danger > 0.85 else "RUN" if float(seen.get("line_rate",0)) > 0.1 and float(seen.get("payout",0)) > 2 else "DIVE" if seen.get("descending",false) else "OPENING" if seen.get("opportunity",false) else "NORMAL"
+	var mode = "SLACK" if plan.get("capture_slack",false) else "DANGER" if plan.get("acute_danger",false) else "SPOOL" if plan.get("spool_pressure",false) else "RUN" if float(seen.get("line_rate",0)) > 0.1 and float(seen.get("payout",0)) > 2 else "DIVE" if seen.get("descending",false) else "OPENING" if seen.get("opportunity",false) else str(plan.get("stage","NORMAL"))
 	if setting_wait <= 0 or mode != setting_mode:
 		held_retrieve = plan.retrieve
-		if absf(plan.drag-selected_drag) >= 0.09 or mode in ["DANGER","SLACK","SPOOL"] or (plan.get("close_pressure",false) and plan.drag > selected_drag+0.01):
+		if absf(plan.drag-selected_drag) >= (0.025 if plan.get("pressure",false) else 0.09) or mode in ["DANGER","SLACK","SPOOL"] or (plan.get("close_pressure",false) and plan.drag > selected_drag+0.01):
 			selected_drag = snappedf(move_toward(selected_drag,plan.drag,0.2 if mode in ["DANGER","SPOOL"] else 0.1),0.05)
-		setting_wait = 0.5 if mode == "SPOOL" else execution_rng.randf_range(1.5,2.5)
+		setting_wait = 0.25 if mode == "DANGER" else 0.65 if plan.get("pressure",false) else 0.5 if mode == "SPOOL" else execution_rng.randf_range(1.5,2.5)
 		setting_mode = mode
 	plan.retrieve = held_retrieve
 	plan.drag = selected_drag

@@ -17,6 +17,7 @@ var _population: Array = []
 var _targets: Dictionary = {}
 var _ecosystem_clock: float = 0.0
 var _arrival_clock: float = 0.0
+@export var live_population_multiplier: float = 1.15
 @export var zone_population: int = 3
 @export var individual_spacing: float = 7.0
 @export var roam_radius: float = 45.0
@@ -89,6 +90,16 @@ func _ready() -> void:
 			var home = center + Vector3(cos(angle) * individual_spacing * _rng.randf_range(0.5, 2.5), _rng.randf_range(-0.5, 0.5), sin(angle) * individual_spacing * _rng.randf_range(0.5, 2.5))
 			_enqueue(ZONE_KINDS[zone], home, _rng.randi(), roam_radius * _rng.randf_range(0.75, 1.2))
 
+	# Scale ordinary prey by species, retaining spawn pacing and replenishment targets.
+	# Gulls, lures, carcass limits and the finite hotspot budget are unchanged.
+	var base_queue = _initial_queue.duplicate()
+	for kind in range(BaitMotion.Kind.GULL):
+		var entries = base_queue.filter(func(entry): return entry[0] == kind)
+		var extra = maxi(0,roundi(entries.size()*(live_population_multiplier-1)))
+		for i in range(extra):
+			var entry = entries[(i*entries.size())/maxi(1,extra)]
+			var offset = Vector3(_rng.randf_range(-3,3),0,_rng.randf_range(-3,3))
+			_enqueue(kind,entry[1]+offset,_rng.randi(),entry[3],entry[4],entry[5]+offset)
 	hotspot = FeedingHotspot.new()
 	hotspot.school = self
 	add_child(hotspot)
