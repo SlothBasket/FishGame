@@ -74,7 +74,7 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 		# latched forever while legal inputs produce no actual powered swimming.
 		run_stall_time = run_stall_time+delta if run_committed and not fish.motion.powered_active else 0.0
 		var invalid_move = (committed_action == FightDecisions.FishAction.DIVE and (fish.motion.dive_blocked or bottom_recovery)) or (committed_action == FightDecisions.FishAction.JUMP and f.jump_commit <= 0 and not fish.airborne)
-		if run_committed and (run_stall_time > 1.5 or invalid_move or energy < 0.22 or fish.motion.drive_spent-run_spent_start >= run_budget or fish.motion.drive_lockout > 0 or fish.motion.jump_recovery > 0):
+		if run_committed and (run_stall_time > 1.5 or invalid_move or fish.motion.drive_spent-run_spent_start >= run_budget or fish.motion.drive_lockout > 0 or fish.motion.jump_recovery > 0):
 			completed_commitments.append({"start_drive":run_start_drive,"end_drive":fish.motion.swim_drive,"spent_fraction":fish.motion.drive_spent-run_spent_start,"target":run_budget,"interrupted":fish.motion.drive_lockout > 0})
 			if session.batch_runner != null:
 				session.batch_runner.telemetry.event("AI_COMMITMENT_END",f)
@@ -99,9 +99,11 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 			run_start_drive = fish.motion.swim_drive
 			run_budget = minf(fish.motion.swim_drive,choose_run_budget(f.spool.distance < 12))
 			run_spent_start = fish.motion.drive_spent
-		var sprint = run_committed
+		var spending_drive = run_committed
+		# Spend renewable reserve independently. Sprint for vertical maneuvers or an urgent run.
+		var sprint = energy > 0.4 and not resting and (action in [FightDecisions.FishAction.DIVE,FightDecisions.FishAction.JUMP] or (f.spool.distance < 20 and f.spool.line_rate < -0.3))
 		# Ordinary powered cadence spends Drive; major commitments escalate faster.
-		var cadence = (0.26 if run_budget >= 0.5 else 0.36) if sprint else fish.motion.ideal_stroke_interval
+		var cadence = fish.motion.ideal_stroke_interval
 		stroke_clock += delta
 		if stroke_clock >= cadence: stroke_clock = 0; stroke_side *= -1
 		if not sprint and clock > next_lapse:
@@ -119,8 +121,8 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 			aim = aim.rotated(Vector3.UP,stroke_side*deg_to_rad(24))
 		side_wait = maxf(0,side_wait-delta)
 		side_hold = maxf(0,side_hold-delta)
-		if action in [FightDecisions.FishAction.RUN,FightDecisions.FishAction.LEFT,FightDecisions.FishAction.RIGHT] and ((sprint and fish.motion.swim_drive >= fish.motion.side_burst_drive) or side_hold > 0 or fish.motion.side_time > 0) and not fish.airborne:
-			if sprint and side_wait <= 0 and fish.motion.side_wait <= 0:
+		if action in [FightDecisions.FishAction.RUN,FightDecisions.FishAction.LEFT,FightDecisions.FishAction.RIGHT] and ((spending_drive and fish.motion.swim_drive >= fish.motion.side_burst_drive) or side_hold > 0 or fish.motion.side_time > 0) and not fish.airborne:
+			if spending_drive and side_wait <= 0 and fish.motion.side_wait <= 0:
 				var side = -1 if execution_rng.randf() < 0.5 else 1
 				side_aim = side_burst_aim(BaitMotion.horizontal(fish.position-f.fisher.position),side)
 				var edge = session.world.arena_width*0.5-8
@@ -132,8 +134,9 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 				aim = side_aim.rotated(Vector3.UP,stroke_side*deg_to_rad(9))
 		else: side_hold = 0
 		var input = FishInput.new(0.25 if resting else 1,0,0,aim,sprint)
+		input.overdrive = spending_drive
 		input.vertical = 1 if action == FightDecisions.FishAction.JUMP and not fish.airborne and fish.motion.jump_recovery <= 0 else 0
-		if fish.motion.jump_recovery > 0: input.boost = false; input.aim_direction.y = -0.25
+		if fish.motion.jump_recovery > 0: input.overdrive = false; input.boost = false; input.aim_direction.y = -0.25
 		# Keep ordinary tools submerged; deliberate jumps retain full upward control.
 		if action not in [FightDecisions.FishAction.JUMP,FightDecisions.FishAction.DIVE] and not fish.airborne and fish.water_height-fish.position.y < 3:
 			input.aim_direction = (BaitMotion.horizontal(input.aim_direction)+Vector3.DOWN*0.2).normalized()

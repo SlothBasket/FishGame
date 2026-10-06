@@ -2,6 +2,29 @@ extends SceneTree
 ## Focused no-batch check: --headless --path <project> --script res://Scripts/HuntingChecks.gd -- --multi-actor --seed=17
 func _initialize() -> void: call_deferred("verify")
 func verify() -> void:
+	# Fuel channels must remain independent even with no measured stroke.
+	for sprint in [false,true]:
+		for overdrive in [false,true]:
+			var motion = FishFightMotion.new()
+			motion.swim_drive = 1
+			motion.drive_decay = 0
+			var intent = FishInput.new(1,0,0,Vector3.FORWARD,sprint)
+			intent.overdrive = overdrive
+			motion.step(0.1,intent,Vector3.FORWARD,1,100,false)
+			assert((motion.stamina_share > 0) == sprint)
+			assert((motion.overdrive > 0) == overdrive)
+			assert((motion.swim_drive < 1) == overdrive)
+			assert(motion.stamina_cost == 0)
+			assert(is_equal_approx(motion.powered_output,1.2 if sprint and overdrive else 1.0 if sprint else 0.8 if overdrive else 0.0))
+	var empty = FishFightMotion.new()
+	empty.swim_drive = 0
+	var renewable = FishInput.new(1)
+	renewable.overdrive = true
+	empty.step(0.1,renewable,Vector3.FORWARD,1,100,false)
+	assert(not empty.powered_active and empty.stamina_share == 0)
+	empty.swim_drive = 1
+	empty.step(0.1,renewable,Vector3.FORWARD,1,0,false)
+	assert(empty.overdrive > 0 and empty.stamina_share == 0)
 	var world = load("res://Scenes/Reef.tscn").instantiate()
 	root.add_child(world)
 	await process_frame
@@ -11,6 +34,14 @@ func verify() -> void:
 	assert(session.players.size() == 5)
 	var fish: FishPlayer = session.players[-1].entity
 	var fisher: FisherActor = session.players[-2].entity
+	var fresh_force = fish.reserve_force_capacity()
+	for i in range(3): fish.fatigue(7)
+	var countered_force = fish.reserve_force_capacity()
+	assert(countered_force < fresh_force*0.8)
+	fish.endurance = 40
+	assert(fish.reserve_force_capacity() < fresh_force*0.4)
+	fish.endurance = fish.stamina_capacity
+	print("PASS independent sprint/Overdrive fuel channels; fresh/countered force: ",fresh_force," / ",countered_force)
 	assert(is_equal_approx(fish.length_inches(),8))
 	fish.feeding.food = 10000
 	assert(absf(fish.length_inches()-46) < 0.01)
@@ -46,7 +77,8 @@ func verify() -> void:
 	assert(fish.feeding.food == food and is_equal_approx(fish.length_inches(),before))
 	fish.motion = FishFightMotion.new()
 	fish.motion.swim_drive = 0.6
-	fish.command = FishInput.new(1,0,0,Vector3.FORWARD,true)
+	fish.command = FishInput.new(1,0,0,Vector3.FORWARD)
+	fish.command.overdrive = true
 	fish.position = Vector3(0,15,0)
 	fish.velocity = Vector3.ZERO
 	for i in range(30): fish._physics_process(1.0/60)

@@ -380,7 +380,7 @@ func fish_intent(sequence: int, axes: PackedFloat32Array, flags: int) -> void:
 	var record: Dictionary = players[sender]
 	if record.role != ROLE_FISH: return
 	if sequence < 0 or sequence > 2147483647 or sequence <= record.sequence: return
-	if axes.size() != 7 or flags < 0 or flags > 7: return
+	if axes.size() != 7 or flags < 0 or flags > 15: return
 	for number in axes:
 		if not is_finite(number): return
 	record.tokens = minf(4,record.tokens+(clock-record.token_time)*60)
@@ -393,6 +393,7 @@ func fish_intent(sequence: int, axes: PackedFloat32Array, flags: int) -> void:
 	record.received = clock
 	var intent = FishInput.new(axes[0],axes[1],axes[2],aim,flags & 1 != 0,flags & 2 != 0)
 	intent.cancel_bite = flags & 4 != 0
+	intent.overdrive = flags & 8 != 0
 	intent.stroke_axis = clampf(axes[6],-1,1)
 	record.entity.command = intent
 
@@ -463,7 +464,7 @@ func _physics_process(delta: float) -> void:
 			elif input_clock <= 0:
 				input_sequence += 1
 				var aim = intent.aim_direction
-				fish_intent.rpc_id(1,input_sequence,PackedFloat32Array([intent.throttle,intent.steering,intent.vertical,aim.x,aim.y,aim.z,intent.stroke_axis]),int(intent.boost)|int(intent.bite_held)<<1|int(intent.cancel_bite)<<2)
+				fish_intent.rpc_id(1,input_sequence,PackedFloat32Array([intent.throttle,intent.steering,intent.vertical,aim.x,aim.y,aim.z,intent.stroke_axis]),int(intent.boost)|int(intent.bite_held)<<1|int(intent.cancel_bite)<<2|int(intent.overdrive)<<3)
 		if input_clock <= 0: input_clock = 1.0/input_hz
 
 	if hosting:

@@ -6,7 +6,8 @@ var stroke_axis: float = 0 # Signed mouse-stroke intent; shares cadence with ste
 var throttle: float = 0.0 # W = +1, S = -1
 var steering: float = 0.0 # A = -1, D = +1; no strafe
 var vertical: float = 0.0
-var boost: bool = false
+var boost: bool = false # Limited stamina sprint.
+var overdrive: bool = false # Independent renewable Drive spending.
 var bite_held: bool = false
 var cancel_bite: bool = false
 var aim_direction: Vector3 = Vector3.FORWARD

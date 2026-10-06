@@ -10,7 +10,7 @@ static func install() -> void:
 		event.physical_keycode = keys[action]
 		bind(action,event)
 	var buttons = {"bite":JOY_BUTTON_RIGHT_SHOULDER,"rise":JOY_BUTTON_A,"dive":JOY_BUTTON_B,
-		"boost":JOY_BUTTON_LEFT_STICK,"cast":JOY_BUTTON_X,"bait_species":JOY_BUTTON_Y,
+		"overdrive":JOY_BUTTON_LEFT_SHOULDER,"boost":JOY_BUTTON_LEFT_STICK,"cast":JOY_BUTTON_X,"bait_species":JOY_BUTTON_Y,
 		"bait_mode":JOY_BUTTON_BACK,"bait_camera":JOY_BUTTON_RIGHT_STICK,
 		"reel_up":JOY_BUTTON_DPAD_UP,"reel_down":JOY_BUTTON_DPAD_DOWN,"reset":JOY_BUTTON_START}
 	for action in buttons:
@@ -27,9 +27,9 @@ static func install() -> void:
 		event.axis = axes[action][0]
 		event.axis_value = axes[action][1]
 		bind(action,event)
-	for action in {"bite":MOUSE_BUTTON_LEFT,"reel_up":MOUSE_BUTTON_WHEEL_UP,"reel_down":MOUSE_BUTTON_WHEEL_DOWN}:
+	for action in {"overdrive":MOUSE_BUTTON_RIGHT,"bite":MOUSE_BUTTON_LEFT,"reel_up":MOUSE_BUTTON_WHEEL_UP,"reel_down":MOUSE_BUTTON_WHEEL_DOWN}:
 		var event = InputEventMouseButton.new()
-		event.button_index = {"bite":MOUSE_BUTTON_LEFT,"reel_up":MOUSE_BUTTON_WHEEL_UP,"reel_down":MOUSE_BUTTON_WHEEL_DOWN}[action]
+		event.button_index = {"overdrive":MOUSE_BUTTON_RIGHT,"bite":MOUSE_BUTTON_LEFT,"reel_up":MOUSE_BUTTON_WHEEL_UP,"reel_down":MOUSE_BUTTON_WHEEL_DOWN}[action]
 		bind(action,event)
 	for action in {"power_reel":KEY_SHIFT,"rod_jerk":KEY_Q,"fish_vision":KEY_V}:
 		var event = InputEventKey.new()

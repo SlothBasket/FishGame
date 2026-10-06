@@ -116,3 +116,5 @@ Milestone subject: `Strengthen Drive reserve and fix feeding pursuit safety` - h
 - **Package join-only multiplayer playtest client** - Separate friend-facing Join screen, guarded launch paths, return-on-disconnect, reproducible Windows ZIP builder and setup guide.
 
 - **29c3c3e Make Fisher spend line condition and strengthen stored hunting Drive** - Observable pressure/closeout, acute overload relief, 86 to 99 prey, 0.0042 growth and passive free-swim Drive. Import, focused checks and one bounded fight; fight physics unchanged.
+
+- **Separate renewable Overdrive from stamina sprint** - RMB/left-shoulder Drive, independent Shift sprint and AI decisions, network intent flag, endurance strength before Drive buildup and reduced exhausted force floor; focused checks.

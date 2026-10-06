@@ -127,7 +127,7 @@ func input(fish: FishPlayer, candidates: Array, half_width: float, depth: float,
 			if state == State.APPROACH and distance > 18:
 				aim = aim.rotated(Vector3.UP,deg_to_rad(12)*stroke_side)
 			var attack = FishInput.new(0.9 if state == State.APPROACH else 0.85,0,0,aim,false,false)
-			attack.boost = state == State.APPROACH and distance > 18 and fish.motion.swim_drive > 0.20
+			attack.overdrive = state == State.APPROACH and distance > 18 and fish.motion.swim_drive > 0.20
 			if state == State.COMMIT:
 				commit_time += delta
 				if distance > commit_reach*1.5 or fish.heading.dot(direct) < -0.1 or commit_time > fish.full_charge_time+1.0:

@@ -75,8 +75,8 @@ var fight_slack: bool = false
 @export_group("Stamina and size speed")
 @export var stamina_capacity: float = 130
 @export var normal_power_reference: float = 100
-@export var force_capacity_exponent: float = 0.8
-@export var fresh_force_exponent: float = 1.1
+@export var force_capacity_exponent: float = 1.2
+@export var fresh_force_exponent: float = 1.6
 @export var sprint_drain: float = 18
 @export var dash_cost: float = 14
 @export var stamina_regen: float = 12
@@ -88,7 +88,6 @@ var fight_slack: bool = false
 @export var endurance_floor: float = 0.0
 @export var sprint_endurance_drain: float = 1.2
 @export var dash_endurance_cost: float = 0.8
-@export var overdrive_endurance_drain: float = 1.8
 @export var dive_endurance_drain: float = 2.0
 @export var ascent_endurance_drain: float = 1.6
 @export var side_endurance_cost: float = 1.5
@@ -209,6 +208,7 @@ func read_local_input() -> FishInput:
 	var intent = FishInput.new(Input.get_axis("back", "forward"), Input.get_axis("left", "right"),
 		Input.get_axis("dive", "rise"), -pivot.global_basis.z, Input.is_action_pressed("boost"),
 		Input.is_action_pressed("bite") and not suppress_bite_until_release)
+	intent.overdrive = Input.is_action_pressed("overdrive")
 	intent.stroke_axis = mouse_stroke_axis if fight_active else 0
 	# Aim correction is useful for the bite; regular swimming follows camera direction.
 	if feeding.is_charging:
@@ -241,22 +241,22 @@ func _physics_process(delta: float) -> void:
 	var in_fight = is_instance_valid(fight)
 	if not intent.boost: sprint_exhausted = false
 	if stamina < 1: sprint_exhausted = true
-	if not free_bursts and ((sprint_exhausted and motion.swim_drive <= 0.001 and motion.drive_burst_time <= 0) or sprint_locked): intent.boost = false
+	if not free_bursts and (sprint_exhausted or sprint_locked): intent.boost = false
+	if sprint_locked: intent.overdrive = false
 	if in_fight: intent = motion.steer_burst(delta,intent,heading,not airborne and not motion.diving and motion.ascent_power < 0.1 and head.impact_time <= 0,BaitMotion.horizontal(position-fight.fisher.position))
 	heading = head.step(delta,heading,intent,maxf(0,velocity.dot(heading)))
 	motion.step(delta,intent,heading,velocity.length()/maxf(0.1,effective_swim_speed()),stamina,touching_bottom(),head.stroke,power_capacity(),velocity.y,in_fight)
-	var renewable = motion.powered_active and motion.stamina_share < 1
+	var renewable = motion.drive_burst_time > 0
 	var sprinting = motion.powered_active and motion.stamina_share > 0 and not free_bursts
 	var opposition = 1.0
 	if in_fight: opposition = FishFightMotion.opposition_cost(heading,(position-fight.fisher.position).normalized(),clampf(1-fight.spool.slack/0.5,0,1))
 	if in_fight:
 		var exertion = sprint_endurance_drain*motion.stamina_share if sprinting else 0.0
-		exertion += overdrive_endurance_drain*clampf(motion.overdrive/maxf(0.01,motion.overdrive_max),0,1)
 		exertion += dive_endurance_drain*motion.dive_power+ascent_endurance_drain*motion.ascent_power
 		fatigue(exertion*opposition*motion.side_cost_multiplier()*delta)
 	var regeneration = stamina_regen*(fight_regen_multiplier*fight_regen_scale if in_fight else 1.0)
 	var effort_cost = ((sprint_drain*motion.stamina_share*delta if sprinting else 0)+motion.stamina_cost)*opposition*motion.side_cost_multiplier()
-	stamina = clampf(stamina+(0 if motion.powered_active else regeneration*delta)-effort_cost,0,endurance if in_fight else stamina_capacity)
+	stamina = clampf(stamina+(0 if sprinting else regeneration*delta)-effort_cost,0,endurance if in_fight else stamina_capacity)
 	if renewable: drive_stamina_spent += effort_cost
 	if motion.overdrive > 0: overdrive_stamina_spent += effort_cost
 	if opposition > 1.6: radial_energy_spent += effort_cost
@@ -289,7 +289,7 @@ func _physics_process(delta: float) -> void:
 		if in_fight: fight.constrain_velocity(delta)
 		move_and_slide()
 	motion.measure_side(delta,heading,velocity,BaitMotion.horizontal(position-fight.fisher.position) if in_fight else heading)
-	if in_fight and motion.side_event != 0: fatigue(side_endurance_cost*motion.side_cost_multiplier())
+	if in_fight and intent.boost and motion.side_event != 0: fatigue(side_endurance_cost*motion.side_cost_multiplier())
 	if global_position.y > water_height and not airborne:
 		natural_breach = breach_intent_time > 0
 		limit_breach_velocity()
@@ -396,12 +396,12 @@ func force_capacity() -> float:
 	return pow(reserve,fresh_force_exponent if reserve > 1 else force_capacity_exponent)
 
 func reserve_force_capacity() -> float:
-	# Stored reserve exposes endurance strength without removing basic locomotion.
-	return maxf(0.55,lerpf(1,force_capacity(),pow(clampf(motion.swim_drive,0,1),2)))
+	# Endurance is strength even before building Drive; retain basic locomotion.
+	return maxf(0.35,force_capacity())
 
 func fight_force_multiplier() -> float:
 	# Capacity scales powered acceleration, not top speed; basic locomotion survives.
-	return maxf(1,fight_boost_multiplier()*force_capacity()*motion.side_force_multiplier())
+	return maxf(0.35,fight_boost_multiplier()*force_capacity()*motion.side_force_multiplier())
 
 func fight_boost_multiplier() -> float:
 	# Only fight sprint output fades; ordinary swim speed and turns remain available.

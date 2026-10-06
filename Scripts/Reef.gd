@@ -306,8 +306,8 @@ func build_hud() -> void:
 	top.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	var hint = hud_text(root, "Hold LMB. Line it up. Release.", 24, cream, Vector2.ZERO)
 	anchor(hint, Control.PRESET_BOTTOM_LEFT, Rect2(40, -125, 520, 40))
-	var controls = hud_text(root, "W forward / S reverse    A/D steer    MOUSE look    SHIFT boost   F9 hitch report\nSPACE / CTRL rise / dive    R reset    ESC release cursor", 15, muted, Vector2.ZERO)
-	if JoinClient.enabled(): controls.text = "W/S swim | A/D steer | Mouse look | Shift boost | Space/Ctrl rise/dive\nHold/release left click to feed | Esc cursor | F10 leave match"
+	var controls = hud_text(root, "W forward / S reverse    A/D steer    MOUSE look    SHIFT sprint / RMB Overdrive   F9 hitch report\nSPACE / CTRL rise / dive    R reset    ESC release cursor", 15, muted, Vector2.ZERO)
+	if JoinClient.enabled(): controls.text = "W/S swim | A/D steer | Mouse look | Shift sprint / RMB Overdrive | Space/Ctrl rise/dive\nHold/release left click to feed | Esc cursor | F10 leave match"
 	anchor(controls, Control.PRESET_BOTTOM_LEFT, Rect2(40, -83, 740, 58))
 	_telemetry = hud_text(root, "", 20, cream, Vector2.ZERO)
 	anchor(_telemetry, Control.PRESET_BOTTOM_RIGHT, Rect2(-260, -103, 220, 60))
