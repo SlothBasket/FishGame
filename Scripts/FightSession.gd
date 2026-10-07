@@ -37,21 +37,21 @@ var power_exhausted: bool = false
 @export var lateral_force: float = 30
 @export var propulsion_load_scale: float = 0.80
 @export var reserve_load_scale: float = 1.0
-@export var counter_momentum_scale: float = 0.35
-@export var counter_momentum_cap: float = 40
+@export var counter_momentum_scale: float = 0.35*FightForceUnits.SCALE
+@export var counter_momentum_cap: float = 40*FightForceUnits.SCALE
 @export var pressure_endurance_drain: float = 0.18
 @export var leverage_endurance_drain: float = 0.95
 @export var yield_bonus: float = 2
 @export var resistance_fatigue: float = 13
-@export var safe_load: float = 35
-@export var critical_load: float = 110
+@export var safe_load: float = 35*FightForceUnits.SCALE
+@export var critical_load: float = 110*FightForceUnits.SCALE
 @export var jerk_damage: float = 15
 @export var dive_counter_stamina_damage: float = 24
 @export var run_counter_endurance: float = 3.5
 @export var overdrive_counter_endurance: float = 7
 @export var dive_counter_endurance: float = 9
 var last_counter: Dictionary = {}
-@export var jerk_spike: float = 35
+@export var jerk_spike: float = 35*FightForceUnits.SCALE
 @export var jerk_cooldown: float = 1.2
 @export var jerk_cost: float = 14
 @export var landing_distance: float = 4
@@ -78,8 +78,8 @@ var previous_pressure: float = 0
 var reversal_bank: float = 0
 var perception = FisherPerception.new()
 @export var directional_load_scale: float = 1.1
-@export var turn_shock_scale: float = 18
-@export var maximum_turn_shock: float = 36
+@export var turn_shock_scale: float = 18*FightForceUnits.SCALE
+@export var maximum_turn_shock: float = 36*FightForceUnits.SCALE
 @export var turn_shock_decay_time: float = 0.18
 var directional_load: float = 0
 var turn_shock: float = 0
@@ -101,13 +101,17 @@ var power_active: bool = false
 var power_age: float = 0
 var power_recovery: float = 0
 var seen_overdrive: int = 0
+var load_overdrive_serial: int = 0
+var overdrive_load_time: float = 0
+@export var overdrive_load_duration: float = 0.45
+@export var overdrive_load_bonus: float = 0.25
 var power_punishes: int = 0
 @export var power_commit_time: float = 0.25
 @export var power_punish_duration: float = 1.5
 @export var gesture: RodGesture = RodGesture.new()
-@export var jerk_counter_force: float = 65
+@export var jerk_counter_force: float = 65*FightForceUnits.SCALE
 @export var early_run_window: float = 1.3
-@export var progress_jerk_spike: float = 65
+@export var progress_jerk_spike: float = 65*FightForceUnits.SCALE
 @export var counter_impulse: float = 4
 var jerk_direction: int = 0
 var jerk_notice_time: float = 0
@@ -172,6 +176,11 @@ func _physics_process(delta: float) -> void:
 	if phase == Phase.FINISHED: return
 	if not is_instance_valid(fish) or not is_instance_valid(fisher): finish(Outcome.DISCONNECT); return
 	phase_time += delta
+	overdrive_load_time = maxf(0,overdrive_load_time-delta)
+	if fish.motion.overdrive <= 0: overdrive_load_time = 0
+	elif fish.motion.overdrive_serial != load_overdrive_serial:
+		load_overdrive_serial = fish.motion.overdrive_serial
+		overdrive_load_time = overdrive_load_duration
 	update_power_punish(delta)
 	update_rod(delta)
 	if phase in [Phase.CANDIDATE,Phase.METER]: sync_pre_hook_line()
@@ -255,7 +264,7 @@ func _physics_process(delta: float) -> void:
 	var struggle = resistance_load(fish.motion.propulsion,effort,0,mass,turn_rate,connected_line)
 	directional_load = struggle.x
 	turn_shock = maxf(turn_shock*exp(-delta/maxf(0.01,turn_shock_decay_time)),struggle.y)
-	var movement_load = drive+directional_load+fish.motion.dive_power*35
+	var movement_load = drive+directional_load+fish.motion.dive_power*35*FightForceUnits.SCALE
 	spike = maxf(0,spike-jerk_spike*delta*3)
 	var diving = fish.motion.diving
 	best_counter = FightContest.best_counter(fish.heading,right,diving,fish.motion.dive_power >= fish.motion.dive_counter_window)
@@ -266,7 +275,7 @@ func _physics_process(delta: float) -> void:
 		apply_directional_jerk(gesture_direction,outward,right,connected_line)
 		# Counter changes physical velocity/effort before this tick's spool accounting.
 		radial_speed = fish.velocity.dot(outward)
-		movement_load = propulsion_force(alignment,mass)+directional_load+fish.motion.dive_power*35
+		movement_load = propulsion_force(alignment,mass)+directional_load+fish.motion.dive_power*35*FightForceUnits.SCALE
 	var condition_before = spool.condition
 	spool.step(delta,fish.position.distance_to(neutral_tip),radial_speed,movement_load,(0.0 if power_recovery > 0 else input.retrieve),fisher.drag_setting,power_active,spike+turn_shock+fall_load(),maxf(0,rod_vertical),rod_vertical,leverage)
 	if check_spooled(): return
@@ -276,7 +285,7 @@ func _physics_process(delta: float) -> void:
 	var contact = clampf(1-spool.slack/slack_tolerance,0,1)
 	var pressure = clampf(tension/spool.strength,0,1.5)*contact
 	# Held leverage affects transmitted tension only; jerks keep their discrete impulses.
-	fish.line_force = -outward*minf(tension,critical_load*2)/mass
+	fish.line_force = -outward*FightForceUnits.acceleration(minf(tension,critical_load*2),mass)
 	var yielding = maxf(0,-fish.heading.dot(outward))*effort
 	fish.line_force += -outward*yielding*yield_bonus*contact
 	# Local camera cue reflects the held rod, without adding a second lateral force.
@@ -308,7 +317,7 @@ func _physics_process(delta: float) -> void:
 	if phase == Phase.FIGHT:
 		fish.fatigue((pressure_endurance_drain*exertion+leverage_endurance_drain*resistance)*pressure*delta)
 	_previous_heading = fish.heading
-	hook.step(delta,spool.slack,fish.head.shake_pressure,fish.airborne,fish.motion.jump_severity,rod_vertical < -0.25)
+	hook.step(delta,spool.slack,fish.head.shake_pressure,fish.airborne,fish.motion.jump_severity,rod_vertical < -0.25,radial_speed,spool.actual_recovery)
 	line_damage_rate = maxf(0,(condition_before-spool.condition)/maxf(0.0001,delta))
 	condition = spool.condition
 	fish.damaging_line = line_damage_rate > 0.00001
@@ -424,7 +433,7 @@ func after_fish_move(delta: float) -> void:
 
 func resistance_load(propulsion: float, effort: float, leverage: float, mass: float, turn_rate: float, contact: float) -> Vector2:
 	var powered = maxf(0,propulsion)*maxf(0,effort)*clampf(contact,0,1)
-	var sustained = powered*maxf(0,leverage)*mass*fish.acceleration*propulsion_load_scale*directional_load_scale
+	var sustained = powered*maxf(0,leverage)*mass*fish.acceleration*propulsion_load_scale*directional_load_scale*FightForceUnits.SCALE
 	# Ordinary unpowered steering cannot make a shock. Fast hard turns need built
 	# propulsion and an opposing rod; the transient is bounded independently.
 	var shock_load = minf(maximum_turn_shock,maxf(0,powered-0.9)*maxf(0,leverage)*minf(turn_rate,3)*turn_shock_scale)
@@ -451,7 +460,7 @@ func jerk_contest(direction: int, heading: Vector3, outward: Vector3, right: Vec
 	var expected = required_jerk(heading,outward,right)
 	var matched = expected != RodGesture.Direction.NONE and direction == expected
 	var progress = counter_risk_progress()
-	var resistance = 25+fish.motion.propulsion*15+fish.motion.swim_drive*12+fish.motion.overdrive*30+fish.motion.dive_power*20
+	var resistance = FightForceUnits.load_units(25+fish.motion.propulsion*15+fish.motion.swim_drive*12+fish.motion.overdrive*30+fish.motion.dive_power*20)
 	var force = jerk_counter_force*(0.65+0.35*rod_pull)
 	var course = (outward+Vector3.DOWN).normalized() if fish.motion.diving else right*fish.motion.side_sign if fish.motion.side_time > 0 else outward
 	var momentum = (3.2*(1+0.35*fish.growth_fraction()))*maxf(0,fish.velocity.dot(course))
@@ -526,7 +535,7 @@ func apply_counter_recovery(maneuver: String, effectiveness: float, impulse: Vec
 func fall_load() -> float:
 	if not fish.motion.falling: return 0
 	var speed = maxf(0,-fish.velocity.y)
-	return speed*speed*0.7*clampf(fish.motion.jump_severity,0,2)*clampf(1-spool.slack/slack_tolerance,0,1)
+	return FightForceUnits.SCALE*speed*speed*0.7*clampf(fish.motion.jump_severity,0,2)*clampf(1-spool.slack/slack_tolerance,0,1)
 
 func hook_snap_weight(time: float) -> float:
 	time = maxf(0,time-hook_snap_anticipation)
@@ -572,7 +581,11 @@ func notice(fish_text: String, fisher_text: String) -> void:
 func propulsion_force(alignment: float, mass: float) -> float:
 	var powered_force = fish.fight_force_multiplier() if fish.motion.powered_active else fish.reserve_force_capacity()
 	var scale = propulsion_load_scale if fish.motion.powered_active else reserve_load_scale
-	return alignment*fish.motion.propulsion*fish.acceleration*mass*scale*powered_force
+	# Speed-related Drive bonus is already movement; avoid counting it as another passive force bonus.
+	var speed_factor = 1+0.22*maxf(fish.motion.swim_drive,fish.motion.powered_output)/maxf(0.01,fish.motion.sustainable_max)*fish.motion.power_capacity+fish.motion.overdrive
+	var effort = fish.motion.propulsion/maxf(1,speed_factor)*(1+fish.motion.overdrive)
+	var base_mass = mass/(1+0.35*fish.growth_fraction())
+	return FightForceUnits.SCALE*alignment*effort*fish.acceleration*base_mass*size_load_multiplier()*scale*powered_force*(1+overdrive_load_bonus*overdrive_load_time/maxf(0.01,overdrive_load_duration))
 
 static func force_readout(load_value: float, drag_hold: float, capacity: float, drive: float) -> String:
 	var ratio = "--" if drag_hold <= 0.001 else "%.2fx" % (load_value/drag_hold)
@@ -581,3 +594,6 @@ static func force_readout(load_value: float, drag_hold: float, capacity: float, 
 static func maneuver_family(label: String) -> String:
 	# Escalating Drive to Overdrive cannot restart an already-running counter clock.
 	return label.replace("POWERED DIVE","DIVE").replace("OVERDRIVE","DRIVE DASH")
+
+func size_load_multiplier() -> float:
+	return lerpf(1,1.45,fish.growth_fraction())

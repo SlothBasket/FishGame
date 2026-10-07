@@ -63,7 +63,7 @@ static func fisher_choice(observed: Dictionary) -> int:
 	if observed.is_empty(): return FisherAction.REEL
 	if observed.get("jump_fall",false): return FisherAction.LOWER
 	if observed.get("airborne",false) or observed.get("ascending",false): return FisherAction.REEL
-	var strength = float(observed.get("strength",110))
+	var strength = float(observed.get("strength",FightForceUnits.BASE_STRENGTH))
 	var condition = float(observed.get("condition",1))
 	var urgency = clampf((float(observed.get("line_out",0))/maxf(1,float(observed.get("capacity",150)))-0.5)/0.4,0,1)
 	# Risk tolerance rises near spool loss; even desperation still respects extreme load.

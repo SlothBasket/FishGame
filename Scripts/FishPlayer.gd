@@ -333,6 +333,15 @@ func inches_for_scale(value: float) -> float:
 func can_eat(bait: BaitActor) -> bool:
 	return length_inches()+0.0001 >= bait.required_length(self)
 
+var fight_mouth_side: float = 1
+@export var hook_corner_offset: float = 0.11
+func fight_mouth_position(line_direction: Vector3) -> Vector3:
+	# Use the animated local head frame: no world-axis offset or feeding hitbox change.
+	var right = visual._head.global_basis.x.normalized()
+	var side = line_direction.normalized().dot(right)
+	if absf(side) > 0.18: fight_mouth_side = signf(side)
+	return visual._head.to_global(Vector3(fight_mouth_side*hook_corner_offset,-0.06,-0.715))
+
 func mouth_position() -> Vector3:
 	return global_position + heading * 1.25 * size_multiplier()
 

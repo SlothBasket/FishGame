@@ -457,7 +457,7 @@ func _process(delta: float) -> void:
 		return
 	if hook_held:
 		visual.scale = Vector3.ONE*body_size*0.65
-		if is_instance_valid(_eater): global_position = _eater.mouth_position()
+		if is_instance_valid(_eater): global_position = _eater.fight_mouth_position(_eater.fight_rod_tip-_eater.global_position)
 		return
 	if _bird_carry > 0:
 		_bird_carry -= delta

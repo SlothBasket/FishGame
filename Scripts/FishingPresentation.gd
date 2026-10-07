@@ -47,24 +47,23 @@ static func tension_color(ratio: float) -> Color:
 	if t <= 0.7: return Color.WHITE.lerp(Color(1,0.06,0.04),t/0.7)
 	return Color(1,0.06,0.04).lerp(Color(0.28,0.005,0.015),clampf((t-0.7)/0.5,0,1))
 
-static func visual_path(tip: Vector3, mouth: Vector3, slack: float, forward: Vector3 = Vector3.FORWARD, scale: float = 1, flare_side: float = 1) -> Array[Vector3]:
+static func fish_camera_active(tree: SceneTree) -> bool:
+	for subject in tree.get_nodes_in_group("fish_line_subjects"):
+		if subject.camera.current: return true
+	return false
+
+static func visual_path(tip: Vector3, mouth: Vector3, _slack: float, forward: Vector3 = Vector3.FORWARD, scale: float = 1, flare_side: float = 1) -> Array[Vector3]:
+	# One tiny quadratic at the mouth; every point beyond its end lies on one straight segment.
+	var outgoing = (tip-mouth).normalized()
 	var right = forward.cross(Vector3.UP).normalized()
 	if right.length_squared() < 0.1: right = Vector3.RIGHT
-	var behind = smoothstep(0.0,0.8,-forward.dot((tip-mouth).normalized()))
-	var reach = minf(scale,tip.distance_to(mouth)*0.2)
-	var lead = mouth+forward*0.45*reach
-	var flare = mouth+right*flare_side*0.9*reach*behind+forward*0.15*reach
-	var points: Array[Vector3] = []
-	# Two short/long Beziers share tangent at the flare, routing behind-facing line outside the head.
-	var tangent = (tip-flare).normalized()*reach*0.25
-	for i in range(9):
-		var t = i/8.0; var u = 1-t
-		points.append(mouth*u*u*u+lead*3*u*u*t+(flare-tangent)*3*u*t*t+flare*t*t*t)
-	var control = flare.lerp(tip,0.55)-Vector3.UP*minf(6,slack*0.4)
-	for i in range(1,25):
-		var t = i/24.0; var u = 1-t
-		points.append(flare*u*u*u+(flare+tangent)*3*u*u*t+control*3*u*t*t+tip*t*t*t)
-	points.reverse()
+	var lead = minf(0.45*scale,tip.distance_to(mouth)*0.25)
+	var end = mouth+outgoing*lead
+	var control = mouth+outgoing*lead*0.5+right*flare_side*minf(0.12*scale,lead*0.3)
+	var points: Array[Vector3] = [tip,end]
+	for i in range(1,9):
+		var t = 1-i/8.0; var u = 1-t
+		points.append(mouth*u*u+control*2*u*t+end*t*t)
 	return points
 
 func update_view(delta: float, camera: Camera3D, hand: Vector3, rod: Vector3, tip: Vector3, target: Vector3, fish: FishPlayer, slack: float, line_rate: float, payout: float, retrieve_speed: float, active: bool, audible: bool, requested: float = 0, efficiency: float = 1, phase: int = -1) -> void:
@@ -74,16 +73,15 @@ func update_view(delta: float, camera: Camera3D, hand: Vector3, rod: Vector3, ti
 	spool.rotation.x -= line_rate*4*delta
 	travel += line_rate*delta
 	material.set_shader_parameter("travel",travel)
-	line.visible = active
+	line.visible = active and not (is_instance_valid(fish) and fish.fight_active and fish_camera_active(get_tree()))
 	var mouth = target
 	if is_instance_valid(fish):
-		mouth = fish.mouth_position()
+		mouth = fish.fight_mouth_position(tip-fish.global_position)
+		flare_side = fish.fight_mouth_side
 
 	shown_tension = lerpf(shown_tension,fish.fight_tension_ratio if is_instance_valid(fish) else 0.0,1-exp(-delta/0.12))
 	material.set_shader_parameter("tension_tint",tension_color(shown_tension))
-	if is_instance_valid(fish):
-		var side = (tip-mouth).normalized().dot(fish.heading.cross(Vector3.UP))
-		if absf(side) > 0.2: flare_side = signf(side)
+
 	last_points = visual_path(tip,mouth,slack,fish.heading if is_instance_valid(fish) else (mouth-tip).normalized(),fish.size_multiplier() if is_instance_valid(fish) else 0.0,flare_side)
 	var mesh: ImmediateMesh = line.mesh
 	mesh.clear_surfaces()

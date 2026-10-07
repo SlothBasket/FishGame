@@ -16,20 +16,20 @@ func verify() -> void:
 	for leverage in [-1,0,1]:
 		var line = FightLine.new()
 		line.line_out = 20
-		line.step(0.1,20,5,100,0,0.6,false,0,0,0,leverage)
+		line.step(0.1,20,5,100*FightForceUnits.SCALE,0,0.6,false,0,0,0,leverage)
 		tensions.append(line.tension)
 		# Same applied load/mass, outward acceleration determined only by actual tension.
-		var speed = 5+(100-line.tension)/3.2*0.1
+		var speed = 5+FightForceUnits.acceleration(100*FightForceUnits.SCALE-line.tension,3.2)*0.1
 		line.sync_distance(20+speed*0.1,0.1)
 		payout.append(line.payout)
 		assert(line.condition < 1)
-		line.step(0.1,23,10,600,1,1,true,400,0,0,leverage)
+		line.step(0.1,23,10,600*FightForceUnits.SCALE,1,1,true,400*FightForceUnits.SCALE,0,0,leverage)
 		assert(line.break_hazard() > 0)
 	assert(tensions[0] < tensions[1] and tensions[1] < tensions[2])
 	assert(payout[0] > payout[1] and payout[1] > payout[2])
 	var path = FishingPresentation.visual_path(Vector3(0,0,15),Vector3(0,0,-1),0,Vector3.FORWARD,1)
 	for point in path:
-		if point.z > -0.75 and point.z < 0.8: assert(absf(point.x) > 0.55)
+		assert(absf(point.x) <= 0.061) # Tiny local bend, no body-routing loop.
 	assert(FishingPresentation.tension_color(0) == Color.WHITE)
 	assert(absf(FishingPresentation.tension_color(0.699).g-FishingPresentation.tension_color(0.701).g) < 0.01)
 	var rules = RoundColorRules.new(); rules.configure(17)

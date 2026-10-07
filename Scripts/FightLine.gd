@@ -5,14 +5,14 @@ const DEFAULT_CAPACITY: float = 150
 @export var maximum_extension: float = 2.5
 @export var maximum_line_out: float = DEFAULT_CAPACITY
 @export var maximum_rod_take_up: float = 2.0
-@export var strength: float = 110
-@export var elasticity: float = 22
+@export var strength: float = 110*FightForceUnits.SCALE
+@export var elasticity: float = 22*FightForceUnits.SCALE
 @export var maximum_retrieve: float = 4.5
 @export var power_retrieve: float = 7
-@export var max_drag_force: float = 110
-@export var base_outward_capacity: float = 330
+@export var max_drag_force: float = 110*FightForceUnits.SCALE
+@export var base_outward_capacity: float = 330*FightForceUnits.SCALE
 @export var capacity_per_released_drag: float = 2
-@export var force_per_payout_speed: float = 40 # force-equivalent units per m/s
+@export var force_per_payout_speed: float = 40*FightForceUnits.SCALE # force-equivalent units per m/s
 var outward_capacity: float = 0
 var payout_speed_limit: float = 0
 var requested_retrieve: float = 0
@@ -35,11 +35,19 @@ var _payout_allowance: float = 0
 @export var fresh_risk_threshold: float = 0.85
 @export var damaged_risk_threshold: float = 0.60
 @export var risk_curve: float = 1.1
-@export var base_break_hazard: float = 0.008
+@export var base_break_hazard: float = 0.025
 @export var damage_hazard_multiplier: float = 16
 @export var exposure_gain: float = 1
 @export var exposure_decay: float = 1.5
 @export var exposure_multiplier: float = 0.6
+@export var greedy_wear: float = 0.07
+@export var warning_ratio: float = 0.75
+@export var warning_hazard: float = 0.001
+@export var shock_hazard: float = 0.025
+@export var reel_response_time: float = 0.18
+var shock_exposure: float = 0
+var load_surge: float = 0
+var _previous_fish_load: float = 0
 var high_load_exposure: float = 0
 var fish_load: float = 0
 var line_out: float = 0
@@ -77,7 +85,7 @@ func step(delta: float, required_distance: float, outward_speed: float, movement
 	fish_load = maxf(0,movement_load)
 	requested_retrieve = (power_retrieve if power else maximum_retrieve*clampf(retrieve,0,1))
 	# The motor has a useful recovery ceiling. Excess cranking fails; it is never payout.
-	var authority = maxf(1,holding_threshold*(1.5 if power else 1.0))
+	var authority = maxf(FightForceUnits.SCALE,holding_threshold*(1.5 if power else 1.0))
 	var useful_speed = (power_retrieve if power else maximum_retrieve)*clampf(1-fish_load/authority,0,1)
 	if slack > contact_tolerance: useful_speed = requested_retrieve
 	var recovery = minf(requested_retrieve,useful_speed)*delta
@@ -95,6 +103,11 @@ func step(delta: float, required_distance: float, outward_speed: float, movement
 	requested_load = maxf(fish_load,extension*elasticity)+maxf(0,transient_load)
 	var excess = maxf(0,requested_load-holding_threshold-outward_capacity)
 	var transmitted = minf(requested_load,holding_threshold)+excess
+	# Brief spool response to a real load rise, not an Overdrive/LEFT/RIGHT damage label.
+	load_surge = maxf(load_surge*exp(-delta/reel_response_time),minf(strength*0.35,maxf(0,fish_load-_previous_fish_load)))
+	_previous_fish_load = fish_load
+	var loaded_reel = clampf((holding_threshold/strength-0.5)/0.35,0,1)
+	transmitted += (load_surge*0.45+maxf(0,transient_load)*0.25)*loaded_reel
 	# Moving a taut line outward must meet spool drag even when the smoothed
 	# propulsion estimate lags the motor. Otherwise small force bonuses run away.
 	if outward_speed > 0 and contact > 0:
@@ -103,11 +116,16 @@ func step(delta: float, required_distance: float, outward_speed: float, movement
 	transmitted = maxf(transmitted,maxf(0,extension-maximum_extension)*elasticity)
 	tension = transmitted*contact
 	shock = maxf(0,tension-_previous_load)
+	var preloaded = smoothstep(0.65,0.9,_previous_load/maxf(1,break_threshold()))
+	shock_exposure = maxf(shock_exposure*exp(-delta/0.3),clampf(shock/(strength*0.3),0,2)*preloaded)
 	_previous_load = tension
 	slipping = fish_load > holding_threshold and contact > 0
 	slack = maxf(0,line_out-loaded_distance)
 	var stress = maxf(0,tension/strength-wear_start)
 	var wear = load_wear*stress*stress
+	# Concentrate extra wear above 80% dynamic danger; ordinary fighting keeps its low rate.
+	var greedy = maxf(0,tension/maxf(1,break_threshold())-0.8)
+	wear += greedy_wear*greedy*greedy*(1+2*(1-condition))
 	if reel_slip > 0: wear += slipping_reel_wear*reel_slip*retrieve*retrieve*(tension/strength)
 	if power: wear += power_wear*stress*stress
 	condition = maxf(0.02,condition-wear*delta-shock_wear*pow(shock/strength,2)*(0.25+retrieve))
@@ -118,8 +136,11 @@ func break_threshold() -> float:
 	return strength*lerpf(damaged_risk_threshold,fresh_risk_threshold,pow(condition,risk_curve))
 
 func break_hazard() -> float:
+	var ratio = tension/maxf(1,break_threshold())
+	var warning = warning_hazard*pow(clampf((ratio-warning_ratio)/(1-warning_ratio),0,1),3)
 	var excess = maxf(0,(tension-break_threshold())/maxf(1,strength-break_threshold()))
-	return base_break_hazard*excess*excess*(1+damage_hazard_multiplier*pow(1-condition,2))*(1+minf(12,high_load_exposure)*exposure_multiplier)
+	var spike_risk = shock_hazard*shock_exposure*pow(clampf((ratio-warning_ratio)/(1-warning_ratio),0,2),2)
+	return (warning+base_break_hazard*excess*excess+spike_risk)*(1+damage_hazard_multiplier*pow(1-condition,2))*(1+minf(12,high_load_exposure)*exposure_multiplier)
 
 func sync_distance(required_distance: float, delta: float) -> void:
 	# Only actual outward path growth may deploy new line. Called once after movement.

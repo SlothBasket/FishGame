@@ -21,6 +21,10 @@ var run_stall_time: float = 0
 var run_budget: float = 0
 var run_spent_start: float = 0
 var run_pause: float = 0
+var tension_attack_wait: float = 0
+var tension_attack: bool = false
+var tension_attack_aim: Vector3 = Vector3.FORWARD
+var tension_attacks: int = 0
 var reserve_wait: float = -1
 var committed_action: int = 0
 var bottom_recovery: bool = false
@@ -70,6 +74,7 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 		var f = fish.fight
 		var energy = fish.stamina/maxf(1,fish.endurance)
 		run_pause = maxf(0,run_pause-delta)
+		tension_attack_wait = maxf(0,tension_attack_wait-delta)
 		# A commitment must yield to recovery/invalid maneuvers, and cannot stay
 		# latched forever while legal inputs produce no actual powered swimming.
 		run_stall_time = run_stall_time+delta if run_committed and not fish.motion.powered_active else 0.0
@@ -81,6 +86,7 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 				session.batch_runner.telemetry.events[-1].state.merge(completed_commitments[-1],true)
 			if completed_commitments.size() > 64: completed_commitments.pop_front()
 			run_committed = false
+			tension_attack = false
 			run_pause = 1.0
 			side_hold = 0
 			f.fish_action = FightDecisions.fish_choice(f,f.fish_action)
@@ -92,13 +98,31 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 		elif reserve_wait < 0: reserve_wait = execution_rng.randf_range(0.5,5.0)
 		else: reserve_wait = maxf(0,reserve_wait-delta)
 		var spend_reserve = reserve_wait == 0 or f.spool.line_rate < -0.8 or f.tension > f.spool.strength*0.65 or action in [FightDecisions.FishAction.DIVE,FightDecisions.FishAction.JUMP]
-		if not run_committed and not resting and spend_reserve and run_pause <= 0 and fish.motion.swim_drive >= 0.95:
+		if not run_committed and not resting and spend_reserve and run_pause <= 0 and fish.motion.swim_drive >= 0.95 and (tension_attack_wait > 0 or not tension_opportunity(fish,f)):
 			run_committed = true
 			run_stall_time = 0
 			committed_action = action
 			run_start_drive = fish.motion.swim_drive
 			run_budget = minf(fish.motion.swim_drive,choose_run_budget(f.spool.distance < 12))
 			run_spent_start = fish.motion.drive_spent
+		# Use felt pressure and visible rod posture, never hidden line condition/dynamic break threshold.
+		if not run_committed and tension_attack_wait <= 0 and tension_opportunity(fish,f) and run_pause <= 0:
+			tension_attack_wait = execution_rng.randf_range(4,7)
+			if execution_rng.randf() < lerpf(0.35,0.8,f.fish_skill):
+				tension_attack_aim = choose_tension_angle(fish,f)
+				if tension_attack_aim != Vector3.ZERO:
+					tension_attack = true
+					tension_attacks += 1
+					run_committed = true
+					run_stall_time = 0
+					committed_action = FightDecisions.FishAction.RUN
+					action = committed_action
+					resting = false
+					run_start_drive = fish.motion.swim_drive
+					run_spent_start = fish.motion.drive_spent
+					run_budget = minf(fish.motion.swim_drive,execution_rng.randf_range(0.3,0.55))
+					if session.batch_runner != null: session.batch_runner.telemetry.event("AI_TENSION_ATTACK",f)
+		if tension_attack: aim = tension_attack_aim
 		var spending_drive = run_committed
 		# Spend renewable reserve independently. Sprint for vertical maneuvers or an urgent run.
 		var sprint = energy > 0.4 and not resting and (action in [FightDecisions.FishAction.DIVE,FightDecisions.FishAction.JUMP] or (f.spool.distance < 20 and f.spool.line_rate < -0.3))
@@ -121,7 +145,7 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 			aim = aim.rotated(Vector3.UP,stroke_side*deg_to_rad(24))
 		side_wait = maxf(0,side_wait-delta)
 		side_hold = maxf(0,side_hold-delta)
-		if action in [FightDecisions.FishAction.RUN,FightDecisions.FishAction.LEFT,FightDecisions.FishAction.RIGHT] and ((spending_drive and fish.motion.swim_drive >= fish.motion.side_burst_drive) or side_hold > 0 or fish.motion.side_time > 0) and not fish.airborne:
+		if action in [FightDecisions.FishAction.RUN,FightDecisions.FishAction.LEFT,FightDecisions.FishAction.RIGHT] and ((spending_drive and fish.motion.swim_drive >= fish.motion.side_burst_drive) or side_hold > 0 or fish.motion.side_time > 0) and not fish.airborne and not tension_attack:
 			if spending_drive and side_wait <= 0 and fish.motion.side_wait <= 0:
 				var side = -1 if execution_rng.randf() < 0.5 else 1
 				side_aim = side_burst_aim(BaitMotion.horizontal(fish.position-f.fisher.position),side)
@@ -148,6 +172,8 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 		food_seeded = true
 	if fish_was_fighting:
 		fish_was_fighting = false
+		tension_attack = false
+		tension_attack_wait = 0
 		run_committed = false
 		run_stall_time = 0
 		side_hold = 0
@@ -233,7 +259,7 @@ func fisher_input(actor: FisherActor, delta: float) -> FisherIntent:
 				input.power = false
 				if gesture_phase > prepare+0.4: gesture_phase = -1
 				pump_clock = 0
-			elif (plan.pump or (pump_clock > 0 and not observed_run and float(seen.get("tension",0)) < float(seen.get("break_threshold",93.5))*0.8 and not seen.get("descending",false) and not seen.get("ascending",false) and not seen.get("airborne",false) and not seen.get("jump_fall",false))) and not actor.vision_active:
+			elif (plan.pump or (pump_clock > 0 and not observed_run and float(seen.get("tension",0)) < float(seen.get("break_threshold",FightForceUnits.BASE_BREAK))*0.8 and not seen.get("descending",false) and not seen.get("ascending",false) and not seen.get("airborne",false) and not seen.get("jump_fall",false))) and not actor.vision_active:
 				pump_clock += delta
 				if pump_clock < 1.6:
 					input.rod_vertical = pump_clock/1.6
@@ -302,3 +328,21 @@ func avoid_bottom(input: FishInput, fish: FishPlayer, clearance: float) -> FishI
 	input.vertical = 1
 	input.boost = false # Basic swimming must suffice, including at zero Drive.
 	return input
+
+func tension_opportunity(fish: FishPlayer, f: FightSession) -> bool:
+	return f.phase == FightSession.Phase.FIGHT and f.spool.slack < 0.5 and f.tension/maxf(1,f.spool.strength) >= 0.62 and fish.motion.swim_drive >= 0.45 and fish.motion.counter_recovery <= 0 and fish.motion.drive_lockout <= 0 and fish.motion.jump_recovery <= 0 and not fish.airborne
+
+func choose_tension_angle(fish: FishPlayer, f: FightSession) -> Vector3:
+	var outward = BaitMotion.horizontal(fish.position-f.fisher.position)
+	var right = outward.cross(Vector3.UP)
+	var selected = Vector3.ZERO
+	var best = -INF
+	for degrees in [-55.0,0.0,55.0]:
+		var course = outward.rotated(Vector3.UP,deg_to_rad(degrees))
+		var destination = fish.position+course*12
+		var edge = f.fisher.session.world.arena_width*0.5-6
+		if absf(destination.x) > edge or absf(destination.z) > edge: continue
+		var leverage = FightContest.held_leverage(course,outward,right,f.rod_horizontal,f.rod_vertical)
+		var score = course.dot(outward)*0.7-leverage*1.2+course.dot(fish.heading)*0.15
+		if score > best: best = score; selected = course
+	return selected

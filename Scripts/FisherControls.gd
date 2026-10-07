@@ -2,7 +2,7 @@ class_name FisherControls
 extends RefCounted
 ## Independent legal control channels from delayed observable motion/line data.
 static func plan(seen: Dictionary, stamina: float) -> Dictionary:
-	var risk = float(seen.get("tension",0))/maxf(1,float(seen.get("strength",110)))
+	var risk = float(seen.get("tension",0))/maxf(1,float(seen.get("strength",FightForceUnits.BASE_STRENGTH)))
 	var slack = float(seen.get("slack",0))
 	var side = float(seen.get("side",0))
 	var distance = float(seen.get("distance",100))
@@ -12,10 +12,10 @@ static func plan(seen: Dictionary, stamina: float) -> Dictionary:
 	var ascent = bool(seen.get("ascending",false)) or bool(seen.get("airborne",false))
 	var dive = bool(seen.get("descending",false)) and not fall
 	var result = {"horizontal":-clampf(side*1.1,-0.85,0.85),"vertical":0.15,"retrieve":0.65,"drag":0.4,"power":false,"jerk":Vector2.ZERO,"pump":false,"vision":false,"label":"REEL / PRESSURE"}
-	var danger = float(seen.get("tension",0))/maxf(1,float(seen.get("break_threshold",93.5)))
+	var danger = float(seen.get("tension",0))/maxf(1,float(seen.get("break_threshold",FightForceUnits.BASE_BREAK)))
 	var condition = clampf(float(seen.get("condition",1)),0,1)
 	# Condition shifts the acute-risk margin, never vetoes the landing goal.
-	var acute = danger >= lerpf(0.84,0.92,condition) or float(seen.get("shock",0)) > 35
+	var acute = danger >= lerpf(0.84,0.92,condition) or float(seen.get("shock",0)) > 35*FightForceUnits.SCALE
 	var close_pressure = distance <= 30
 	result["acute_danger"] = acute
 	if acute: result.drag = maxf(0.25,float(seen.get("drag",0.4))-0.2)
