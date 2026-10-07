@@ -79,6 +79,8 @@ var fight_slack: bool = false
 @export var normal_power_reference: float = 100
 @export var force_capacity_exponent: float = 1.2
 @export var fresh_force_exponent: float = 1.6
+@export var fresh_force_bonus: float = 0.8
+@export var fresh_bonus_falloff: float = 4.0
 @export var sprint_drain: float = 18
 @export var dash_cost: float = 14
 @export var stamina_regen: float = 12
@@ -409,7 +411,10 @@ func fatigue_multiplier() -> float:
 
 func force_capacity() -> float:
 	var reserve = maxf(0,endurance)/maxf(1,normal_power_reference)
-	return pow(reserve,fresh_force_exponent if reserve > 1 else force_capacity_exponent)
+	# Additional base strength belongs to remaining MAX stamina, not current
+	# sprint fuel. Counters remove this bonus rapidly; regeneration cannot restore it.
+	var capacity_fraction = clampf(endurance/maxf(1,stamina_capacity),0,1)
+	return pow(reserve,fresh_force_exponent if reserve > 1 else force_capacity_exponent)+fresh_force_bonus*pow(capacity_fraction,fresh_bonus_falloff)
 
 func reserve_force_capacity() -> float:
 	# Endurance is strength even before building Drive; retain basic locomotion.

@@ -17,6 +17,10 @@ var cast_sent: bool = false
 var stroke_clock: float = 0
 var stroke_side: float = 1
 var run_committed: bool = false
+var closeout_escape: bool = false
+@export var closeout_enter_distance: float = 28
+@export var closeout_leave_distance: float = 38
+@export var emergency_sprint_distance: float = 16
 var run_stall_time: float = 0
 var run_budget: float = 0
 var run_spent_start: float = 0
@@ -94,11 +98,19 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 		if (side_hold > 0 or fish.motion.side_time > 0) and fish.motion.drive_lockout <= 0: action = FightDecisions.FishAction.RUN
 		aim = FightDecisions.heading_for(f,action)
 		var resting = action == FightDecisions.FishAction.REST
+		update_closeout(f.spool.distance)
+		if closeout_escape and not fish.airborne:
+			# Do not rest or attempt another jump inside the landing approach.
+			action = FightDecisions.FishAction.RUN
+			resting = false
+			aim = FightDecisions.heading_for(f,action)
+			tension_attack = false
+			if run_committed: committed_action = action
 		if fish.motion.swim_drive < 0.9: reserve_wait = -1
 		elif reserve_wait < 0: reserve_wait = execution_rng.randf_range(0.5,5.0)
 		else: reserve_wait = maxf(0,reserve_wait-delta)
-		var spend_reserve = reserve_wait == 0 or f.spool.line_rate < -0.8 or f.tension > f.spool.strength*0.65 or action in [FightDecisions.FishAction.DIVE,FightDecisions.FishAction.JUMP]
-		if not run_committed and not resting and spend_reserve and run_pause <= 0 and fish.motion.swim_drive >= 0.95 and (tension_attack_wait > 0 or not tension_opportunity(fish,f)):
+		var spend_reserve = closeout_escape or reserve_wait == 0 or f.spool.line_rate < -0.8 or f.tension > f.spool.strength*0.65 or action in [FightDecisions.FishAction.DIVE,FightDecisions.FishAction.JUMP]
+		if not run_committed and not resting and spend_reserve and run_pause <= 0 and fish.motion.swim_drive >= (0.3 if closeout_escape else 0.95) and fish.motion.drive_lockout <= 0 and fish.motion.counter_recovery <= 0 and (closeout_escape or tension_attack_wait > 0 or not tension_opportunity(fish,f)):
 			run_committed = true
 			run_stall_time = 0
 			committed_action = action
@@ -106,7 +118,7 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 			run_budget = minf(fish.motion.swim_drive,choose_run_budget(f.spool.distance < 12))
 			run_spent_start = fish.motion.drive_spent
 		# Use felt pressure and visible rod posture, never hidden line condition/dynamic break threshold.
-		if not run_committed and tension_attack_wait <= 0 and tension_opportunity(fish,f) and run_pause <= 0:
+		if not closeout_escape and not run_committed and tension_attack_wait <= 0 and tension_opportunity(fish,f) and run_pause <= 0:
 			tension_attack_wait = execution_rng.randf_range(4,7)
 			if execution_rng.randf() < lerpf(0.35,0.8,f.fish_skill):
 				tension_attack_aim = choose_tension_angle(fish,f)
@@ -123,9 +135,9 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 					run_budget = minf(fish.motion.swim_drive,execution_rng.randf_range(0.3,0.55))
 					if session.batch_runner != null: session.batch_runner.telemetry.event("AI_TENSION_ATTACK",f)
 		if tension_attack: aim = tension_attack_aim
-		var spending_drive = run_committed
+		var spending_drive = run_committed and fish.motion.swim_drive > 0.01 and fish.motion.drive_lockout <= 0 and fish.motion.counter_recovery <= 0
 		# Spend renewable reserve independently. Sprint for vertical maneuvers or an urgent run.
-		var sprint = energy > 0.4 and not resting and (action in [FightDecisions.FishAction.DIVE,FightDecisions.FishAction.JUMP] or (f.spool.distance < 20 and f.spool.line_rate < -0.3))
+		var sprint = (energy > 0.4 and not resting and action in [FightDecisions.FishAction.DIVE,FightDecisions.FishAction.JUMP]) or closeout_sprint(f.spool.distance,f.spool.line_rate,fish.stamina,spending_drive)
 		# Ordinary powered cadence spends Drive; major commitments escalate faster.
 		var cadence = fish.motion.ideal_stroke_interval
 		stroke_clock += delta
@@ -133,19 +145,19 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 		if not sprint and clock > next_lapse:
 			stroke_pause = lerpf(1.7,1.2,f.fish_skill)
 			next_lapse = clock+execution_rng.randf_range(7,12)*f.fish_skill
-		stroke_pause = 0 if sprint else maxf(0,stroke_pause-delta)
+		stroke_pause = 0 if sprint or closeout_escape else maxf(0,stroke_pause-delta)
 		shake_wait = maxf(0,shake_wait-delta)
 		shake_until = maxf(0,shake_until-delta)
 		if shake_wait <= 0 and (f.spool.slack > 0.8 or fish.airborne):
 			shake_wait = lerpf(3,1.4,f.fish_skill)
 			if execution_rng.randf() < 0.45+0.35*f.fish_skill: shake_until = 1.1
-		if shake_until > 0:
+		if shake_until > 0 and not closeout_escape:
 			aim = fish.heading.rotated(Vector3.UP,sin(clock*22)*deg_to_rad(9))
 		elif stroke_pause <= 0 and not resting:
 			aim = aim.rotated(Vector3.UP,stroke_side*deg_to_rad(24))
 		side_wait = maxf(0,side_wait-delta)
 		side_hold = maxf(0,side_hold-delta)
-		if action in [FightDecisions.FishAction.RUN,FightDecisions.FishAction.LEFT,FightDecisions.FishAction.RIGHT] and ((spending_drive and fish.motion.swim_drive >= fish.motion.side_burst_drive) or side_hold > 0 or fish.motion.side_time > 0) and not fish.airborne and not tension_attack:
+		if action in [FightDecisions.FishAction.RUN,FightDecisions.FishAction.LEFT,FightDecisions.FishAction.RIGHT] and ((spending_drive and fish.motion.swim_drive >= fish.motion.side_burst_drive) or side_hold > 0 or fish.motion.side_time > 0) and not fish.airborne and not tension_attack and not closeout_escape:
 			if spending_drive and side_wait <= 0 and fish.motion.side_wait <= 0:
 				var side = -1 if execution_rng.randf() < 0.5 else 1
 				side_aim = side_burst_aim(BaitMotion.horizontal(fish.position-f.fisher.position),side)
@@ -171,6 +183,7 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 		food.rng.seed = execution_rng.randi()
 		food_seeded = true
 	if fish_was_fighting:
+		closeout_escape = false
 		fish_was_fighting = false
 		tension_attack = false
 		tension_attack_wait = 0
@@ -182,6 +195,16 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 		food.set_lure_priority(session.ai_test_bait_priority)
 	food.hotspot = session.school.hotspot if session.school != null else null
 	return food.input(fish,session.baits.values(),session.world.arena_width*0.5,session.world.water_depth,delta)
+
+func update_closeout(distance: float) -> void:
+	# Hysteresis keeps escape intent stable while the fish fights for separation.
+	if distance < closeout_enter_distance: closeout_escape = true
+	elif distance > closeout_leave_distance: closeout_escape = false
+
+func closeout_sprint(distance: float, line_rate: float, stamina: float, using_drive: bool) -> bool:
+	# Renewable first; combine both when close enough to lose, or being hauled
+	# in quickly despite Overdrive. Never demand a 40% reserve before saving itself.
+	return closeout_escape and stamina > 1 and (distance < emergency_sprint_distance or line_rate < -1.0 or (not using_drive and line_rate < -0.2))
 
 func fisher_input(actor: FisherActor, delta: float) -> FisherIntent:
 	clock += delta

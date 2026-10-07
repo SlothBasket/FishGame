@@ -25,6 +25,8 @@ var reset_course: Vector3 = Vector3.FORWARD
 @export var attack_setup_distance: float = 12
 @export var maximum_prediction: float = 0.55
 @export var preferred_launch_distance: float = 7
+@export var pursuit_stroke_degrees: float = 24
+@export var minimum_attack_charge: float = 0.45
 
 func set_lure_priority(enabled: bool) -> void:
 	stop_hunting_drive()
@@ -46,10 +48,10 @@ func intercept_point(fish: FishPlayer, bait, remaining_charge: float = 0) -> Vec
 		travel = fish.position.distance_to(predicted)/maxf(1,fish.effective_dash_speed())
 	return predicted
 
-@export var hunting_drive_start: float = 0.70
-@export var hunting_drive_budget: float = 0.40
+@export var hunting_drive_start: float = 0.98
+@export var hunting_drive_budget: float = 0.25
 @export var hunting_drive_duration: float = 1.25
-@export var hunting_drive_cooldown: float = 2.5
+@export var hunting_drive_cooldown: float = 8.0
 var hunting_drive_time: float = 0
 var hunting_drive_wait: float = 0
 var hunting_drive_spent: float = 0
@@ -83,6 +85,11 @@ func choose(fish: FishPlayer, candidates: Array) -> BaitActor:
 		if interest < score: chosen = item; score = interest
 	return chosen
 func input(fish: FishPlayer, candidates: Array, half_width: float, depth: float, delta: float) -> FishInput:
+	# A released lunge owns its trajectory. Pursuit must not cancel it merely
+	# because the prey crosses beside/behind the fish partway through the sweep.
+	if fish.feeding.is_dashing():
+		stop_hunting_drive()
+		return FishInput.new(1,0,0,fish.feeding.dash_target,false,false)
 	hunting_drive_wait = maxf(0,hunting_drive_wait-delta)
 	lure_reset = maxf(0,lure_reset-delta)
 	attack_reset = maxf(0,attack_reset-delta)
@@ -125,7 +132,9 @@ func input(fish: FishPlayer, candidates: Array, half_width: float, depth: float,
 			if distance < maxf(4,radius*1.5) and fish.heading.dot(direct) < 0.15:
 				stop_hunting_drive()
 				attack_reset = rng.randf_range(1.0,1.6)
-				reset_course = fish.heading.rotated(Vector3.UP,deg_to_rad(20)*stroke_side)
+				# Open turning room before reacquiring; choose the side toward the prey.
+				var turn_side = signf(fish.heading.cross(direct).y)
+				reset_course = fish.heading.rotated(Vector3.UP,deg_to_rad(35)*turn_side)
 				state = State.APPROACH
 				var reset = FishInput.new(0.7,0,0,reset_course,false,false)
 				reset.cancel_bite = true
@@ -138,9 +147,10 @@ func input(fish: FishPlayer, candidates: Array, half_width: float, depth: float,
 			var alignment = fish.heading.dot(aim)
 			# Course-relative sway preserves pursuit/wall avoidance; never rotate the
 			# desired course around the current heading just to generate Drive.
-			if state == State.APPROACH and distance > 18:
-				aim = aim.rotated(Vector3.UP,deg_to_rad(12)*stroke_side)
-			var attack = FishInput.new(0.9 if state == State.APPROACH else 0.85,0,0,aim,false,false)
+			if state == State.APPROACH:
+				aim = aim.rotated(Vector3.UP,deg_to_rad(pursuit_stroke_degrees)*stroke_side)
+			# Leave time to align during charging instead of rushing past the prey.
+			var attack = FishInput.new(0.9 if state == State.APPROACH else 0.45,0,0,aim,false,false)
 			attack.overdrive = hunting_overdrive(fish,distance,alignment,delta)
 			if state == State.COMMIT:
 				commit_time += delta
@@ -154,7 +164,7 @@ func input(fish: FishPlayer, candidates: Array, half_width: float, depth: float,
 					var closing_speed = (fish.velocity-target.velocity).dot(direct)
 					var launch_distance = preferred_launch_distance+clampf(closing_speed*0.12,-1,1)+clampf(fish.size_multiplier()-1,0,2)
 					var in_launch_zone = distance <= launch_distance or fish.feeding.charge_fraction() >= 1
-					attack.bite_held = not (in_launch_zone and reach+fish.bite_radius*fish.size_multiplier() >= remaining_distance and alignment >= 0.88)
+					attack.bite_held = not (in_launch_zone and fish.feeding.charge_fraction() >= minimum_attack_charge and reach+fish.bite_radius*fish.size_multiplier() >= remaining_distance and launch_aligned(fish,predicted,target.hit_radius()))
 					if not attack.bite_held: state = State.APPROACH; last_prey_kind = target.kind
 				elif not fish.feeding.is_dashing() and fish.feeding.cooldown_remaining <= 0:
 					attack.bite_held = alignment > 0.65
@@ -191,9 +201,23 @@ func hunting_overdrive(fish: FishPlayer, distance: float, alignment: float, delt
 			stop_hunting_drive()
 		else: return true
 	# Bank passive Drive until there is both enough fuel and useful straight approach room.
-	if allowed and is_instance_valid(target) and hunting_drive_wait <= 0 and distance > 22 and alignment >= 0.85 and fish.motion.swim_drive >= hunting_drive_start:
+	# Passive full Drive is the default cruise. Spend only when prey is actually
+	# outrunning normal pursuit, with space left to settle before the attack.
+	var needs_chase = is_instance_valid(target) and target.velocity.dot((target.position-fish.position).normalized()) > fish.effective_swim_speed()*0.8
+	if allowed and needs_chase and hunting_drive_wait <= 0 and distance > 30 and alignment >= 0.95 and fish.motion.swim_drive >= hunting_drive_start:
 		hunting_drive_target = target
 		hunting_drive_spent = fish.motion.drive_spent
 		hunting_drive_time = hunting_drive_duration
 		return true
 	return false
+
+func launch_aligned(fish: FishPlayer, predicted: Vector3, prey_radius: float) -> bool:
+	var offset = predicted-fish.position
+	var along = offset.dot(fish.heading)
+	if along <= 0: return false
+	# Account for sideways momentum while the shared dash motor accelerates.
+	var lateral_velocity = fish.velocity-fish.heading*fish.velocity.dot(fish.heading)
+	var settle_time = minf(0.3,lateral_velocity.length()/maxf(1,fish.lunge_acceleration))
+	var miss = offset-fish.heading*along-lateral_velocity*settle_time*0.5
+	var tolerance = (fish.bite_radius*fish.size_multiplier()+prey_radius)*0.7
+	return miss.length() <= tolerance

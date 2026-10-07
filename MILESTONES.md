@@ -124,3 +124,5 @@ Milestone subject: `Strengthen Drive reserve and fix feeding pursuit safety` - h
 - **Correct mouth line and rebase fight force risk** - Tiny mirrored corner attachment/single line ownership; centralized 2x force units with unchanged acceleration, size/Drive/pulse loads, preloaded-shock and warning break risk, deliberate AI tension attacks, no headshake hook hazard and buffered catch-up slack. Focused checks, tiny preview and one 30s fight.
 
 - **Commit hunting Overdrive to useful approaches** - Replace 20% threshold chatter with 70% reserve start, aligned distant prey, bounded spending and cooldown; fight behavior unchanged.
+
+- **Preserve pursuit Drive and strengthen fresh Fish closeout escapes**: stop AI mid-dash cancellation; bank cruise Drive; tighten feeding alignment; add a steeply fading maximum-stamina force bonus and renewable-first emergency escape near the boat. Import and focused component checks passed; no batch or recording.

@@ -58,7 +58,7 @@ func verify() -> void:
 	fish.motion.swim_drive = 0
 	fish.motion.propulsion = 1
 	var small = fight.propulsion_force(1,3.2)
-	check(is_equal_approx(small/(line.max_drag_force*0.4),38.4/44),"Actual baseline Fish normalized relationship")
+	check(is_equal_approx(small/(line.max_drag_force*0.4),(38.4/44)*fish.force_capacity()),"Baseline load includes remaining maximum-stamina strength")
 	fish.feeding.food = 100000
 	var large = fight.propulsion_force(1,3.2*1.35)
 	check(is_equal_approx(large/small,1.45),"Largest Fish 1.45x sustained load")
