@@ -4,7 +4,7 @@ extends RefCounted
 static func install() -> void:
 	var keys = {"forward":KEY_W,"back":KEY_S,"left":KEY_A,"right":KEY_D,
 		"rise":KEY_SPACE,"dive":KEY_CTRL,"boost":KEY_SHIFT,"reset":KEY_R,
-		"test_release":KEY_P,"cast":KEY_G,"bait_mode":KEY_TAB,"bait_camera":KEY_C,"bait_reset":KEY_F,"bait_species":KEY_X}
+		"bait_color":KEY_Z,"test_release":KEY_P,"cast":KEY_G,"bait_mode":KEY_TAB,"bait_camera":KEY_C,"bait_reset":KEY_F,"bait_species":KEY_X}
 	for action in keys:
 		var event = InputEventKey.new()
 		event.physical_keycode = keys[action]
@@ -21,7 +21,7 @@ static func install() -> void:
 		"left":[JOY_AXIS_LEFT_X,-1],"right":[JOY_AXIS_LEFT_X,1],
 		"look_left":[JOY_AXIS_RIGHT_X,-1],"look_right":[JOY_AXIS_RIGHT_X,1],
 		"look_up":[JOY_AXIS_RIGHT_Y,-1],"look_down":[JOY_AXIS_RIGHT_Y,1],
-		"retrieve_trigger":[JOY_AXIS_TRIGGER_RIGHT,1]}
+		"bait_color":[JOY_AXIS_TRIGGER_LEFT,1],"retrieve_trigger":[JOY_AXIS_TRIGGER_RIGHT,1]}
 	for action in axes:
 		var event = InputEventJoypadMotion.new()
 		event.axis = axes[action][0]

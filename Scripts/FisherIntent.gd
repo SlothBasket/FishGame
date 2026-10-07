@@ -10,6 +10,7 @@ var rod_horizontal: float = 0
 var rod_vertical: float = 0
 var drag: float = 0.4
 var tier: int = 12
+var color_tag: int = BaitColors.Tag.SILVER
 var species: int = 0
 var cast_serial: int = 0
 var escape: bool = false
@@ -20,17 +21,18 @@ var jerk: bool = false
 var vision: bool = false
 
 func numbers() -> PackedFloat32Array:
-	return PackedFloat32Array([move_forward,move_side,aim.x,aim.y,aim.z,retrieve,steering,rod_horizontal,rod_vertical,drag,tier,species,cast_serial])
+	return PackedFloat32Array([move_forward,move_side,aim.x,aim.y,aim.z,retrieve,steering,rod_horizontal,rod_vertical,drag,tier,species,cast_serial,color_tag])
 
 func flags() -> int:
 	return int(escape)|int(rise)<<1|int(descend)<<2|int(power)<<3|int(jerk)<<4|int(vision)<<5
 
 static func decode(values: PackedFloat32Array, bits: int) -> FisherIntent:
-	if values.size() != 13 or bits < 0 or bits > 63: return null
+	if values.size() != 14 or bits < 0 or bits > 63: return null
 	for value in values:
 		if not is_finite(value): return null
 	if values[10] < 0 or values[10] > ReelSpeed.STEPS or values[11] < 0 or values[11] > 4 or values[12] < 0 or values[12] > 1000000: return null
-	for i in [10,11,12]:
+	if values[13] < 0 or values[13] > 6: return null
+	for i in [10,11,12,13]:
 		if values[i] != floorf(values[i]): return null
 	var result = FisherIntent.new()
 	result.move_forward = clampf(values[0],-1,1)
@@ -45,6 +47,7 @@ static func decode(values: PackedFloat32Array, bits: int) -> FisherIntent:
 	result.steering = clampf(values[6],-1,1)
 	result.tier = roundi(values[10])
 	result.species = roundi(values[11])
+	result.color_tag = roundi(values[13])
 	result.cast_serial = roundi(values[12])
 	result.escape = bits & 1 != 0
 	result.rise = bits & 2 != 0

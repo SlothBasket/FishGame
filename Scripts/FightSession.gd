@@ -245,16 +245,14 @@ func _physics_process(delta: float) -> void:
 	var effort = maxf(0,fish.command.throttle)
 	# Heading projects propulsion onto the line: sideways swimming keeps its speed,
 	# but supplies little outward pull and exposes the flank to counter pressure.
-	var contest = FightContest.evaluate(fish.heading,outward,right,rod_horizontal,rod_vertical)
-	var alignment = contest.x
+	var alignment = maxf(0,fish.heading.dot(outward))
 	var drive = propulsion_force(alignment,mass)
-	var counter = contest.y
-	var vertical_counter = contest.z
-	var broadside = 1-absf(fish.heading.dot(outward))
-	var leverage = counter*(0.35+0.65*broadside)+vertical_counter*0.7
+	var course = fish.velocity if fish.velocity.length_squared() > 0.25 else fish.heading
+	var vertical_weight = 0.0 if fish.airborne or fish.motion.ascent_power > 0.1 or fish.motion.falling or spool.slack > slack_tolerance else 1.0
+	var leverage = FightContest.held_leverage(course,outward,right,rod_horizontal,rod_vertical,vertical_weight)
 	var turn_rate = fish.heading.angle_to(_previous_heading)/maxf(0.001,delta)
 	var connected_line = clampf(1-spool.slack/slack_tolerance,0,1)
-	var struggle = resistance_load(fish.motion.propulsion,effort,leverage,mass,turn_rate,connected_line)
+	var struggle = resistance_load(fish.motion.propulsion,effort,0,mass,turn_rate,connected_line)
 	directional_load = struggle.x
 	turn_shock = maxf(turn_shock*exp(-delta/maxf(0.01,turn_shock_decay_time)),struggle.y)
 	var movement_load = drive+directional_load+fish.motion.dive_power*35
@@ -262,27 +260,27 @@ func _physics_process(delta: float) -> void:
 	var diving = fish.motion.diving
 	best_counter = FightContest.best_counter(fish.heading,right,diving,fish.motion.dive_power >= fish.motion.dive_counter_window)
 	fish.fight_anchor = fisher.position
-	var resistance = leverage*effort
+	fish.fight_rod_tip = rod_tip
+	var resistance = 0.0 # Held pressure acts through physical line tension, not an extra debuff.
 	if gesture_direction != RodGesture.Direction.NONE:
 		apply_directional_jerk(gesture_direction,outward,right,connected_line)
 		# Counter changes physical velocity/effort before this tick's spool accounting.
 		radial_speed = fish.velocity.dot(outward)
 		movement_load = propulsion_force(alignment,mass)+directional_load+fish.motion.dive_power*35
 	var condition_before = spool.condition
-	spool.step(delta,fish.position.distance_to(neutral_tip),radial_speed,movement_load,(0.0 if power_recovery > 0 else input.retrieve),fisher.drag_setting,power_active,spike+turn_shock+fall_load(),rod_pull,rod_vertical)
+	spool.step(delta,fish.position.distance_to(neutral_tip),radial_speed,movement_load,(0.0 if power_recovery > 0 else input.retrieve),fisher.drag_setting,power_active,spike+turn_shock+fall_load(),maxf(0,rod_vertical),rod_vertical,leverage)
 	if check_spooled(): return
 	tension = spool.tension
+	fish.fight_tension_ratio = tension/maxf(1,spool.break_threshold())
 	condition = spool.condition
 	var contact = clampf(1-spool.slack/slack_tolerance,0,1)
 	var pressure = clampf(tension/spool.strength,0,1.5)*contact
-	# Counter pressure adds physical acceleration; it never rewrites heading or aim.
-	var lateral = (right*rod_horizontal*counter+Vector3.UP*rod_vertical*vertical_counter*0.7)*lateral_force*(0.35+0.65*broadside)*pressure
-	fish.line_force = -outward*minf(tension,critical_load*2)/mass+lateral
+	# Held leverage affects transmitted tension only; jerks keep their discrete impulses.
+	fish.line_force = -outward*minf(tension,critical_load*2)/mass
 	var yielding = maxf(0,-fish.heading.dot(outward))*effort
 	fish.line_force += -outward*yielding*yield_bonus*contact
-	# Publish the actual lateral acceleration after the same force cap as the body.
-	var force_scale = controlled_force(fish.line_force).length()/maxf(0.001,Vector3(fish.line_force.x,clampf(fish.line_force.y*vertical_pull_fraction,-maximum_vertical_acceleration,maximum_vertical_acceleration),fish.line_force.z).length())
-	fish.directional_pressure = lateral.dot(right)*force_scale/lateral_force
+	# Local camera cue reflects the held rod, without adding a second lateral force.
+	fish.directional_pressure = rod_horizontal*maxf(0,leverage)*pressure
 	var signed_pressure = fish.directional_pressure
 	if previous_pressure*signed_pressure < -0.02: reversal_bank = 0.2
 	reversal_bank = maxf(0,reversal_bank-delta)
@@ -290,7 +288,7 @@ func _physics_process(delta: float) -> void:
 	var bank = pow(clampf((absf(signed_pressure)-pressure_dead_zone)/0.35,0,1),0.7)
 	fish.fight_roll = lerpf(fish.fight_roll,-signf(signed_pressure)*deg_to_rad(pressure_bank_degrees)*bank*(1+reversal_bank),1-exp(-delta*7))
 	# Additional wear only for built, powered resistance above ordinary wear onset.
-	var wear = directional_wear_rate(fish.motion.swim_drive,fish.motion.run_build,fish.motion.propulsion,leverage,pressure)
+	var wear = directional_wear_rate(fish.motion.swim_drive,fish.motion.run_build,fish.motion.propulsion,0,pressure)
 	spool.condition = maxf(0.02,spool.condition-wear*delta)
 	var exertion = alignment*effort
 	fish.line_force = controlled_force(fish.line_force)
@@ -405,7 +403,7 @@ func sync_pre_hook_line() -> void:
 	# Unset hook: follow the free-moving fish without running drag, wear or hazard.
 	# Include rod take-up so the first working step cannot manufacture extension.
 	spool.distance = fish.position.distance_to(neutral_tip)
-	spool.rod_take_up = spool.maximum_rod_take_up*rod_pull
+	spool.rod_take_up = spool.maximum_rod_take_up*maxf(0,rod_vertical)
 	spool.line_out = spool.distance+spool.rod_take_up
 	spool.slack = 0
 
@@ -417,6 +415,7 @@ func after_fish_move(delta: float) -> void:
 	spool.sync_distance(fish.position.distance_to(neutral_tip),delta)
 	recovery_total += spool.actual_recovery*delta
 	tension = spool.tension
+	fish.fight_tension_ratio = tension/maxf(1,spool.break_threshold())
 	if check_spooled(): return
 	if phase == Phase.FIGHT and landing_ready():
 		landing_time += delta

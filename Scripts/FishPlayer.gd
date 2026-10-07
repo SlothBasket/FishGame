@@ -56,6 +56,8 @@ var mouse_stroke_axis: float = 0
 var mouse_stroke_distance: float = 0
 var fight_best_move: int = 0
 var fight_anchor: Vector3
+var fight_rod_tip: Vector3
+var fight_tension_ratio: float = 0
 var fight_roll: float = 0
 var damaging_line: bool = false
 var fight_active: bool = false
@@ -125,6 +127,11 @@ var _body_radius: float
 @onready var camera: Camera3D = $CameraPivot/SpringArm3D/Camera3D
 
 func _ready() -> void:
+	add_to_group("fish_line_subjects")
+	if locally_owned and not FightBatch.requested():
+		var intel = ColorIntel.new()
+		intel.fish = self
+		add_child(intel)
 	_spawn = position
 	collision_mask &= ~8
 	wall_min_slide_angle = 0.0
@@ -162,7 +169,7 @@ func _ready() -> void:
 	maneuver_burst.initial_velocity_max = 5
 	add_child(maneuver_burst)
 	feeding = FishFeeding.new(self)
-	if locally_owned and not FightBatch.requested():
+	if not FightBatch.requested():
 		var references = FishFightReferences.new()
 		references.fish = self
 		add_child(references)

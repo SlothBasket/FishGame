@@ -2,6 +2,7 @@ class_name BaitVisual
 extends Node3D
 ## Only species, speed and twitch affect presentation; bait source is never inspected.
 
+var color_tag: int = BaitColors.Tag.SILVER
 var kind: BaitMotion.Kind = BaitMotion.Kind.MINNOW
 var bird_pose: int = 0 # 0 flight, 1 tucked dive, 2 floating, 3 underwater paddle
 var alive: bool = true
@@ -18,8 +19,8 @@ func _ready() -> void:
 	add_child(_body)
 	var dark = Geometry.bait_material("112e3b")
 	if kind in [BaitMotion.Kind.MINNOW, BaitMotion.Kind.MULLET]:
-		var silver = Geometry.bait_material("ccdfd3", 0.45)
-		var blue = Geometry.bait_material("537f9a" if kind == BaitMotion.Kind.MINNOW else "728967", 0.3)
+		var silver = BaitColors.material(color_tag,true)
+		var blue = BaitColors.material(color_tag)
 		Geometry.sphere(_body, "SilverBody", Vector3.ZERO, Vector3(0.16, 0.22, 0.55), silver)
 		Geometry.sphere(_body, "BlueBack", Vector3(0, 0.1, 0.03), Vector3(0.14, 0.14, 0.45), blue)
 		var tail = Node3D.new()
@@ -30,8 +31,8 @@ func _ready() -> void:
 		Geometry.triangle(_body, Vector3(0, 0.13, -0.1), Vector3(0, 0.4, 0.18), Vector3(0, 0.13, 0.32), blue)
 		_eyes(dark, 0.13, 0.06, -0.36, 0.055)
 	elif kind == BaitMotion.Kind.SHRIMP:
-		var shell = Geometry.bait_material("e8a788", 0.15)
-		var light = Geometry.bait_material("f3d4ae")
+		var shell = BaitColors.material(color_tag)
+		var light = BaitColors.material(color_tag,true)
 		for i in range(5):
 			Geometry.sphere(_body, "ShellSegment", Vector3(0, sin(i * 0.65) * 0.11, (i - 2) * 0.15),
 				Vector3(0.16 - i * 0.014, 0.15 - i * 0.012, 0.14), shell)
@@ -46,8 +47,8 @@ func _ready() -> void:
 		Geometry.triangle(_body, Vector3(0, 0.04, 0.3), Vector3(-0.25, 0, 0.58), Vector3(0.25, 0, 0.58), shell)
 		_eyes(dark, 0.12, 0.1, -0.35, 0.055)
 	elif kind == BaitMotion.Kind.SQUID:
-		var mantle = Geometry.bait_material("d3a8d7", 0.2)
-		var fins = Geometry.bait_material("ae81bd")
+		var mantle = BaitColors.material(color_tag)
+		var fins = BaitColors.material(color_tag,true)
 		Geometry.sphere(_body, "Mantle", Vector3(0, 0, -0.2), Vector3(0.29, 0.3, 0.6), mantle)
 		for side in [-1, 1]:
 			Geometry.triangle(_body, Vector3(0, 0, -0.7), Vector3(side * 0.56, 0, -0.15), Vector3(0, 0, 0.2), fins)
@@ -60,7 +61,7 @@ func _ready() -> void:
 			_appendages.append(arm)
 			Geometry.sphere(arm, "Tentacle", Vector3(0, 0, 0.33), Vector3(0.045, 0.045, 0.5 if i % 2 == 0 else 0.36), mantle)
 	elif kind == BaitMotion.Kind.CRAB:
-		var shell = Geometry.bait_material("b65f45", 0.2)
+		var shell = BaitColors.material(color_tag)
 		Geometry.sphere(_body, "Shell", Vector3.ZERO, Vector3(0.46, 0.18, 0.36), shell)
 		_eyes(dark, 0.20, 0.16, -0.16, 0.055)
 		for side in [-1, 1]:
@@ -88,9 +89,9 @@ func _ready() -> void:
 			Geometry.triangle(wing, Vector3(0, 0.1, -0.25), Vector3(side * 1.2, 0, 0.25), Vector3(0, 0.1, 0.35), white)
 			Geometry.triangle(wing, Vector3(side * 0.9, 0, 0.1), Vector3(side * 1.5, 0, 0.42), Vector3(side * 1.1, 0, 0.3), tips)
 
-	BaitMeshCache.combine(_body,str(kind)+":body")
+	BaitMeshCache.combine(_body,str(kind)+":"+str(color_tag)+":body")
 	for i in range(_appendages.size()):
-		BaitMeshCache.combine(_appendages[i],str(kind)+":"+str(i))
+		BaitMeshCache.combine(_appendages[i],str(kind)+":"+str(color_tag)+":"+str(i))
 
 func _eyes(mat: Material, x: float, y: float, z: float, radius: float) -> void:
 	for side in [-1, 1]:
@@ -132,3 +133,12 @@ func _process(delta: float) -> void:
 				_appendages[i].rotation.y = wave * 0.12
 	_body.scale = Vector3(1 - twitch * 0.16, 1 - twitch * 0.16, 1 + twitch * 0.12) if kind == BaitMotion.Kind.SQUID else Vector3.ONE
 	_body.rotation = Vector3(0, sin(_phase * 1.4) * twitch * 0.22, 0) if kind == BaitMotion.Kind.MINNOW else Vector3.ZERO
+
+func set_color(tag: int) -> void:
+	if kind == BaitMotion.Kind.GULL or color_tag == tag: return
+	color_tag = tag
+	if not is_node_ready(): return
+	remove_child(_body)
+	_body.queue_free()
+	_appendages.clear()
+	_ready() # Reuses bounded species/color mesh caches; never mutates a shared material.

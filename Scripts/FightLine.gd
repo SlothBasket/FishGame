@@ -5,7 +5,6 @@ const DEFAULT_CAPACITY: float = 150
 @export var maximum_extension: float = 2.5
 @export var maximum_line_out: float = DEFAULT_CAPACITY
 @export var maximum_rod_take_up: float = 2.0
-@export var maximum_rod_buffer: float = 15.0
 @export var strength: float = 110
 @export var elasticity: float = 22
 @export var maximum_retrieve: float = 4.5
@@ -55,23 +54,24 @@ var slipping: bool = false
 var shock: float = 0
 var condition: float = 1
 var rod_take_up: float = 0
-@export var low_rod_multiplier: float = 0.65
-@export var high_rod_multiplier: float = 1.3
+@export var held_leverage_strength: float = 0.18
 var pressure_multiplier: float = 1
 var holding_threshold: float = 0
 var _previous_load: float = 0
 
-func step(delta: float, required_distance: float, outward_speed: float, movement_load: float, retrieve: float, drag: float, power: bool, transient_load: float = 0, rod_pull: float = 0, rod_elevation: float = 0) -> void:
+func step(delta: float, required_distance: float, outward_speed: float, movement_load: float, retrieve: float, drag: float, power: bool, transient_load: float = 0, rod_pull: float = 0, _rod_elevation: float = 0, held_leverage: float = 0) -> void:
 	distance = maxf(0,required_distance)
 	_step_distance = distance
 	_step_line = line_out
 	drag_threshold = max_drag_force*clampf(drag,0,1)
-	outward_capacity = base_outward_capacity+capacity_per_released_drag*(max_drag_force-drag_threshold)
+
+	rod_take_up = maximum_rod_take_up*clampf(rod_pull,0,1)
+	pressure_multiplier = 1+held_leverage_strength*clampf(held_leverage,-1,1)
+	# Rod take-up retains geometry; held direction has only this one force multiplier.
+	holding_threshold = drag_threshold*pressure_multiplier
+	outward_capacity = base_outward_capacity+capacity_per_released_drag*(max_drag_force-holding_threshold)
 	payout_speed_limit = minf(maximum_payout,outward_capacity/maxf(0.01,force_per_payout_speed))
 	_payout_allowance = payout_speed_limit*delta
-	rod_take_up = maximum_rod_take_up*clampf(rod_pull,0,1)
-	pressure_multiplier = lerpf(1,high_rod_multiplier,maxf(0,rod_elevation)) if rod_elevation >= 0 else lerpf(1,low_rod_multiplier,-rod_elevation)
-	holding_threshold = (drag_threshold+maximum_rod_buffer*clampf(rod_pull,0,1))*pressure_multiplier
 	var loaded_distance = distance+rod_take_up
 	slack = maxf(0,line_out-loaded_distance)
 	fish_load = maxf(0,movement_load)
@@ -93,18 +93,18 @@ func step(delta: float, required_distance: float, outward_speed: float, movement
 	var contact = clampf(1-maxf(0,line_out-loaded_distance)/contact_tolerance,0,1)
 	# Drag opposes load. It is not added to the Fish's whole force a second time.
 	requested_load = maxf(fish_load,extension*elasticity)+maxf(0,transient_load)
-	var excess = maxf(0,requested_load-drag_threshold-outward_capacity)
-	var transmitted = minf(requested_load,drag_threshold)+excess
+	var excess = maxf(0,requested_load-holding_threshold-outward_capacity)
+	var transmitted = minf(requested_load,holding_threshold)+excess
 	# Moving a taut line outward must meet spool drag even when the smoothed
 	# propulsion estimate lags the motor. Otherwise small force bonuses run away.
 	if outward_speed > 0 and contact > 0:
-		transmitted = maxf(transmitted,drag_threshold)
+		transmitted = maxf(transmitted,holding_threshold)
 	# Stretch beyond the safety allowance is genuine unaccommodated separation.
 	transmitted = maxf(transmitted,maxf(0,extension-maximum_extension)*elasticity)
 	tension = transmitted*contact
 	shock = maxf(0,tension-_previous_load)
 	_previous_load = tension
-	slipping = fish_load > drag_threshold and contact > 0
+	slipping = fish_load > holding_threshold and contact > 0
 	slack = maxf(0,line_out-loaded_distance)
 	var stress = maxf(0,tension/strength-wear_start)
 	var wear = load_wear*stress*stress

@@ -84,6 +84,8 @@ func cast() -> void:
 	outcome = 0
 	lure = BaitActor.new()
 	lure.kind = kind
+	lure.base_color_tag = command.color_tag
+	lure.color_rules = session.world.color_rules
 	lure.source = BaitMotion.Source.FISHERMAN
 	lure.fisher_owner = self
 	lure.randomize_size(rng)

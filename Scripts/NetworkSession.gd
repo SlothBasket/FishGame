@@ -38,7 +38,7 @@ var outcome_banner: FightOutcomeBanner
 var smoke_fish_driver = FightTestDriver.new()
 var fight_smoke: bool = false
 var smoke_stage: int = 0
-const BAIT_STRIDE = 17
+const BAIT_STRIDE = 21
 @export var input_hz: float = 30.0
 @export var fish_snapshot_hz: float = 20.0
 @export var bait_snapshot_hz: float = 10.0
@@ -167,6 +167,8 @@ func start(level: Node3D, fish: FishPlayer, args: PackedStringArray) -> void:
 		return
 	multiplayer.multiplayer_peer = transport
 	if hosting:
+		world.color_rules.configure(encounter_seed)
+		world.color_rules.changed.connect(func(): call_deferred("broadcast_color_rules"))
 		connected = true
 		if not spectator_mode: add_server_player(1,requested_role)
 		school = BaitSchool.new()
@@ -295,6 +297,7 @@ func request_role(role: int) -> void:
 		player_event.rpc_id(sender,true,id,players[id].role,players[id].entity.position)
 	player_event.rpc(true,sender,role,players[sender].entity.position)
 	for id in baits: send_bait_event(sender,0,id)
+	if role == ROLE_FISH: color_rule_state.rpc_id(sender,world.color_rules.state())
 	show_status("Hosting | %d players" % players.size())
 
 func peer_left(peer: int) -> void:
@@ -523,11 +526,11 @@ func fish_state(actor: FishPlayer) -> PackedFloat32Array:
 	var h = actor.heading
 	var v = actor.velocity
 	var f = actor.feeding
-	return PackedFloat32Array([p.x,p.y,p.z,h.x,h.y,h.z,v.x,v.y,v.z,f.food,f.bait_eaten,f._charge_time,f._dash_remaining,int(actor.airborne),int(actor.boosting),f.cooldown_remaining,f.bite_flash,f.grace_remaining,actor.stamina,actor.line_force.x,actor.line_force.y,actor.line_force.z,actor.endurance,int(actor.fight_active),actor.fight_pressure,actor.fight_gain,actor.fight_leverage,actor.fight_counter,int(actor.fight_slack),actor.motion.swim_drive,actor.motion.overdrive,actor.motion.run_build,actor.motion.dive_power,int(actor.motion.diving),actor.fight_best_move,actor.fight_anchor.x,actor.fight_anchor.y,actor.fight_anchor.z,actor.fight_roll,actor.motion.cadence_grade,int(actor.damaging_line),actor.directional_pressure,actor.head.offset.x,actor.head.offset.y,actor.head.impact_time,actor.motion.ascent_power,actor.head.shake_pressure,actor.motion.drive_lockout,actor.motion.drive_burst_time,actor.motion.side_time,actor.motion.side_sign])
+	return PackedFloat32Array([p.x,p.y,p.z,h.x,h.y,h.z,v.x,v.y,v.z,f.food,f.bait_eaten,f._charge_time,f._dash_remaining,int(actor.airborne),int(actor.boosting),f.cooldown_remaining,f.bite_flash,f.grace_remaining,actor.stamina,actor.line_force.x,actor.line_force.y,actor.line_force.z,actor.endurance,int(actor.fight_active),actor.fight_pressure,actor.fight_gain,actor.fight_leverage,actor.fight_counter,int(actor.fight_slack),actor.motion.swim_drive,actor.motion.overdrive,actor.motion.run_build,actor.motion.dive_power,int(actor.motion.diving),actor.fight_best_move,actor.fight_anchor.x,actor.fight_anchor.y,actor.fight_anchor.z,actor.fight_roll,actor.motion.cadence_grade,int(actor.damaging_line),actor.directional_pressure,actor.head.offset.x,actor.head.offset.y,actor.head.impact_time,actor.motion.ascent_power,actor.head.shake_pressure,actor.motion.drive_lockout,actor.motion.drive_burst_time,actor.motion.side_time,actor.motion.side_sign,actor.fight_rod_tip.x,actor.fight_rod_tip.y,actor.fight_rod_tip.z,actor.fight_tension_ratio])
 
 @rpc("authority","call_remote","unreliable_ordered",2)
 func fish_snapshot(peer: int, state: PackedFloat32Array) -> void:
-	if hosting or closed or not players.has(peer) or state.size() != 51: return
+	if hosting or closed or not players.has(peer) or state.size() != 55: return
 	var actor: FishPlayer = players[peer].entity
 	track("f%d" % peer,actor,Vector3(state[0],state[1],state[2]),FishInput.angles(Vector3(state[3],state[4],state[5])),1.0/fish_snapshot_hz,state[38])
 	actor.heading = Vector3(state[3],state[4],state[5])
@@ -565,6 +568,8 @@ func fish_snapshot(peer: int, state: PackedFloat32Array) -> void:
 	actor.motion.diving = state[33] > 0
 	actor.fight_best_move = roundi(state[34])
 	actor.fight_anchor = Vector3(state[35],state[36],state[37])
+	actor.fight_rod_tip = Vector3(state[51],state[52],state[53])
+	actor.fight_tension_ratio = state[54]
 	actor.fight_roll = state[38]
 	actor.directional_pressure = state[41]
 	actor.head.offset = Vector2(state[42],state[43])
@@ -595,7 +600,7 @@ func bait_state(id: int, actor: BaitActor) -> PackedFloat32Array:
 	var r = actor.visual.rotation
 	var v = actor.velocity
 	if actor.lifecycle == BaitActor.Lifecycle.DEAD_SETTLED: r.z = PI
-	return PackedFloat32Array([id,p.x,p.y,p.z,r.x,r.y,r.z,v.x,v.y,v.z,actor.visual.scale.x,actor.visual.speed,actor.visual.twitch,actor.visual.bird_pose,int(actor.visual.bird_powered),actor.visual.action,clock])
+	return PackedFloat32Array([id,p.x,p.y,p.z,r.x,r.y,r.z,v.x,v.y,v.z,actor.visual.scale.x,actor.visual.speed,actor.visual.twitch,actor.visual.bird_pose,int(actor.visual.bird_powered),actor.visual.action,clock,actor.base_color_tag,actor.color_tag,actor.color_speed,int(actor.natural_color)])
 
 func send_bait_event(peer: int, operation: int, id: int) -> void:
 	if batch_runner != null: return
@@ -620,13 +625,15 @@ func bait_event(operation: int, id: int, kind: int, size: float, state: PackedFl
 		actor.kind = kind
 		actor.body_size = size
 		actor.network_replica = true
+		actor.base_color_tag = roundi(state[17])
+		actor.color_tag = roundi(state[18])
 		actor.position = Vector3(state[1],state[2],state[3])
 		world.add_child(actor)
 		baits[id] = actor
 	if not baits.has(id): return
 	var actor: BaitActor = baits[id]
-	if state[18] > 0: add_test_marker(actor)
-	actor.lifecycle = roundi(state[17])
+	if state[BAIT_STRIDE+1] > 0: add_test_marker(actor)
+	actor.lifecycle = roundi(state[BAIT_STRIDE])
 	actor.claimed = actor.lifecycle == BaitActor.Lifecycle.CLAIMED
 	actor.visual.alive = actor.lifecycle == BaitActor.Lifecycle.ALIVE
 	if actor.claimed:
@@ -669,6 +676,11 @@ func apply_bait_state(state: PackedFloat32Array) -> void:
 	actor.visual.bird_pose = roundi(state[13])
 	actor.visual.bird_powered = state[14] > 0
 	actor.visual.action = roundi(state[15])
+	actor.base_color_tag = roundi(state[17])
+	actor.color_tag = roundi(state[18])
+	actor.color_speed = state[19]
+	actor.natural_color = state[20] > 0
+	actor.visual.set_color(actor.color_tag)
 
 func track(key: String, actor: Node3D, destination: Vector3, angles: Vector2, duration: float, roll: float = 0) -> void:
 	tracks[key] = {"actor":actor,"from":actor.position,"to":destination,"rotation":actor.visual.rotation,"target_rotation":Vector3(angles.x,angles.y,roll),"time":0.0,"duration":duration}
@@ -951,3 +963,14 @@ func present_fight_notice(fish_id: int, fisher_id: int, fish_text: String, fishe
 	var owned = 1 if hosting else multiplayer.get_unique_id()
 	if outcome_banner != null and (spectator_mode or owned == fish_id or owned == fisher_id):
 		outcome_banner.show_notice(fish_text if owned == fish_id and not spectator_mode else fisher_text)
+
+func broadcast_color_rules() -> void:
+	if not hosting: return
+	# One reliable refresh includes settled carcasses without resuming their transform stream.
+	for id in baits: send_bait_event(0,1,id)
+	for peer in players:
+		if peer > 1 and players[peer].role == ROLE_FISH: color_rule_state.rpc_id(peer,world.color_rules.state())
+@rpc("authority","call_remote","reliable",0)
+func color_rule_state(data: Dictionary) -> void:
+	if hosting or closed or requested_role != ROLE_FISH: return
+	world.color_rules.apply_state(data)

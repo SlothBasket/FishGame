@@ -22,7 +22,13 @@ var _feeding_preview: bool = false
 var _charge_preview: bool = false
 var _lure_test: LureTestController
 
+var color_rules = RoundColorRules.new()
+
 func _ready() -> void:
+	var color_seed = -1
+	for arg in JoinClient.arguments():
+		if arg.begins_with("--seed="): color_seed = arg.get_slice("=",1).to_int()
+	color_rules.configure(color_seed)
 	_fish = $FishPlayer
 	_fish.water_height = water_depth
 	var args = JoinClient.arguments()

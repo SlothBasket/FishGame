@@ -17,6 +17,8 @@ var readings: Label
 var session
 var data = PackedFloat32Array()
 var reel = ReelSpeed.new()
+var color_button_held: bool = false
+var color_tag: int = BaitColors.Tag.SILVER
 var species: int = 0
 var cast_serial: int = 0
 var yaw: float = 0.87
@@ -137,6 +139,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		apply_look(event.relative*rod_mouse_response)
 	if event.is_echo(): return
 	if event.is_action_pressed("cast"): cast_serial = mini(1000000,cast_serial+1)
+	if event.is_action_released("bait_color"): color_button_held = false
+	if event.is_action_pressed("bait_color") and not color_button_held:
+		color_button_held = true
+		color_tag = (color_tag+1)%7
 	if event.is_action_pressed("bait_species"): species = (species+1)%5
 	if event.is_action_pressed("reel_up"): reel.step(1)
 	if event.is_action_pressed("reel_down"): reel.step(-1)
@@ -150,6 +156,7 @@ func sample() -> FisherIntent:
 	var intent = FisherIntent.new()
 	intent.tier = reel.selected_tier
 	intent.species = species
+	intent.color_tag = color_tag
 	intent.cast_serial = cast_serial
 	intent.aim = FishInput.from_angles(pitch,yaw)
 	intent.rod_horizontal = rod_horizontal
@@ -219,7 +226,10 @@ func _process(delta: float) -> void:
 	equipment.update_view(delta,camera,hand,rod,tip,Vector3(data[21],data[22],data[23]) if fighting else focus,hooked,data[31],data[35],data[36],retrieving,fighting or roundi(data[4]) == FisherActor.State.BAIT,true,data[64],data[66],phase if fighting else -1)
 	rod_mesh.visible = not underwater or fighting
 	var phase_name = ["BAIT TAKEN — hold Q / RB when ready","HOOK: release near 75%","HOOK IMPACT","OPENING RUN — Power locked","FIGHT"][clampi(phase,0,4)] if fighting else BaitMotion.Kind.keys()[roundi(data[5])]
-	label.text = "FISHER — %s\nG cast/setup | X species | W/RT retrieve | Wheel/D-pad up/down reel\nMouse/right stick: rod during fight | [ ] / D-pad left/right: drag\nQ/RB hook set; fast rod flick: jerk | Shift/LB Power | V/LS Focus | C/RS bait view" % phase_name
+	label.text = "FISHER — %s\nG cast/setup | X species | Z/LT color | W/RT retrieve | Wheel/D-pad up/down reel\nMouse/right stick: rod during fight | [ ] / D-pad left/right: drag\nQ/RB hook set; fast rod flick: jerk | Shift/LB Power | V/LS Focus | C/RS bait view" % phase_name
+	if session.baits.has(roundi(data[6])):
+		label.text += "\nBait: "+BaitColors.NAMES[session.baits[roundi(data[6])].color_tag]
+	if not fighting: label.text += "\nSelected: "+BaitMotion.Kind.keys()[species]+" - "+BaitColors.NAMES[color_tag]
 	if not fighting and data[27] > 0: label.text += "\n"+FightSession.Outcome.keys()[roundi(data[27])]
 	var pressure = "SLACK — REEL!" if data[31] > 0.5 else "CRITICAL" if data[13] > data[45] else "HEAVY" if data[13] > data[45]*0.7 else "DRAG" if data[38] > 0 else "WORKING" if data[13] > data[45]*0.2 else "LIGHT"
 	var pull_direction = "DIVE!" if data[54] > 0 else "FALL — LOWER ROD" if data[61] > 0 else "ASCENT — REEL" if data[60] > 0.1 or data[62] > 0 else "RUN!"

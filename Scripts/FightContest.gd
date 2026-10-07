@@ -34,3 +34,9 @@ static func move_text(choice: int) -> String:
 	return ["RUN AWAY","LEFT","RIGHT","DIVE"][clampi(choice,0,3)]
 static func counter_text(choice: int) -> String:
 	return ["HOLD / PUMP","PULL LEFT","PULL RIGHT","PULL UP","LET DRAG WORK"][clampi(choice,0,4)]
+
+# Signed, continuous leverage using actual horizontal course. Zero speed falls back to heading.
+static func held_leverage(course: Vector3, outward: Vector3, right: Vector3, rod_x: float, rod_y: float, vertical_weight: float = 1) -> float:
+	var flat = Vector3(course.x,0,course.z).normalized()
+	var away = maxf(0,flat.dot(BaitMotion.horizontal(outward)))
+	return clampf(-flat.dot(right)*rod_x+away*rod_y*vertical_weight,-1,1)

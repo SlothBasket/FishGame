@@ -15,6 +15,8 @@ var live_driver: BaitMotion.PlayerLiveDriver
 var boat: Node3D
 var bait_camera: Camera3D
 var mode_label: Label
+var color_button_held: bool = false
+var selected_color: int = BaitColors.Tag.SILVER
 var selected_kind: int = BaitMotion.Kind.MINNOW
 var active: bool = false
 var boat_aiming: bool = false
@@ -71,6 +73,11 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("bait_mode"): set_active(not active)
 	if event.is_action_pressed("bait_camera"): toggle_camera()
 	if event.is_action_pressed("bait_reset") and active and not boat_aiming: reset_lure()
+	if event.is_action_released("bait_color"): color_button_held = false
+	if event.is_action_pressed("bait_color") and active and not color_button_held:
+		color_button_held = true
+		selected_color = (selected_color+1)%7
+		_update_label()
 	if event.is_action_pressed("bait_species") and active: switch_lure()
 	if event.is_action_pressed("reel_up"): reel_speed.step(1)
 	if event.is_action_pressed("reel_down"): reel_speed.step(-1)
@@ -113,6 +120,8 @@ func _spawn_lure(kind: int) -> void:
 	lure = BaitActor.new()
 	lure.name = "FishermanTestBait"
 	lure.kind = kind
+	lure.source = BaitMotion.Source.FISHERMAN
+	lure.base_color_tag = selected_color
 	lure.arena_half_width = arena_half_width
 	var size_rng = RandomNumberGenerator.new()
 	size_rng.randomize()
@@ -232,3 +241,4 @@ func _update_label() -> void:
 		mode_label.text += "\nWheel / D-pad: reel %d%% | RT analog reel | RB escape" % roundi(reel_speed.selected_speed()*100)
 		if live_driver != null and is_instance_valid(lure): mode_label.text += "\nCharge %d%%" % int(live_driver.charge / lure.flee_charge_time * 100)
 	else: mode_label.text = "TAB bait control | G enter boat and prepare a cast"
+	if active: mode_label.text += "\nZ / LT next cast color: "+BaitColors.NAMES[selected_color]

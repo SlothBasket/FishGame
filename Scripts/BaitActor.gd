@@ -86,6 +86,11 @@ var neighborhood: BaitNeighborhood
 var driver: BaitMotion.IBaitDriver
 var claimed: bool = false
 var heading: Vector3 = Vector3.FORWARD
+var base_color_tag: int = -1
+var color_tag: int = BaitColors.Tag.SILVER # Effective authoritative tag.
+var color_rules: RoundColorRules
+var color_speed: float = 1
+var natural_color: bool = true
 var visual: BaitVisual
 var _eater
 var _swallow: float = 0.0
@@ -136,6 +141,16 @@ func display_name() -> String:
 	return ["Minnow", "Shrimp", "Squid", "Crab", "Mullet", "Seagull"][kind]
 
 func _ready() -> void:
+	if color_rules == null and not network_replica:
+		var node = get_parent()
+		while node != null:
+			if "color_rules" in node: color_rules = node.color_rules; break
+			node = node.get_parent()
+	natural_color = source != BaitMotion.Source.FISHERMAN
+	if kind != BaitMotion.Kind.GULL and not network_replica:
+		if base_color_tag < 0: base_color_tag = color_rules.choose_natural() if color_rules != null and natural_color else BaitColors.Tag.SILVER
+		if color_rules != null: color_rules.changed.connect(refresh_color)
+		refresh_color()
 	if minimum_eater_scale < 0: minimum_eater_scale = [0.0, 0.0, 0.0, 0.72, 0.0, 1.05][kind]
 	collision_layer = 4
 	collision_mask = 1 if kind in [BaitMotion.Kind.MULLET, BaitMotion.Kind.GULL] else 1 | 8
@@ -153,6 +168,7 @@ func _ready() -> void:
 	add_child(collision)
 	visual = BaitVisual.new()
 	visual.kind = kind
+	visual.color_tag = color_tag
 	add_child(visual)
 	visual.scale = Vector3.ONE * body_size
 	add_to_group("bait")
@@ -277,8 +293,9 @@ func _physics_process(delta: float) -> void:
 				glide_target.y = lerpf(0.65, -0.9, glide)
 				flee_velocity = flee_velocity.move_toward(glide_target, 22.0 * delta)
 			heading = _escape_axis
-		velocity = flee_velocity
+		velocity = flee_velocity*color_speed
 	else:
+		if not passive: target *= color_speed
 		velocity.x = move_toward(velocity.x, target.x, response * delta)
 		velocity.z = move_toward(velocity.z, target.z, response * delta)
 		velocity.y = move_toward(velocity.y, target.y, (6.0 if kind == BaitMotion.Kind.SQUID else 2.5 if passive else response) * delta)
@@ -439,6 +456,7 @@ func _process(delta: float) -> void:
 	if not claimed:
 		return
 	if hook_held:
+		visual.scale = Vector3.ONE*body_size*0.65
 		if is_instance_valid(_eater): global_position = _eater.mouth_position()
 		return
 	if _bird_carry > 0:
@@ -501,3 +519,12 @@ func dead_motion(delta: float) -> void:
 			velocity = Vector3.ZERO
 	if velocity.length_squared() < 0.0001:
 		lifecycle = Lifecycle.DEAD_SETTLED
+
+func refresh_color() -> void:
+	if kind == BaitMotion.Kind.GULL: return
+	if color_rules != null:
+		if natural_color and base_color_tag == color_rules.absent_color: base_color_tag = color_rules.choose_natural()
+		color_tag = color_rules.effective(base_color_tag,natural_color)
+		color_speed = color_rules.speed(color_tag)
+	else: color_tag = maxi(0,base_color_tag)
+	if is_instance_valid(visual): visual.set_color(color_tag)
