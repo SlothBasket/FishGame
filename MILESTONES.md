@@ -122,3 +122,5 @@ Milestone subject: `Strengthen Drive reserve and fix feeding pursuit safety` - h
 - **Add continuous rod leverage and authoritative round bait colors** - One 0.82-1.18x holding multiplier, shared tension-tinted fight lines, mouth flare/scaling, seven tagged/cache-safe bait colors, seeded speed/absence/forced rules, Fish-only intel and Fisher color input. Focused checks and one localhost startup; no AI retrieval pass.
 
 - **Correct mouth line and rebase fight force risk** - Tiny mirrored corner attachment/single line ownership; centralized 2x force units with unchanged acceleration, size/Drive/pulse loads, preloaded-shock and warning break risk, deliberate AI tension attacks, no headshake hook hazard and buffered catch-up slack. Focused checks, tiny preview and one 30s fight.
+
+- **Commit hunting Overdrive to useful approaches** - Replace 20% threshold chatter with 70% reserve start, aligned distant prey, bounded spending and cooldown; fight behavior unchanged.
