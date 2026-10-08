@@ -126,3 +126,5 @@ Milestone subject: `Strengthen Drive reserve and fix feeding pursuit safety` - h
 - **Commit hunting Overdrive to useful approaches** - Replace 20% threshold chatter with 70% reserve start, aligned distant prey, bounded spending and cooldown; fight behavior unchanged.
 
 - **Preserve pursuit Drive and strengthen fresh Fish closeout escapes**: stop AI mid-dash cancellation; bank cruise Drive; tighten feeding alignment; add a steeply fading maximum-stamina force bonus and renewable-first emergency escape near the boat. Import and focused component checks passed; no batch or recording.
+
+- **Restore established hunting behavior after pursuit regression**: restore pre-828a421 approach, charge/release, retry and hunting Overdrive settings; retain only active-dash cancellation protection. Fight strength and closeout escape changes remain.

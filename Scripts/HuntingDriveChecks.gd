@@ -9,18 +9,16 @@ func verify() -> void:
 	driver.target = bait; driver.state = FishFoodInterest.State.APPROACH
 	fish.motion.swim_drive = 0.25
 	assert(not driver.hunting_overdrive(fish,40,1,0.016))
-	fish.motion.swim_drive = 1
+	fish.motion.swim_drive = 0.8
 	assert(not driver.hunting_overdrive(fish,40,0.5,0.016))
 	assert(not driver.hunting_overdrive(fish,18,1,0.016))
-	assert(not driver.hunting_overdrive(fish,40,1,0.016)) # Stationary prey does not justify spending cruise reserve.
-	bait.velocity = Vector3.FORWARD*20
 	var ticks = 0
 	while driver.hunting_overdrive(fish,40,1,1.0/60):
 		var intent = FishInput.new(1); intent.overdrive = true
 		fish.motion.step(1.0/60,intent,fish.heading,1,100,false,0,1,0,false)
 		ticks += 1
 		assert(ticks < 90)
-	assert(ticks >= 30 and fish.motion.drive_spent >= driver.hunting_drive_budget)
+	assert(ticks >= 40 and fish.motion.drive_spent >= driver.hunting_drive_budget)
 	fish.motion.swim_drive = 1
 	assert(not driver.hunting_overdrive(fish,40,1,0.016)) # Cooldown blocks immediate restart.
 	driver.hunting_drive_wait = 0
@@ -30,20 +28,7 @@ func verify() -> void:
 	assert(driver.hunting_overdrive(fish,40,1,0.016))
 	driver.state = FishFoodInterest.State.COMMIT
 	assert(not driver.hunting_overdrive(fish,40,1,0.016))
-	# Real steering classification must build Drive during sustained pursuit.
-	driver.state = FishFoodInterest.State.APPROACH
-	driver.hunting_drive_wait = 100
-	bait.velocity = Vector3.ZERO
-	fish.motion = FishFightMotion.new(); fish.motion.swim_drive = 0
-	var steering = FishSteering.new()
-	for i in range(600):
-		var intent = driver.input(fish,[bait],200,100,1.0/60)
-		fish.heading = steering.step(1.0/60,fish.heading,intent,8)
-		fish.motion.step(1.0/60,intent,fish.heading,1,130,false,steering.stroke,1,0,false)
-	assert(fish.motion.swim_drive > 0.95)
-	fish.heading = Vector3.FORWARD; fish.velocity = Vector3.FORWARD*8
-	assert(driver.launch_aligned(fish,Vector3(0,0,-7),0.15))
-	assert(not driver.launch_aligned(fish,Vector3(2,0,-7),0.15))
+	# Pursuit cannot abort an already released dash when prey is alongside.
 	fish.feeding._dash_remaining = 5
 	bait.position = Vector3.RIGHT
 	var during_dash = driver.input(fish,[bait],200,100,0.016)
@@ -67,6 +52,6 @@ func verify() -> void:
 	assert(pilot.closeout_sprint(12,0,10,true))
 	pilot.update_closeout(33); assert(pilot.closeout_escape)
 	pilot.update_closeout(40); assert(not pilot.closeout_escape)
-	print("PASS pursuit Drive builds to full; dash ownership/alignment; committed chase ",ticks," ticks; endurance bonus and closeout escalation.")
+	print("PASS restored hunting Drive; active dash protected; committed chase ",ticks," ticks; endurance bonus and closeout escalation.")
 	fish.queue_free(); bait.queue_free(); await process_frame
 	quit()
