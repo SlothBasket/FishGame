@@ -9,7 +9,8 @@ func verify() -> void:
 	driver.target = bait; driver.state = FishFoodInterest.State.APPROACH
 	fish.motion.swim_drive = 0.25
 	assert(not driver.hunting_overdrive(fish,40,1,0.016))
-	fish.motion.swim_drive = 0.8
+	fish.motion.swim_drive = 1
+	bait.velocity = Vector3.FORWARD*20
 	assert(not driver.hunting_overdrive(fish,40,0.5,0.016))
 	assert(not driver.hunting_overdrive(fish,18,1,0.016))
 	var ticks = 0

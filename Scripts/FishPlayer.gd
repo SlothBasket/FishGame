@@ -71,8 +71,8 @@ var fight_slack: bool = false
 @export var starting_size: float = 0.58
 @export var growth_rate: float = 0.0042
 @export var maximum_size: float = 2.1
-@export var free_drive_speed_bonus: float = 0.25
-@export var free_drive_acceleration_bonus: float = 0.35
+@export var free_drive_speed_bonus: float = 0.40
+@export var free_drive_acceleration_bonus: float = 0.55
 
 @export_group("Stamina and size speed")
 @export var stamina_capacity: float = 130

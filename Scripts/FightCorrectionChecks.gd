@@ -12,7 +12,7 @@ func verify() -> void:
 	for ratio in [0.6,0.8,1.0,1.2]:
 		line.tension = line.break_threshold()*ratio
 		risks.append(line.break_hazard())
-	check(risks[0] == 0 and risks[1] > 0 and risks[1] < 0.0001 and risks[2] > risks[1] and risks[3] > risks[2]*10,"Conservative warning and overload risk")
+	check(risks[0] == 0 and risks[1] == 0 and risks[2] > risks[1] and risks[3] > risks[2]*10,"Conservative warning and overload risk")
 	line.tension = 175
 	var fresh = line.break_hazard()
 	line.condition = 0.75
@@ -64,11 +64,11 @@ func verify() -> void:
 	check(is_equal_approx(large/small,1.45),"Largest Fish 1.45x sustained load")
 	fish.feeding.food = 0
 	fish.motion.swim_drive = 1
-	fish.motion.propulsion = 1.22*1.45
+	fish.motion.propulsion = 1.22*1.75
 	var stored = fight.propulsion_force(1,3.2)
-	check(is_equal_approx(stored/small,1.45),"Full stored Drive 45 percent direct force")
+	check(is_equal_approx(stored/small,1.75),"Full stored Drive 75 percent direct force")
 	fish.motion.overdrive = 0.35
-	fish.motion.propulsion = 1.57*1.45
+	fish.motion.propulsion = 1.57*1.75
 	var overdrive = fight.propulsion_force(1,3.2)
 	fight.overdrive_load_time = fight.overdrive_load_duration
 	var pulse = fight.propulsion_force(1,3.2)

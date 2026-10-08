@@ -5,11 +5,14 @@ var side_wait: float = 2
 var side_aim: Vector3 = Vector3.FORWARD
 var side_hold: float = 0
 var food = FishFoodInterest.new()
+var presentation = FisherBaitPresentationAI.new()
+var presentation_seeded: bool = false
+var cast_color: int = BaitColors.Tag.SILVER
+var cast_kind: int = BaitMotion.Kind.MINNOW
+var rod_course = FisherRodCourse.new()
 var fish_was_fighting: bool = false
 var fisher_was_fighting: bool = false
 var recast_wait: float = 0
-var retrieve_wait: float = 0
-var retrieve_level: float = 0.4
 var food_seeded: bool = false
 var clock: float = 0
 var cast_serial: int = 0
@@ -120,7 +123,7 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 		# Use felt pressure and visible rod posture, never hidden line condition/dynamic break threshold.
 		if not closeout_escape and not run_committed and tension_attack_wait <= 0 and tension_opportunity(fish,f) and run_pause <= 0:
 			tension_attack_wait = execution_rng.randf_range(4,7)
-			if execution_rng.randf() < lerpf(0.35,0.8,f.fish_skill):
+			if execution_rng.randf() < tension_willingness(fish.motion.swim_drive,f.fish_skill):
 				tension_attack_aim = choose_tension_angle(fish,f)
 				if tension_attack_aim != Vector3.ZERO:
 					tension_attack = true
@@ -132,7 +135,7 @@ func fish_input(fish: FishPlayer, session, delta: float) -> FishInput:
 					resting = false
 					run_start_drive = fish.motion.swim_drive
 					run_spent_start = fish.motion.drive_spent
-					run_budget = minf(fish.motion.swim_drive,execution_rng.randf_range(0.3,0.55))
+					run_budget = minf(fish.motion.swim_drive,execution_rng.randf_range(0.65,0.85) if fish.motion.swim_drive >= 0.9 else execution_rng.randf_range(0.3,0.55))
 					if session.batch_runner != null: session.batch_runner.telemetry.event("AI_TENSION_ATTACK",f)
 		if tension_attack: aim = tension_attack_aim
 		var spending_drive = run_committed and fish.motion.swim_drive > 0.01 and fish.motion.drive_lockout <= 0 and fish.motion.counter_recovery <= 0
@@ -210,25 +213,44 @@ func fisher_input(actor: FisherActor, delta: float) -> FisherIntent:
 	clock += delta
 	var input = FisherIntent.new()
 	if is_instance_valid(actor.landing_show):
+		presentation.reset()
 		input.cast_serial = actor.last_cast
 		return input
 	input.drag = selected_drag
-	input.species = BaitMotion.Kind.MINNOW
+	if not presentation_seeded:
+		presentation.rng.seed = execution_rng.randi()
+		presentation_seeded = true
+	input.species = cast_kind
+	input.color_tag = cast_color
 	input.tier = 12
 	input.aim = Vector3.FORWARD.rotated(Vector3.UP,actor.boat_yaw)
 	if is_instance_valid(actor.fight): fisher_was_fighting = true
 	elif fisher_was_fighting:
 		fisher_was_fighting = false
+		rod_course = FisherRodCourse.new()
 		stalled_seconds = 0
 		recast_wait = execution_rng.randf_range(6,9)
 		cast_sent = false
 	recast_wait = maxf(0,recast_wait-delta)
 	if actor.state == FisherActor.State.SETUP:
+		presentation.reset()
 		if not cast_sent and recast_wait <= 0:
+			var choice = presentation.choose_cast()
+			cast_kind = choice.species; cast_color = choice.color_tag
+			input.species = cast_kind; input.color_tag = cast_color
 			cast_serial += 1; cast_sent = true
 	else: cast_sent = false
 	input.cast_serial = cast_serial
-	if actor.state == FisherActor.State.BAIT: input.retrieve = bait_retrieve(actor.kind,delta)
+	if actor.state == FisherActor.State.BAIT and not is_instance_valid(actor.fight) and is_instance_valid(actor.lure):
+		var presented = presentation.input(actor.lure,actor.position,delta)
+		input.retrieve = presented.retrieve; input.tier = presented.tier
+		input.steering = presented.steering; input.aim = presented.aim
+		input.rise = presented.rise; input.descend = presented.descend; input.escape = presented.escape
+		# Bottom/jig presentations cannot always reel home; retire an old cast legally.
+		if presentation.cast_age > presentation.return_after:
+			cast_serial += 1; input.cast_serial = cast_serial
+			presentation.reset(); recast_wait = 2
+	else: presentation.reset()
 	if is_instance_valid(actor.fight):
 		var fight: FightSession = actor.fight
 		if fight.phase == FightSession.Phase.CANDIDATE: input.jerk = fight.phase_time > lerpf(1.3,0.65,fight.fisher_skill)
@@ -254,7 +276,7 @@ func fisher_input(actor: FisherActor, delta: float) -> FisherIntent:
 				power_push = 0.9
 				power_pause = 3.5
 			plan.power = plan.power and power_push > 0
-			input.rod_horizontal = plan.horizontal*lerpf(0.75,1,fight.fisher_skill)
+			input.rod_horizontal = rod_course.step(float(seen.get("course_side",seen.get("side",0))),delta)*lerpf(0.75,1,fight.fisher_skill)
 			input.rod_vertical = plan.vertical
 			input.retrieve = plan.retrieve
 			input.power = plan.power
@@ -316,17 +338,6 @@ func fisher_input(actor: FisherActor, delta: float) -> FisherIntent:
 static func side_burst_aim(heading: Vector3, side: int) -> Vector3:
 	return heading.rotated(Vector3.UP,-side*deg_to_rad(60))
 
-func bait_retrieve(kind: int, delta: float) -> float:
-	# Strategy seam for future species; each output remains a legal retrieve input.
-	retrieve_wait -= delta
-	if retrieve_wait <= 0:
-		match kind:
-			BaitMotion.Kind.MINNOW:
-				retrieve_level = 0.0 if execution_rng.randf() < 0.2 else float(execution_rng.randi_range(3,5))*0.1
-			_: retrieve_level = 0.4
-		retrieve_wait = execution_rng.randf_range(0.6,1.3) if retrieve_level == 0 else execution_rng.randf_range(2,5)
-	return retrieve_level
-
 # Hold ordinary settings; only observable state transitions bypass the hold.
 func persist_settings(plan: Dictionary, seen: Dictionary, delta: float) -> Dictionary:
 	setting_wait = maxf(0,setting_wait-delta)
@@ -369,3 +380,7 @@ func choose_tension_angle(fish: FishPlayer, f: FightSession) -> Vector3:
 		var score = course.dot(outward)*0.7-leverage*1.2+course.dot(fish.heading)*0.15
 		if score > best: best = score; selected = course
 	return selected
+
+func tension_willingness(drive: float, skill: float) -> float:
+	var reserve = smoothstep(0.45,1.0,drive)
+	return lerpf(0.15,0.95,reserve)*lerpf(0.65,1.0,skill)

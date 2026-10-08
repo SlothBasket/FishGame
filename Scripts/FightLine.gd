@@ -33,17 +33,19 @@ var _payout_allowance: float = 0
 # Wear starts below break risk. Thresholds are fractions of full line strength.
 @export var wear_start: float = 0.545
 @export var fresh_risk_threshold: float = 0.85
-@export var damaged_risk_threshold: float = 0.60
-@export var risk_curve: float = 1.1
-@export var base_break_hazard: float = 0.025
-@export var damage_hazard_multiplier: float = 16
+@export var damaged_risk_threshold: float = 0.38
+@export var risk_curve: float = 1.4
+@export var base_break_hazard: float = 0.35
+@export var damage_hazard_multiplier: float = 6
 @export var exposure_gain: float = 1
 @export var exposure_decay: float = 1.5
-@export var exposure_multiplier: float = 0.6
+@export var exposure_multiplier: float = 0.25
 @export var greedy_wear: float = 0.07
-@export var warning_ratio: float = 0.75
-@export var warning_hazard: float = 0.001
-@export var shock_hazard: float = 0.025
+@export var warning_ratio: float = 0.80
+@export var warning_hazard: float = 0.006
+@export var shock_hazard: float = 0.12
+@export var shock_decay_time: float = 0.8
+@export var preloaded_shock_wear: float = 0.02
 @export var reel_response_time: float = 0.18
 var shock_exposure: float = 0
 var load_surge: float = 0
@@ -107,7 +109,9 @@ func step(delta: float, required_distance: float, outward_speed: float, movement
 	load_surge = maxf(load_surge*exp(-delta/reel_response_time),minf(strength*0.35,maxf(0,fish_load-_previous_fish_load)))
 	_previous_fish_load = fish_load
 	var loaded_reel = clampf((holding_threshold/strength-0.5)/0.35,0,1)
-	transmitted += (load_surge*0.45+maxf(0,transient_load)*0.25)*loaded_reel
+	var preloaded = smoothstep(0.65,0.9,_previous_load/maxf(1,break_threshold()))
+	# Starting to load a loose/fresh line is not a preloaded power spike.
+	transmitted += (load_surge*0.45*preloaded+maxf(0,transient_load)*0.25)*loaded_reel
 	# Moving a taut line outward must meet spool drag even when the smoothed
 	# propulsion estimate lags the motor. Otherwise small force bonuses run away.
 	if outward_speed > 0 and contact > 0:
@@ -116,8 +120,7 @@ func step(delta: float, required_distance: float, outward_speed: float, movement
 	transmitted = maxf(transmitted,maxf(0,extension-maximum_extension)*elasticity)
 	tension = transmitted*contact
 	shock = maxf(0,tension-_previous_load)
-	var preloaded = smoothstep(0.65,0.9,_previous_load/maxf(1,break_threshold()))
-	shock_exposure = maxf(shock_exposure*exp(-delta/0.3),clampf(shock/(strength*0.3),0,2)*preloaded)
+	shock_exposure = maxf(shock_exposure*exp(-delta/shock_decay_time),clampf(shock/(strength*0.3),0,2)*preloaded)
 	_previous_load = tension
 	slipping = fish_load > holding_threshold and contact > 0
 	slack = maxf(0,line_out-loaded_distance)
@@ -128,8 +131,13 @@ func step(delta: float, required_distance: float, outward_speed: float, movement
 	wear += greedy_wear*greedy*greedy*(1+2*(1-condition))
 	if reel_slip > 0: wear += slipping_reel_wear*reel_slip*retrieve*retrieve*(tension/strength)
 	if power: wear += power_wear*stress*stress
-	condition = maxf(0.02,condition-wear*delta-shock_wear*pow(shock/strength,2)*(0.25+retrieve))
-	if tension > break_threshold(): high_load_exposure += delta*exposure_gain
+	condition = maxf(0.02,condition-wear*delta-shock_wear*pow(shock/strength,2)*(0.25+retrieve)-preloaded_shock_wear*pow(shock/strength,2))
+	update_exposure(delta)
+
+func update_exposure(delta: float) -> void:
+	# Acute load history starts near the dynamic threshold, not only above it.
+	var load = tension/maxf(1,break_threshold())
+	if load > 0.85: high_load_exposure = minf(12,high_load_exposure+delta*exposure_gain*clampf((load-0.85)/0.15,0,2))
 	else: high_load_exposure = maxf(0,high_load_exposure-delta*exposure_decay)
 
 func break_threshold() -> float:
@@ -137,7 +145,7 @@ func break_threshold() -> float:
 
 func break_hazard() -> float:
 	var ratio = tension/maxf(1,break_threshold())
-	var warning = warning_hazard*pow(clampf((ratio-warning_ratio)/(1-warning_ratio),0,1),3)
+	var warning = warning_hazard*pow(clampf((ratio-warning_ratio)/(1-warning_ratio),0,1),2)
 	var excess = maxf(0,(tension-break_threshold())/maxf(1,strength-break_threshold()))
 	var spike_risk = shock_hazard*shock_exposure*pow(clampf((ratio-warning_ratio)/(1-warning_ratio),0,2),2)
 	return (warning+base_break_hazard*excess*excess+spike_risk)*(1+damage_hazard_multiplier*pow(1-condition,2))*(1+minf(12,high_load_exposure)*exposure_multiplier)

@@ -128,3 +128,5 @@ Milestone subject: `Strengthen Drive reserve and fix feeding pursuit safety` - h
 - **Preserve pursuit Drive and strengthen fresh Fish closeout escapes**: stop AI mid-dash cancellation; bank cruise Drive; tighten feeding alignment; add a steeply fading maximum-stamina force bonus and renewable-first emergency escape near the boat. Import and focused component checks passed; no batch or recording.
 
 - **Restore established hunting behavior after pursuit regression**: restore pre-828a421 approach, charge/release, retry and hunting Overdrive settings; retain only active-dash cancellation protection. Fight strength and closeout escape changes remain.
+
+- **Make full Drive and damaged line matter; add species-aware Fisher presentations**: condition-sensitive stochastic breaks and accumulated pressure/spikes; stronger passive Drive; held-rod course hysteresis; forward/value-based prey choice with established hunting execution preserved; seeded five-species/color cast rotation and legal-control retrieval profiles. Focused checks and one short graphical five-bait pass completed.

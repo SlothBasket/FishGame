@@ -18,6 +18,9 @@ var allow_lures: bool = true # Recording lead-in gate; natural bait remains elig
 # Profile seam: keys are BaitMotion.Kind integers, with "lure" as an override.
 var prey_weights: Dictionary = {}
 var last_prey_kind: int = -1
+var meal_count: int = 0
+var forward_meal_time: float = 0
+var target_competed: bool = false
 var hotspot: FeedingHotspot
 var commit_time: float = 0
 var attack_reset: float = 0
@@ -46,10 +49,10 @@ func intercept_point(fish: FishPlayer, bait, remaining_charge: float = 0) -> Vec
 		travel = fish.position.distance_to(predicted)/maxf(1,fish.effective_dash_speed())
 	return predicted
 
-@export var hunting_drive_start: float = 0.70
+@export var hunting_drive_start: float = 0.90
 @export var hunting_drive_budget: float = 0.40
 @export var hunting_drive_duration: float = 1.25
-@export var hunting_drive_cooldown: float = 2.5
+@export var hunting_drive_cooldown: float = 6.0
 var hunting_drive_time: float = 0
 var hunting_drive_wait: float = 0
 var hunting_drive_spent: float = 0
@@ -71,18 +74,38 @@ func choose(fish: FishPlayer, candidates: Array) -> BaitActor:
 		if not eligible(item,fish): continue
 		var distance = fish.position.distance_to(item.position)
 		var lure = is_instance_valid(item.fisher_owner)
-		if distance > detection_radius*(1.6 if hotspot != null and hotspot.contains(item.position) else 1.0) and not (prioritize_lures and lure): continue
-		# Modest reward/variety weighting prevents ubiquitous minnows always winning.
+		if distance > detection_radius*(1.6 if hotspot != null and hotspot.contains(item.position) else 1.0+0.15*fish.motion.swim_drive) and not (prioritize_lures and lure): continue
+		var drive = clampf(fish.motion.swim_drive,0,1)
+		var reward = item.color_rules.value(item.color_tag) if item.color_rules != null else 1.0
 		var weight = float(prey_weights.get("lure" if lure else item.kind,1.0))
-		weight *= 1.0+minf(0.75,item.nutrition()*0.15)
+		weight *= 1.0+minf(2.5,item.nutrition()*reward*lerpf(0.15,0.4,drive))
 		if item.kind != last_prey_kind: weight *= 1.15
-		var alignment = fish.heading.dot((item.position-fish.position).normalized())
 		if hotspot != null and hotspot.contains(item.position): weight *= 1.45
-		var interest = distance*(1+0.18*(1-alignment))/maxf(0.05,weight)
+		var speed = maxf(2,maxf(fish.velocity.length(),fish.effective_swim_speed()*fish.free_swim_drive_multiplier()*0.9))
+		var predicted = item.position+item.velocity*minf(1.0,distance/speed)
+		var direction = (predicted-fish.position).normalized()
+		var angle = acos(clampf(fish.heading.dot(direction),-1,1))
+		var turn_seconds = angle/maxf(0.1,deg_to_rad(fish.forward_turn_rate))
+		var closing = maxf(speed*0.3,speed-item.velocity.dot(direction))
+		var interest = (fish.position.distance_to(predicted)/closing+turn_seconds*lerpf(1,3,drive)*(2.0 if forward_meal_time > 0 else 1.0))/maxf(0.05,weight)
 		if prioritize_lures and lure: interest -= 100000
 		if interest < score: chosen = item; score = interest
+	target_competed = competed_for(fish,chosen)
 	return chosen
+
+func competed_for(fish: FishPlayer, bait: BaitActor) -> bool:
+	if not is_instance_valid(bait) or not fish.is_inside_tree(): return false
+	for other in fish.get_tree().get_nodes_in_group("fish_line_subjects"):
+		if other == fish or not other is FishPlayer or fish.position.distance_to(other.position) > detection_radius: continue
+		var to_prey = bait.position-other.position
+		if to_prey.length() < 20 and other.velocity.dot(to_prey.normalized()) > 3: return true
+	return false
+
 func input(fish: FishPlayer, candidates: Array, half_width: float, depth: float, delta: float) -> FishInput:
+	forward_meal_time = maxf(0,forward_meal_time-delta)
+	if fish.feeding.bait_eaten != meal_count:
+		meal_count = fish.feeding.bait_eaten
+		forward_meal_time = 2.5
 	# Let an already released dash finish; pursuit recovery must not cancel
 	# its sweep and zero velocity when prey passes alongside the fish.
 	if fish.feeding.is_dashing():
@@ -196,7 +219,12 @@ func hunting_overdrive(fish: FishPlayer, distance: float, alignment: float, delt
 			stop_hunting_drive()
 		else: return true
 	# Bank passive Drive until there is both enough fuel and useful straight approach room.
-	if allowed and is_instance_valid(target) and hunting_drive_wait <= 0 and distance > 22 and alignment >= 0.85 and fish.motion.swim_drive >= hunting_drive_start:
+	var useful = false
+	if is_instance_valid(target):
+		var reward = target.color_rules.value(target.color_tag) if target.color_rules != null else 1.0
+		var escaping = target.velocity.dot((target.position-fish.position).normalized()) > fish.effective_swim_speed()*fish.free_swim_drive_multiplier()*0.75
+		useful = escaping or target_competed or target.nutrition()*reward >= 3 or (hotspot != null and hotspot.contains(target.position))
+	if allowed and useful and is_instance_valid(target) and hunting_drive_wait <= 0 and distance > 26 and alignment >= 0.85 and fish.motion.swim_drive >= hunting_drive_start:
 		hunting_drive_target = target
 		hunting_drive_spent = fish.motion.drive_spent
 		hunting_drive_time = hunting_drive_duration

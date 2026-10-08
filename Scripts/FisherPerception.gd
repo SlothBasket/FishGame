@@ -52,7 +52,7 @@ func capture(f: FightSession) -> Dictionary:
 	var airborne = f.fish.position.y > f.fish.water_height
 	if airborne: last_air_time = clock
 	var falling = f.fish.velocity.y < -0.5 and (airborne or clock-last_air_time < 1)
-	return {"visible_maneuver_id":f.visible_id,"required_jerk":f.counter_hint(),"requested_retrieve":f.spool.requested_retrieve,"actual_recovery":f.spool.actual_recovery,"retrieve_efficiency":f.spool.retrieve_efficiency,"line_rate":f.spool.line_rate,"counter_success":f.interruption > 0 and f.jerk_notice_time > 0,"speed":f.fish.velocity.length(),"jump_fall":falling,"side":side,"ascending":f.fish.velocity.y > 3,"descending":f.fish.velocity.y < -3 and not falling,"airborne":f.fish.position.y > f.fish.water_height,
+	return {"course_side":f.fish.velocity.dot(right)/maxf(4,f.fish.velocity.length()),"visible_maneuver_id":f.visible_id,"required_jerk":f.counter_hint(),"requested_retrieve":f.spool.requested_retrieve,"actual_recovery":f.spool.actual_recovery,"retrieve_efficiency":f.spool.retrieve_efficiency,"line_rate":f.spool.line_rate,"counter_success":f.interruption > 0 and f.jerk_notice_time > 0,"speed":f.fish.velocity.length(),"jump_fall":falling,"side":side,"ascending":f.fish.velocity.y > 3,"descending":f.fish.velocity.y < -3 and not falling,"airborne":f.fish.position.y > f.fish.water_height,
 		"outward_speed":f.fish.velocity.dot(outward),"tension":f.tension,"condition":f.spool.condition,
 		"slack":f.spool.slack,"payout":f.spool.payout,"strength":f.spool.strength,"break_threshold":f.spool.break_threshold(),"shock":f.spool.shock,
 		"depth":snappedf(f.fish.water_height-f.fish.position.y,4),"line_out":f.spool.line_out,"capacity":f.spool.maximum_line_out,"drag":f.fisher.drag_setting,"distance":f.spool.distance}
